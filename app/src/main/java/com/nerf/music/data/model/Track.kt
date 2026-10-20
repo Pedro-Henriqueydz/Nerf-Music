@@ -18,4 +18,11 @@ data class Track(
     val durationText: String = "--:--",
     val durationSeconds: Long = 0,
     val sourceIdentifier: String = "INNERTUBE_WEB_REMIX"
-)
+) {
+    /**
+     * Retorna a URL da capa em alta resolução (544x544) quando proveniente do Google/YouTube Music,
+     * ideal para exibição em destaque na tela completa do Player.
+     */
+    val highResThumbnailUrl: String?
+        get() = thumbnailUrl?.replace(Regex("=w\\d+-h\\d+"), "=w544-h544")
+}

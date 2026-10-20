@@ -9,5 +9,7 @@ data class PlaybackState(
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 0L,
     val isBuffering: Boolean = false,
+    val hasNext: Boolean = false,
+    val hasPrevious: Boolean = false,
     val errorMessage: String? = null
 )

@@ -65,9 +65,16 @@ class MusicViewModel(
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
+    private val _isFullPlayerVisible = MutableStateFlow(false)
+    val isFullPlayerVisible: StateFlow<Boolean> = _isFullPlayerVisible.asStateFlow()
+
+    private var playbackQueue: List<Track> = emptyList()
+    private var currentQueueIndex: Int = -1
+
     private var mediaController: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var progressUpdateJob: Job? = null
+    private var streamResolutionJob: Job? = null
 
     val authorizedDemoTrack = Track(
         id = "demo_audioplayer_test",
@@ -76,6 +83,7 @@ class MusicViewModel(
         album = "Creative Commons",
         thumbnailUrl = "https://storage.googleapis.com/exoplayer-test-media-0/sample_artwork.png",
         durationText = "00:03",
+        durationSeconds = 3,
         sourceIdentifier = "MEDIA3_DEMO_SOURCE"
     )
 
@@ -94,12 +102,20 @@ class MusicViewModel(
         }, MoreExecutors.directExecutor())
     }
 
+    private fun resolveEffectiveDuration(player: Player): Long {
+        val playerDuration = player.duration
+        if (playerDuration > 0L) return playerDuration
+        val fallbackSeconds = _playbackState.value.currentTrack?.durationSeconds ?: 0L
+        return (fallbackSeconds * 1000L).coerceAtLeast(0L)
+    }
+
     private fun setupPlayerListener(player: Player) {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playbackState.value = _playbackState.value.copy(
                     isPlaying = isPlaying,
-                    durationMs = player.duration.coerceAtLeast(0L),
+                    isBuffering = if (isPlaying) false else _playbackState.value.isBuffering,
+                    durationMs = resolveEffectiveDuration(player),
                     currentPositionMs = player.currentPosition.coerceAtLeast(0L)
                 )
                 if (isPlaying) {
@@ -110,11 +126,21 @@ class MusicViewModel(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                val isBuffering = playbackState == Player.STATE_BUFFERING
+                val isResolving = _loadingTrackId.value != null
+                val isBuffering = isResolving || playbackState == Player.STATE_BUFFERING
                 _playbackState.value = _playbackState.value.copy(
                     isBuffering = isBuffering,
-                    durationMs = player.duration.coerceAtLeast(0L)
+                    durationMs = resolveEffectiveDuration(player),
+                    currentPositionMs = player.currentPosition.coerceAtLeast(0L)
                 )
+
+                // Avança automaticamente para a próxima música ao terminar a faixa atual
+                if (playbackState == Player.STATE_ENDED && playbackQueue.size > 1) {
+                    val nextIdx = currentQueueIndex + 1
+                    if (nextIdx in playbackQueue.indices) {
+                        playTrackFromQueue(nextIdx)
+                    }
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -138,11 +164,11 @@ class MusicViewModel(
                     if (controller.isPlaying) {
                         _playbackState.value = _playbackState.value.copy(
                             currentPositionMs = controller.currentPosition.coerceAtLeast(0L),
-                            durationMs = controller.duration.coerceAtLeast(0L)
+                            durationMs = resolveEffectiveDuration(controller)
                         )
                     }
                 }
-                delay(500)
+                delay(250)
             }
         }
     }
@@ -150,6 +176,16 @@ class MusicViewModel(
     private fun stopProgressTracker() {
         progressUpdateJob?.cancel()
         progressUpdateJob = null
+    }
+
+    fun openFullPlayer() {
+        if (_playbackState.value.currentTrack != null) {
+            _isFullPlayerVisible.value = true
+        }
+    }
+
+    fun closeFullPlayer() {
+        _isFullPlayerVisible.value = false
     }
 
     fun onQueryChanged(newQuery: String) {
@@ -199,34 +235,79 @@ class MusicViewModel(
         _selectedTrack.value = track
 
         // Se a faixa já for a atual e estiver tocando, apenas pausa
-        if (_playbackState.value.currentTrack?.id == track.id && _playbackState.value.isPlaying) {
+        if (_playbackState.value.currentTrack?.id == track.id && _playbackState.value.isPlaying && _loadingTrackId.value == null) {
             togglePlayPause()
             return
         }
 
-        // Se a faixa já for a atual e estiver pausada, retoma reprodução
-        if (_playbackState.value.currentTrack?.id == track.id && !_playbackState.value.isPlaying && mediaController != null) {
+        // Se a faixa já for a atual e estiver pausada (e já carregada), retoma reprodução
+        if (
+            _playbackState.value.currentTrack?.id == track.id &&
+            !_playbackState.value.isPlaying &&
+            _loadingTrackId.value == null &&
+            mediaController != null &&
+            mediaController?.mediaItemCount ?: 0 > 0
+        ) {
             mediaController?.play()
             return
         }
 
-        viewModelScope.launch {
+        // Atualiza a fila de reprodução com as músicas da busca atual se a faixa pertencer a ela
+        val currentSongs = _searchResult.value.songs
+        val indexInSearch = currentSongs.indexOfFirst { it.id == track.id }
+        if (indexInSearch >= 0) {
+            playbackQueue = currentSongs
+            currentQueueIndex = indexInSearch
+        } else {
+            val indexInQueue = playbackQueue.indexOfFirst { it.id == track.id }
+            if (indexInQueue >= 0) {
+                currentQueueIndex = indexInQueue
+            } else {
+                playbackQueue = listOf(track)
+                currentQueueIndex = 0
+            }
+        }
+
+        loadAndPlayTrack(track, useDemoResolver = false)
+    }
+
+    private fun playTrackFromQueue(index: Int) {
+        if (index !in playbackQueue.indices) return
+        currentQueueIndex = index
+        val track = playbackQueue[index]
+        _selectedTrack.value = track
+        loadAndPlayTrack(
+            track = track,
+            useDemoResolver = track.id == authorizedDemoTrack.id
+        )
+    }
+
+    private fun loadAndPlayTrack(track: Track, useDemoResolver: Boolean) {
+        streamResolutionJob?.cancel()
+        streamResolutionJob = viewModelScope.launch {
             _loadingTrackId.value = track.id
             _playbackState.value = _playbackState.value.copy(
                 currentTrack = track,
+                isPlaying = false,
+                currentPositionMs = 0L,
+                durationMs = (track.durationSeconds * 1000L).coerceAtLeast(0L),
                 isBuffering = true,
+                hasNext = playbackQueue.size > 1,
+                hasPrevious = playbackQueue.size > 1,
                 errorMessage = null
             )
 
-            val streamResult = streamResolver.resolveStreamUrl(track.id)
+            val resolver = if (useDemoResolver) demoStreamResolver else streamResolver
+            val streamResult = resolver.resolveStreamUrl(track.id)
             _loadingTrackId.value = null
 
             streamResult.onSuccess { streamUrl ->
+                val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
                 val metadata = MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
                     .setAlbumTitle(track.album)
-                    .setArtworkUri(track.thumbnailUrl?.let { Uri.parse(it) })
+                    .setArtworkUri(artworkUrl?.let { Uri.parse(it) })
                     .build()
 
                 val mediaItem = MediaItem.Builder()
@@ -240,10 +321,15 @@ class MusicViewModel(
                     prepare()
                     play()
                 }
-            }.onFailure { _ ->
-                val errorMsg = "Falha ao carregar a faixa. O servidor recusou a conexão."
+            }.onFailure { error ->
+                val errorMsg = if (useDemoResolver) {
+                    "Falha ao carregar o áudio de teste: ${error.localizedMessage}"
+                } else {
+                    "Falha ao carregar a faixa. O servidor recusou a conexão."
+                }
                 _playbackState.value = _playbackState.value.copy(
                     isBuffering = false,
+                    isPlaying = false,
                     errorMessage = errorMsg
                 )
                 _userMessage.value = errorMsg
@@ -253,59 +339,70 @@ class MusicViewModel(
 
     fun playAuthorizedTestAudio() {
         _selectedTrack.value = authorizedDemoTrack
-        viewModelScope.launch {
-            _loadingTrackId.value = authorizedDemoTrack.id
-            _playbackState.value = _playbackState.value.copy(
-                currentTrack = authorizedDemoTrack,
-                isBuffering = true,
-                errorMessage = null
-            )
+        playbackQueue = listOf(authorizedDemoTrack)
+        currentQueueIndex = 0
+        loadAndPlayTrack(authorizedDemoTrack, useDemoResolver = true)
+    }
 
-            val streamResult = demoStreamResolver.resolveStreamUrl(authorizedDemoTrack.id)
-            _loadingTrackId.value = null
+    fun togglePlayPause() {
+        val current = _playbackState.value.currentTrack ?: return
+        if (_loadingTrackId.value != null) return
 
-            streamResult.onSuccess { streamUrl ->
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(authorizedDemoTrack.title)
-                    .setArtist(authorizedDemoTrack.artist)
-                    .setAlbumTitle(authorizedDemoTrack.album)
-                    .setArtworkUri(authorizedDemoTrack.thumbnailUrl?.let { Uri.parse(it) })
-                    .build()
-
-                val mediaItem = MediaItem.Builder()
-                    .setMediaId(authorizedDemoTrack.id)
-                    .setUri(streamUrl)
-                    .setMediaMetadata(metadata)
-                    .build()
-
-                mediaController?.run {
-                    setMediaItem(mediaItem)
-                    prepare()
-                    play()
+        val controller = mediaController
+        if (controller != null && controller.mediaItemCount > 0) {
+            if (controller.isPlaying) {
+                controller.pause()
+            } else {
+                if (controller.playbackState == Player.STATE_ENDED) {
+                    controller.seekTo(0L)
                 }
-            }.onFailure { error ->
-                val errorMsg = "Falha ao carregar o áudio de teste: ${error.localizedMessage}"
-                _playbackState.value = _playbackState.value.copy(
-                    isBuffering = false,
-                    errorMessage = errorMsg
-                )
-                _userMessage.value = errorMsg
+                controller.play()
+            }
+        } else {
+            // Caso o player tenha sido reiniciado ou perdido o item, recarrega a faixa atual
+            loadAndPlayTrack(current, useDemoResolver = current.id == authorizedDemoTrack.id)
+        }
+    }
+
+    fun skipNext() {
+        if (playbackQueue.size > 1) {
+            val nextIndex = (currentQueueIndex + 1) % playbackQueue.size
+            playTrackFromQueue(nextIndex)
+        } else {
+            val controller = mediaController
+            if (controller != null && controller.hasNextMediaItem()) {
+                controller.seekToNextMediaItem()
+            } else {
+                seekTo(0L)
+                controller?.play()
             }
         }
     }
 
-    fun togglePlayPause() {
-        mediaController?.let { controller ->
-            if (controller.isPlaying) {
-                controller.pause()
+    fun skipPrevious() {
+        val controller = mediaController
+        // Se já passou de 3 segundos de música, volta para o início da faixa atual
+        if (controller != null && controller.currentPosition > 3_000L) {
+            seekTo(0L)
+            return
+        }
+
+        if (playbackQueue.size > 1) {
+            val prevIndex = if (currentQueueIndex - 1 >= 0) {
+                currentQueueIndex - 1
             } else {
-                controller.play()
+                playbackQueue.lastIndex
             }
+            playTrackFromQueue(prevIndex)
+        } else {
+            seekTo(0L)
         }
     }
 
     fun seekTo(positionMs: Long) {
-        mediaController?.seekTo(positionMs)
+        val targetPos = positionMs.coerceAtLeast(0L)
+        _playbackState.value = _playbackState.value.copy(currentPositionMs = targetPos)
+        mediaController?.seekTo(targetPos)
     }
 
     fun clearUserMessage() {
@@ -314,6 +411,7 @@ class MusicViewModel(
 
     override fun onCleared() {
         stopProgressTracker()
+        streamResolutionJob?.cancel()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
     }
