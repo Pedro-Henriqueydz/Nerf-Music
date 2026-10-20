@@ -77,6 +77,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // NewPipeExtractor for YouTube stream extraction and cipher resolution
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.4")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

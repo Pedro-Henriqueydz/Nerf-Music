@@ -20,7 +20,7 @@ import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
 import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.player.DemoStreamResolver
-import com.nerf.music.player.InnerTubeStreamResolver
+import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.player.StreamResolver
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
-    private val streamResolver: StreamResolver = InnerTubeStreamResolver(),
+    private val streamResolver: StreamResolver = NewPipeStreamResolver(),
     private val demoStreamResolver: StreamResolver = DemoStreamResolver()
 ) : ViewModel() {
 
