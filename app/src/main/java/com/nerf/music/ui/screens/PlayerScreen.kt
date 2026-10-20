@@ -376,7 +376,7 @@ fun FullPlayerSheet(
                 .navigationBarsPadding()
         ) {
             val totalHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
-            val collapsedPeekHeightDp = 68.dp
+            val collapsedPeekHeightDp = 64.dp
             val collapsedPeekPx = with(density) { collapsedPeekHeightDp.toPx() }
 
             // Âncoras verticais (coordenada Y do topo da folha da Fila)
@@ -743,6 +743,7 @@ fun FullPlayerSheet(
             // =========================================================================
             // CAMADA 2: FILA DE REPRODUÇÃO ("A SEGUIR" / UP NEXT) COM 3 ESTADOS POR GESTO
             // =========================================================================
+            val isSheetExpandedOrDragging = halfExpansionFraction > 0.03f || queueState != QueueExpansionState.COLLAPSED
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
@@ -751,15 +752,17 @@ fun FullPlayerSheet(
                     topStart = (22f * (1f - fullExpansionFraction)).dp,
                     topEnd = (22f * (1f - fullExpansionFraction)).dp
                 ),
-                color = Color(0xFF181818),
-                tonalElevation = 12.dp,
-                shadowElevation = 16.dp
+                color = if (isSheetExpandedOrDragging) {
+                    Color(0xFF181818)
+                } else {
+                    Color.Transparent
+                },
+                tonalElevation = if (isSheetExpandedOrDragging) 12.dp else 0.dp,
+                shadowElevation = if (isSheetExpandedOrDragging) 16.dp else 0.dp
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Barra de Gesto "A seguir" (Arraste vertical para alternar entre os 3 estados)
+                    // Alça minimalista (DragHandle) estilo Apple Music para puxar a fila para cima
                     QueueDragHeader(
-                        state = state,
-                        queueState = queueState,
                         modifier = Modifier.draggable(
                             orientation = Orientation.Vertical,
                             state = queueSheetDraggableState,
@@ -767,20 +770,22 @@ fun FullPlayerSheet(
                         )
                     )
 
-                    HorizontalDivider(color = Color(0xFF2A2A2A), thickness = 1.dp)
+                    if (isSheetExpandedOrDragging) {
+                        HorizontalDivider(color = Color(0xFF2A2A2A), thickness = 1.dp)
 
-                    // Lista da Fila com Histórico, Música Atual, Drag-and-Drop e Swipe-to-Dismiss
-                    QueueTrackList(
-                        queue = state.queue,
-                        currentQueueIndex = state.currentQueueIndex,
-                        isPlaying = state.isPlaying,
-                        onPlayQueueItem = onPlayQueueItem,
-                        onMoveQueueItem = onMoveQueueItem,
-                        onRemoveQueueItem = onRemoveQueueItem,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
+                        // Lista da Fila com Histórico, Música Atual, Drag-and-Drop e Swipe-to-Dismiss
+                        QueueTrackList(
+                            queue = state.queue,
+                            currentQueueIndex = state.currentQueueIndex,
+                            isPlaying = state.isPlaying,
+                            onPlayQueueItem = onPlayQueueItem,
+                            onMoveQueueItem = onMoveQueueItem,
+                            onRemoveQueueItem = onRemoveQueueItem,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        )
+                    }
                 }
             }
         }
@@ -884,74 +889,28 @@ private fun RoundedActionPillButton(
 }
 
 /**
- * Cabeçalho da folha "A seguir" ("Up Next"), responsável por receber o gesto vertical (swipe up/down).
+ * Alça minimalista da gaveta da Fila (padrão Apple Music):
+ * Exibe apenas o `DragHandle` (pequeno traço horizontal cinza/arredondado no topo do componente)
+ * para indicar sutilmente o gesto de puxar a fila para cima.
  */
 @Composable
 private fun QueueDragHeader(
-    state: PlaybackState,
-    queueState: QueueExpansionState,
     modifier: Modifier = Modifier
 ) {
-    val nextTrack = state.queue.getOrNull(state.currentQueueIndex + 1)
-
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(68.dp)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .height(56.dp)
+            .padding(top = 12.dp),
+        contentAlignment = Alignment.TopCenter
     ) {
-        // Pílula indicadora de arraste (Drag Handle Pill)
         Box(
             modifier = Modifier
-                .width(40.dp)
-                .height(4.dp)
+                .width(42.dp)
+                .height(4.5.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color(0xFF666666))
+                .background(Color(0xFF8A8A8A))
         )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(id = R.string.up_next).uppercase(Locale.getDefault()),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                val subtitleText = when {
-                    queueState == QueueExpansionState.COLLAPSED && nextTrack != null ->
-                        "Próxima: ${nextTrack.title} • ${nextTrack.artist}"
-                    else ->
-                        "${state.queue.size} faixas na fila • ${stringResource(id = R.string.queue_drag_hint)}"
-                }
-                Text(
-                    text = subtitleText,
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Icon(
-                imageVector = if (queueState == QueueExpansionState.EXPANDED) {
-                    Icons.Default.KeyboardArrowDown
-                } else {
-                    Icons.Default.KeyboardArrowUp
-                },
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp)
-            )
-        }
     }
 }
 

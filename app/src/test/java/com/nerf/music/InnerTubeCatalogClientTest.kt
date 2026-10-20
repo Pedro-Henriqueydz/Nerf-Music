@@ -1,7 +1,10 @@
 package com.nerf.music
 
 import com.nerf.music.data.model.SearchFilter
+import com.nerf.music.data.model.SearchResult
+import com.nerf.music.data.model.Track
 import com.nerf.music.data.network.InnerTubeCatalogClient
+import com.nerf.music.data.repository.MusicRepositoryImpl
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -320,5 +323,101 @@ class InnerTubeCatalogClientTest {
         } catch (e: Exception) {
             println("Aviso: Teste de rede ignorado por indisponibilidade de conexão: ${e.message}")
         }
+    }
+
+    @Test
+    fun testCardShelfNestedSongsAndDurationNormalization() {
+        val fixture = wrapInInnerTubeEnvelope("""
+        {
+          "musicCardShelfRenderer": {
+            "title": { "runs": [{ "text": "Altare" }] },
+            "subtitle": { "runs": [{ "text": "Artista" }, { "text": " • " }, { "text": "24,1 mi ouvintes mensais" }] },
+            "contents": [
+              {
+                "musicResponsiveListItemRenderer": {
+                  "flexColumns": [
+                    { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Stay" }] } } },
+                    { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Música" }, { "text": " • " }, { "text": "3:47" }] } } }
+                  ],
+                  "overlay": {
+                    "musicItemThumbnailOverlayRenderer": {
+                      "content": {
+                        "musicPlayButtonRenderer": {
+                          "playNavigationEndpoint": {
+                            "watchEndpoint": { "videoId": "3U4wZkM-LQo" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "musicShelfRenderer": {
+            "contents": [
+              {
+                "musicResponsiveListItemRenderer": {
+                  "flexColumns": [
+                    { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "want your love (slowed)" }] } } },
+                    {
+                      "musicResponsiveListItemFlexColumnRenderer": {
+                        "text": {
+                          "runs": [
+                            { "text": "Altare" },
+                            { "text": " e " },
+                            { "text": "almogfx" },
+                            { "text": " • " },
+                            { "text": "want your love" },
+                            { "text": " • " },
+                            { "text": "2:52" }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "playlistItemData": { "videoId": "98bMdPmEA-w" }
+                }
+              }
+            ]
+          }
+        }
+        """)
+
+        val result = client.parseSearchResponse(fixture)
+        assertNotNull(result.topArtist)
+        assertEquals("Altare", result.topArtist?.name)
+        assertEquals(2, result.songs.size)
+
+        val topSong = result.songs[0]
+        assertEquals("Stay", topSong.title)
+        assertEquals("Altare", topSong.artist)
+        assertEquals("03:47", topSong.durationText)
+
+        val secondSong = result.songs[1]
+        assertEquals("want your love (slowed)", secondSong.title)
+        assertEquals("Altare e almogfx", secondSong.artist)
+        assertEquals("02:52", secondSong.durationText)
+    }
+
+    @Test
+    fun testExactMatchRelevanceBoostPrioritizesAltareOverAltares() {
+        val repo = MusicRepositoryImpl(client)
+        val raw = SearchResult(
+            songs = listOf(
+                Track(id = "1", title = "Tu amor me basta", artist = "Altares", durationText = "07:32"),
+                Track(id = "2", title = "Altar", artist = "Ashes of Eden", durationText = "03:32"),
+                Track(id = "3", title = "Stay", artist = "Altare", durationText = "03:47"),
+                Track(id = "4", title = "Time", artist = "Dravyn e Altare", durationText = "03:21")
+            )
+        )
+
+        val prioritized = repo.prioritizeSearchResults(raw, "Altare")
+        assertEquals("Stay (Altare exato) deve ser o primeiro", "Stay", prioritized.songs[0].title)
+        assertEquals("Time (colaboração exata Altare) deve ser o segundo", "Time", prioritized.songs[1].title)
+        assertEquals("Tu amor me basta (Altares parcial) deve vir depois", "Tu amor me basta", prioritized.songs[2].title)
+        assertEquals("Altar (fuzzy) deve vir por último", "Altar", prioritized.songs[3].title)
     }
 }
