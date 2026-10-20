@@ -15,16 +15,20 @@
     <string name="previous_track">Faixa anterior</string>
     <string name="collapse_player">Minimizar reprodutor</string>
     <string name="buffering_audio">Carregando fluxo de áudio…</string>
-    <string name="demo_audio_title">Áudio de Teste Autorizado (Sinfonia CC-BY)</string>
-    <string name="demo_audio_artist">Domínio Público / Creative Commons</string>
-    <string name="catalog_indicator">Catálogo InnerTube</string>
-    <string name="test_audio_button">Ouvir Áudio de Teste (Media3)</string>
-    <string name="playback_disclaimer">Metadados e busca obtidos do catálogo. Áudio demonstrativo via Media3 ExoPlayer com suporte a segundo plano.</string>
+    <string name="action_favorite">Favoritar</string>
+    <string name="action_favorited">Favoritado</string>
+    <string name="action_save">Salvar</string>
+    <string name="action_saved">Salvo</string>
+    <string name="action_download">Download</string>
+    <string name="action_downloaded">Baixado</string>
+    <string name="up_next">A seguir</string>
+    <string name="queue_title">Fila de reprodução</string>
+    <string name="queue_history_badge">Já tocada</string>
+    <string name="queue_drag_hint">Segure e arraste na alça para reordenar • Deslize para remover</string>
     <string name="filter_all">Geral</string>
     <string name="filter_songs">Músicas</string>
     <string name="section_artists">Artistas</string>
     <string name="section_songs">Músicas</string>
-    <string name="track_selected_notice">Faixa selecionada do catálogo. Streaming direto requer fonte compatível.</string>
     <string name="selected_track_label">Faixa Selecionada</string>
     <string name="clear_search">Limpar busca</string>
 </resources>
