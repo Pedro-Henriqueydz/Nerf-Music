@@ -31,21 +31,33 @@ class NewPipeStreamResolverTest {
     @Test
     fun testRealMusicStreamResolutionViaNewPipe() {
         runBlocking {
-            try {
-                // Testa com música oficial para validar a execução do motor Rhino e decifração de assinatura
-                val result = resolver.resolveStreamUrl("dQw4w9WgXcQ")
-                if (result.isSuccess) {
-                    val url = result.getOrNull()
-                    assertNotNull("URL de áudio resolvida não pode ser nula", url)
-                    assertTrue("URL deve apontar para os servidores do googlevideo", url!!.contains("googlevideo.com"))
-                    println("Áudio decifrado com sucesso via NewPipeExtractor: ${url.substring(0, 70)}...")
-                } else {
+            val testIds = listOf("n2tT6Y_rNkE", "agneRtEe-t8", "DYwQMAPf0-g", "V8ktXCb5ns4")
+            val httpClient = okhttp3.OkHttpClient()
+
+            for (videoId in testIds) {
+                println("Testando resolução para videoId=$videoId...")
+                val result = resolver.resolveStreamUrl(videoId)
+                if (result.isFailure) {
                     val ex = result.exceptionOrNull()
-                    println("Aviso no teste online: ${ex?.message}")
                     ex?.cause?.printStackTrace() ?: ex?.printStackTrace()
+                    fail("Falha ao resolver $videoId: ${ex?.cause?.message ?: ex?.message}")
                 }
-            } catch (e: Exception) {
-                println("Aviso: Teste de rede ignorado por indisponibilidade de conexão: ${e.message}")
+                val url = result.getOrThrow()
+                assertTrue("URL deve apontar para googlevideo.com", url.contains("googlevideo.com"))
+                println("URL resolvida ($videoId): ${url.take(100)}...")
+
+                // Verifica se o googlevideo.com realmente aceita a conexão (HTTP 200 ou 206) e entrega bytes de áudio
+                val req = okhttp3.Request.Builder()
+                    .url(url)
+                    .header("Range", "bytes=0-65535")
+                    .build()
+                httpClient.newCall(req).execute().use { resp ->
+                    println("Status HTTP googlevideo para $videoId: ${resp.code} (Content-Type: ${resp.header("Content-Type")}, bytes: ${resp.body?.bytes()?.size})")
+                    assertTrue(
+                        "googlevideo retornou HTTP ${resp.code} para $videoId",
+                        resp.code == 200 || resp.code == 206
+                    )
+                }
             }
         }
     }

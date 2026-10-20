@@ -3,10 +3,12 @@ package com.nerf.music.ui.viewmodel
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -113,6 +115,17 @@ class MusicViewModel(
                     isBuffering = isBuffering,
                     durationMs = player.duration.coerceAtLeast(0L)
                 )
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e("MusicViewModel", "Erro no ExoPlayer: ${error.errorCodeName} - ${error.message}", error)
+                val errorMsg = "Falha na reprodução do fluxo de áudio (${error.errorCodeName})."
+                _playbackState.value = _playbackState.value.copy(
+                    isBuffering = false,
+                    isPlaying = false,
+                    errorMessage = errorMsg
+                )
+                _userMessage.value = errorMsg
             }
         })
     }
