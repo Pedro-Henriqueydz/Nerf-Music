@@ -480,15 +480,7 @@ fun SongListItem(
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(2.dp))
-                val subtitle = buildString {
-                    append(track.artist)
-                    if (!track.album.isNullOrBlank()) {
-                        append(" • ")
-                        append(track.album)
-                    }
-                    append(" • ")
-                    append(track.durationText)
-                }
+                val subtitle = "${track.artist} • ${track.durationText}"
                 Text(
                     text = subtitle,
                     fontSize = 12.sp,
