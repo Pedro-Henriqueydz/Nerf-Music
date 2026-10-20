@@ -24,6 +24,8 @@ import com.nerf.music.data.model.Track
 import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
 import com.nerf.music.player.AudioPlayerService
+import com.nerf.music.updater.AppUpdateInfo
+import com.nerf.music.updater.AppUpdateManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +35,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class MusicViewModel(
-    private val repository: MusicRepository = MusicRepositoryImpl()
+    private val repository: MusicRepository = MusicRepositoryImpl(),
+    private val appUpdateManager: AppUpdateManager = AppUpdateManager()
 ) : ViewModel() {
 
     companion object {
@@ -72,6 +75,9 @@ class MusicViewModel(
     private val _isFullPlayerVisible = MutableStateFlow(false)
     val isFullPlayerVisible: StateFlow<Boolean> = _isFullPlayerVisible.asStateFlow()
 
+    private val _availableUpdate = MutableStateFlow<AppUpdateInfo?>(null)
+    val availableUpdate: StateFlow<AppUpdateInfo?> = _availableUpdate.asStateFlow()
+
     // Cache de metadados das faixas conhecidas para reconstrução rápida a partir do Timeline
     private val trackMetadataMap = mutableMapOf<String, Track>()
 
@@ -80,8 +86,14 @@ class MusicViewModel(
     private var progressUpdateJob: Job? = null
     private var radioFetchJob: Job? = null
     private var seedVideoId: String? = null
+    private var hasCheckedForUpdates = false
 
     fun initializePlayerController(context: Context) {
+        if (!hasCheckedForUpdates) {
+            hasCheckedForUpdates = true
+            checkForAppUpdates()
+        }
+
         if (mediaController != null) return
 
         val sessionToken = SessionToken(
@@ -95,6 +107,29 @@ class MusicViewModel(
             setupPlayerListener(controller)
             syncTimelineState(controller)
         }, MoreExecutors.directExecutor())
+    }
+
+    fun checkForAppUpdates() {
+        viewModelScope.launch {
+            val update = appUpdateManager.checkForUpdate()
+            if (update != null) {
+                _availableUpdate.value = update
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _availableUpdate.value = null
+    }
+
+    fun confirmAndDownloadUpdate(context: Context) {
+        val updateInfo = _availableUpdate.value ?: return
+        _availableUpdate.value = null
+        appUpdateManager.downloadAndInstallApk(
+            context = context,
+            updateInfo = updateInfo,
+            onStatusMessage = { msg -> _userMessage.value = msg }
+        )
     }
 
     private fun resolveEffectiveDuration(player: Player): Long {
@@ -408,7 +443,6 @@ class MusicViewModel(
                 )
             }.onFailure { error ->
                 Log.w("MusicViewModel", "Falha ao carregar rádio dinâmica para ${track.id}: ${error.message}")
-                // Fallback: se o endpoint /next falhar, popula com os resultados da busca atual se disponíveis
                 val fallbackSongs = _searchResult.value.songs
                 val seenIds = mutableSetOf(track.id)
                 val extraTracks = fallbackSongs.filter { seenIds.add(it.id) }

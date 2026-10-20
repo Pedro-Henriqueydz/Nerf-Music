@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.nerf.music.BuildConfig
 import com.nerf.music.R
 import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.SearchFilter
@@ -61,6 +63,7 @@ fun SearchScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val isFullPlayerVisible by viewModel.isFullPlayerVisible.collectAsState()
+    val availableUpdate by viewModel.availableUpdate.collectAsState()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
 
@@ -70,6 +73,62 @@ fun SearchScreen(
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             viewModel.clearUserMessage()
         }
+    }
+
+    // Modal de Autoreparo (In-App Updater): exibido caso haja uma tag mais nova no GitHub Releases
+    availableUpdate?.let { update ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdateDialog() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Nova versão disponível",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Uma nova versão do NERF Music (${update.tagName}) está pronta para instalação. Sua versão atual é v${BuildConfig.VERSION_NAME}.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!update.releaseNotes.isNullOrBlank()) {
+                        Text(
+                            text = update.releaseNotes,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmAndDownloadUpdate(context) },
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text("Atualizar agora")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissUpdateDialog() }
+                ) {
+                    Text("Mais tarde")
+                }
+            },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = Color(0xFF1E1E1E)
+        )
     }
 
     Box(modifier = modifier.fillMaxSize()) {
