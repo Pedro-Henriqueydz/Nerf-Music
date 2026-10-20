@@ -420,4 +420,120 @@ class InnerTubeCatalogClientTest {
         assertEquals("Tu amor me basta (Altares parcial) deve vir depois", "Tu amor me basta", prioritized.songs[2].title)
         assertEquals("Altar (fuzzy) deve vir por último", "Altar", prioritized.songs[3].title)
     }
+
+    @Test
+    fun testNextPayloadAndDynamicRadioParsing() {
+        val payload = client.buildNextPayload("3U4wZkM-LQo", params = null).toString()
+        assertTrue("Payload /next deve conter playlistId RDAMVM+videoId", payload.contains("RDAMVM3U4wZkM-LQo"))
+
+        val nextResponseFixture = """
+        {
+          "contents": {
+            "singleColumnMusicWatchNextResultsRenderer": {
+              "tabbedRenderer": {
+                "watchNextTabbedResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "title": "A seguir",
+                        "content": {
+                          "musicQueueRenderer": {
+                            "header": {
+                              "musicQueueHeaderRenderer": {
+                                "title": { "runs": [{ "text": "Tocando de" }] },
+                                "subtitle": { "runs": [{ "text": "Mix de Stay" }] }
+                              }
+                            },
+                            "subHeaderChipCloud": {
+                              "chipCloudRenderer": {
+                                "chips": [
+                                  {
+                                    "chipCloudChipRenderer": {
+                                      "text": { "runs": [{ "text": "Tudo" }] },
+                                      "isSelected": true,
+                                      "navigationEndpoint": {
+                                        "queueUpdateCommand": {
+                                          "fetchContentsCommand": {
+                                            "watchEndpoint": {
+                                              "playlistId": "RDAMVM3U4wZkM-LQo",
+                                              "params": "wAEB"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "chipCloudChipRenderer": {
+                                      "text": { "runs": [{ "text": "Descobrir" }] },
+                                      "isSelected": false,
+                                      "navigationEndpoint": {
+                                        "queueUpdateCommand": {
+                                          "fetchContentsCommand": {
+                                            "watchEndpoint": {
+                                              "playlistId": "RDATg1x3U4wZkM-LQo",
+                                              "params": "ggU0DescobrirParams"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            },
+                            "content": {
+                              "playlistPanelRenderer": {
+                                "contents": [
+                                  {
+                                    "playlistPanelVideoRenderer": {
+                                      "videoId": "3U4wZkM-LQo",
+                                      "title": { "runs": [{ "text": "Stay" }] },
+                                      "longBylineText": { "runs": [{ "text": "Altare" }, { "text": " • " }, { "text": "Stay - Single" }] },
+                                      "lengthText": { "runs": [{ "text": "3:47" }] },
+                                      "thumbnail": {
+                                        "thumbnails": [{ "url": "https://lh3.googleusercontent.com/stay.jpg" }]
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "playlistPanelVideoRenderer": {
+                                      "videoId": "98bMdPmEA-w",
+                                      "title": { "runs": [{ "text": "want your love (slowed)" }] },
+                                      "longBylineText": { "runs": [{ "text": "Altare" }, { "text": " e " }, { "text": "almogfx" }, { "text": " • " }, { "text": "want your love" }] },
+                                      "lengthText": { "runs": [{ "text": "2:52" }] }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+        """.trimIndent()
+
+        val upNext = client.parseNextResponse(nextResponseFixture)
+        assertEquals("Mix de Stay", upNext.queueSourceTitle)
+        assertEquals(2, upNext.chips.size)
+        assertEquals("Tudo", upNext.chips[0].title)
+        assertTrue(upNext.chips[0].isSelected)
+        assertEquals("Descobrir", upNext.chips[1].title)
+        assertEquals("ggU0DescobrirParams", upNext.chips[1].params)
+        assertEquals("RDATg1x3U4wZkM-LQo", upNext.chips[1].playlistId)
+
+        assertEquals(2, upNext.tracks.size)
+        assertEquals("Stay", upNext.tracks[0].title)
+        assertEquals("Altare", upNext.tracks[0].artist)
+        assertEquals("03:47", upNext.tracks[0].durationText)
+        assertEquals("want your love (slowed)", upNext.tracks[1].title)
+        assertEquals("Altare e almogfx", upNext.tracks[1].artist)
+        assertEquals("02:52", upNext.tracks[1].durationText)
+    }
 }

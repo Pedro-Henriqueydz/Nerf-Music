@@ -1,6 +1,7 @@
 package com.nerf.music.ui.screens
 
 import android.graphics.drawable.BitmapDrawable
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -19,14 +20,18 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -35,10 +40,12 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
@@ -67,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.ColorUtils
+import androidx.media3.common.Player
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
 import coil.compose.AsyncImage
@@ -74,6 +82,7 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.nerf.music.R
 import com.nerf.music.data.model.PlaybackState
+import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -84,7 +93,7 @@ import kotlin.math.roundToInt
 
 /**
  * Estados de expansão da Fila de Reprodução ("Up Next" / "A seguir"):
- * - [COLLAPSED]: Estado 0 (Oculto) — Apenas o Full Player visível com a barra "A seguir" no rodapé.
+ * - [COLLAPSED]: Estado 0 (Oculto) — Apenas o Full Player visível com a alça da gaveta no rodapé.
  * - [HALF_EXPANDED]: Estado 1 (Meio Expandido) — Tela dividida ao meio; capa reduzida no topo e fila na metade inferior.
  * - [EXPANDED]: Estado 2 (Totalmente Expandido) — A fila ocupa a tela inteira.
  */
@@ -259,10 +268,12 @@ fun MiniPlayerBar(
  * Funcionalidades:
  * - Fundo dinâmico extraído da capa da música via Palette API (`darkMutedSwatch` / `dominantSwatch`)
  *   animado suavemente com `animateColorAsState`.
+ * - Título com Chevron (`>`) à direita e Nome do Artista clicável com feedback via Toast.
  * - Fileira de botões arredondados de ação: Favoritar, Salvar e Download.
- * - Fila de reprodução ("A seguir") acionada por gestos (swipe up/down) com 3 estados:
- *   Estado 0 (Oculto), Estado 1 (Meio Expandido com capa reduzida) e Estado 2 (Totalmente Expandido).
- * - Suporte a Drag-and-Drop (reordenação) e Swipe-to-Dismiss (remoção) sincronizados com o ExoPlayer.
+ * - Barra de progresso (Slider) fina e elegante no estilo Material 3 / YouTube Music.
+ * - Controles de mídia na ordem: Aleatório (Shuffle), Anterior, Play/Pause (maior), Próxima, Repetição (Repeat).
+ * - Gaveta da Fila ("Up Next") acionada por gestos (swipe up/down) com 3 estados,
+ *   cabeçalho minimalista (`DragHandle` + `"Tocando de: ..."`) e Chips de filtro dinâmicos.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -272,10 +283,13 @@ fun FullPlayerSheet(
     onTogglePlay: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onToggleRepeat: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onToggleFavorite: (String) -> Unit,
     onToggleSave: (String) -> Unit,
     onToggleDownload: (String) -> Unit,
+    onSelectQueueChip: (QueueFilterChip) -> Unit,
     onPlayQueueItem: (Int) -> Unit,
     onMoveQueueItem: (Int, Int) -> Unit,
     onRemoveQueueItem: (Int) -> Unit
@@ -341,6 +355,7 @@ fun FullPlayerSheet(
     // 3. Estado do Slider de Progresso
     var isDraggingSlider by remember { mutableStateOf(false) }
     var dragPositionFraction by remember { mutableFloatStateOf(0f) }
+    val sliderInteractionSource = remember { MutableInteractionSource() }
 
     val effectiveDurationMs = state.durationMs.coerceAtLeast(0L)
     val currentFraction = if (effectiveDurationMs > 0L) {
@@ -567,29 +582,54 @@ fun FullPlayerSheet(
 
                 Spacer(modifier = Modifier.height((18f * (1f - halfExpansionFraction * 0.65f)).dp))
 
-                // Título da Música e Artista
+                // Título da Música com Chevron (`>`) à direita e Nome do Artista clicável
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = if (halfExpansionFraction > 0.5f) Alignment.CenterHorizontally else Alignment.Start
                 ) {
-                    Text(
-                        text = track.title,
-                        fontSize = (22f - (4f * halfExpansionFraction)).sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .basicMarquee()
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = if (halfExpansionFraction > 0.5f) Arrangement.Center else Arrangement.Start
+                    ) {
+                        Text(
+                            text = track.title,
+                            fontSize = (22f - (4f * halfExpansionFraction)).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .basicMarquee()
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(4.dp))
+
                     Text(
                         text = track.artist,
                         fontSize = (15f - (2f * halfExpansionFraction)).sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                Toast.makeText(
+                                    context,
+                                    "Abrir perfil do artista: ${track.artist}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                            .padding(vertical = 2.dp, horizontal = 2.dp)
                     )
                 }
 
@@ -608,7 +648,7 @@ fun FullPlayerSheet(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Barra de Progresso Interativa (Slider) + Tempos MM:SS
+                    // Barra de Progresso Interativa Fina e Elegante (Slider) + Tempos MM:SS
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -628,13 +668,39 @@ fun FullPlayerSheet(
                                 isDraggingSlider = false
                             },
                             enabled = effectiveDurationMs > 0L,
-                            colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color(0xFF3D3D3D)
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                            interactionSource = sliderInteractionSource,
+                            thumb = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(if (isDraggingSlider) 14.dp else 10.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary)
+                                )
+                            },
+                            track = { sliderState ->
+                                val fraction = sliderState.value.coerceIn(0f, 1f)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(Color(0xFF424242))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(fraction)
+                                            .fillMaxHeight()
+                                            .clip(RoundedCornerShape(50))
+                                            .background(MaterialTheme.colorScheme.primary)
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(24.dp)
                         )
+
+                        Spacer(modifier = Modifier.height(2.dp))
 
                         Row(
                             modifier = Modifier
@@ -668,15 +734,34 @@ fun FullPlayerSheet(
 
                 Spacer(modifier = Modifier.height((14f * (1f - halfExpansionFraction * 0.5f)).dp))
 
-                // Controles Principais: Anterior, Play/Pause e Próxima
-                val mainPlayButtonSize = (72f - (16f * halfExpansionFraction)).dp
-                val sideButtonSize = (52f - (10f * halfExpansionFraction)).dp
+                // Controles de Mídia: Aleatório, Anterior, Play/Pause (maior), Próxima, Repetição
+                val mainPlayButtonSize = (70f - (16f * halfExpansionFraction)).dp
+                val sideButtonSize = (50f - (10f * halfExpansionFraction)).dp
+                val modeButtonSize = (42f - (6f * halfExpansionFraction)).dp
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 1. Aleatório (Shuffle) — extrema esquerda
+                    IconButton(
+                        onClick = onToggleShuffle,
+                        modifier = Modifier.size(modeButtonSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Aleatório",
+                            tint = if (state.shuffleModeEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // 2. Anterior (SkipPrevious)
                     FilledTonalIconButton(
                         onClick = onSkipPrevious,
                         modifier = Modifier.size(sideButtonSize),
@@ -689,10 +774,11 @@ fun FullPlayerSheet(
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
                             contentDescription = stringResource(id = R.string.previous_track),
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(26.dp)
                         )
                     }
 
+                    // 3. Play/Pause (maior)
                     Surface(
                         onClick = onTogglePlay,
                         modifier = Modifier.size(mainPlayButtonSize),
@@ -716,12 +802,13 @@ fun FullPlayerSheet(
                                         stringResource(id = R.string.play)
                                     },
                                     tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(34.dp)
                                 )
                             }
                         }
                     }
 
+                    // 4. Próxima (SkipNext)
                     FilledTonalIconButton(
                         onClick = onSkipNext,
                         modifier = Modifier.size(sideButtonSize),
@@ -734,7 +821,30 @@ fun FullPlayerSheet(
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = stringResource(id = R.string.next_track),
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    // 5. Repetição (Loop/Repeat) — extrema direita
+                    val isRepeatActive = state.repeatMode != Player.REPEAT_MODE_OFF
+                    val repeatIcon = if (state.repeatMode == Player.REPEAT_MODE_ONE) {
+                        Icons.Default.RepeatOne
+                    } else {
+                        Icons.Default.Repeat
+                    }
+                    IconButton(
+                        onClick = onToggleRepeat,
+                        modifier = Modifier.size(modeButtonSize)
+                    ) {
+                        Icon(
+                            imageVector = repeatIcon,
+                            contentDescription = "Repetição",
+                            tint = if (isRepeatActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
@@ -744,6 +854,8 @@ fun FullPlayerSheet(
             // CAMADA 2: FILA DE REPRODUÇÃO ("A SEGUIR" / UP NEXT) COM 3 ESTADOS POR GESTO
             // =========================================================================
             val isSheetExpandedOrDragging = halfExpansionFraction > 0.03f || queueState != QueueExpansionState.COLLAPSED
+            val queueSourceText = state.queueSourceTitle?.takeIf { it.isNotBlank() } ?: track.title
+
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
@@ -761,8 +873,9 @@ fun FullPlayerSheet(
                 shadowElevation = if (isSheetExpandedOrDragging) 16.dp else 0.dp
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Alça minimalista (DragHandle) estilo Apple Music para puxar a fila para cima
+                    // 1. DragHandle e texto "Tocando de: [Nome da Música Inicial ou Mix]"
                     QueueDragHeader(
+                        queueSourceTitle = queueSourceText,
                         modifier = Modifier.draggable(
                             orientation = Orientation.Vertical,
                             state = queueSheetDraggableState,
@@ -773,7 +886,26 @@ fun FullPlayerSheet(
                     if (isSheetExpandedOrDragging) {
                         HorizontalDivider(color = Color(0xFF2A2A2A), thickness = 1.dp)
 
-                        // Lista da Fila com Histórico, Música Atual, Drag-and-Drop e Swipe-to-Dismiss
+                        // 2. LazyRow com os Chips arredondados (Familiar, Descobrir, Popular, Em alta, Tudo)
+                        if (state.queueFilterChips.isNotEmpty()) {
+                            QueueFilterChipsRow(
+                                chips = state.queueFilterChips,
+                                selectedChipParams = state.selectedQueueChipParams,
+                                onSelectChip = onSelectQueueChip
+                            )
+                        }
+
+                        if (state.isLoadingQueueRadio) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = Color.Transparent
+                            )
+                        }
+
+                        // 3. LazyColumn com as músicas da fila (suporta Drag & Drop e Swipe to Dismiss)
                         QueueTrackList(
                             queue = state.queue,
                             currentQueueIndex = state.currentQueueIndex,
@@ -889,20 +1021,22 @@ private fun RoundedActionPillButton(
 }
 
 /**
- * Alça minimalista da gaveta da Fila (padrão Apple Music):
- * Exibe apenas o `DragHandle` (pequeno traço horizontal cinza/arredondado no topo do componente)
- * para indicar sutilmente o gesto de puxar a fila para cima.
+ * Cabeçalho minimalista da Gaveta da Fila (Queue Drawer):
+ * Exibe o `DragHandle` (traço horizontal no topo) e, logo abaixo,
+ * um texto pequeno e discreto indicando a origem da fila: "Tocando de: [Nome da Música Inicial ou Mix]".
  */
 @Composable
 private fun QueueDragHeader(
+    queueSourceTitle: String,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .padding(top = 12.dp),
-        contentAlignment = Alignment.TopCenter
+            .height(60.dp)
+            .padding(top = 10.dp, bottom = 6.dp, start = 24.dp, end = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
     ) {
         Box(
             modifier = Modifier
@@ -911,6 +1045,75 @@ private fun QueueDragHeader(
                 .clip(RoundedCornerShape(50))
                 .background(Color(0xFF8A8A8A))
         )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Tocando de: $queueSourceTitle",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.80f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
+ * Fileira horizontal de Chips arredondados para filtrar a Rádio Dinâmica na Gaveta da Fila
+ * (ex: "Tudo", "Familiar", "Descobrir", "Popular", "Em alta").
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QueueFilterChipsRow(
+    chips: List<QueueFilterChip>,
+    selectedChipParams: String?,
+    onSelectChip: (QueueFilterChip) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        items(
+            items = chips,
+            key = { chip -> "${chip.title}_${chip.params}" }
+        ) { chip ->
+            val isSelected = if (selectedChipParams != null) {
+                chip.params == selectedChipParams
+            } else {
+                chip.isSelected
+            }
+
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSelectChip(chip) },
+                label = {
+                    Text(
+                        text = chip.title,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                },
+                shape = RoundedCornerShape(50),
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Color(0xFF252525),
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+                    selectedLabelColor = MaterialTheme.colorScheme.primary
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = isSelected,
+                    borderColor = Color(0xFF383838),
+                    selectedBorderColor = MaterialTheme.colorScheme.primary,
+                    borderWidth = 1.dp,
+                    selectedBorderWidth = 1.dp
+                )
+            )
+        }
     }
 }
 

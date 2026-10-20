@@ -17,6 +17,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.nerf.music.data.model.PlaybackState
+import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
@@ -77,6 +78,8 @@ class MusicViewModel(
     private var mediaController: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var progressUpdateJob: Job? = null
+    private var radioFetchJob: Job? = null
+    private var seedVideoId: String? = null
 
     fun initializePlayerController(context: Context) {
         if (mediaController != null) return
@@ -155,7 +158,9 @@ class MusicViewModel(
                 isPlaying = false,
                 isBuffering = false,
                 hasNext = false,
-                hasPrevious = false
+                hasPrevious = false,
+                shuffleModeEnabled = player.shuffleModeEnabled,
+                repeatMode = player.repeatMode
             )
             _isFullPlayerVisible.value = false
             return
@@ -175,7 +180,10 @@ class MusicViewModel(
             durationMs = resolveEffectiveDuration(player),
             currentPositionMs = player.currentPosition.coerceAtLeast(0L),
             hasNext = queueTracks.size > 1,
-            hasPrevious = queueTracks.size > 1
+            hasPrevious = queueTracks.size > 1,
+            shuffleModeEnabled = player.shuffleModeEnabled,
+            repeatMode = player.repeatMode,
+            queueSourceTitle = _playbackState.value.queueSourceTitle ?: activeTrack?.title
         )
     }
 
@@ -190,6 +198,18 @@ class MusicViewModel(
                     _loadingTrackId.value = mediaItem.mediaId
                 }
                 syncTimelineState(player)
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                _playbackState.value = _playbackState.value.copy(
+                    shuffleModeEnabled = shuffleModeEnabled
+                )
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                _playbackState.value = _playbackState.value.copy(
+                    repeatMode = repeatMode
+                )
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -311,6 +331,11 @@ class MusicViewModel(
         playTrack(track)
     }
 
+    /**
+     * Inicia a reprodução imediata da música selecionada na SearchScreen e, em background,
+     * consulta `/youtubei/v1/next` (`getUpNextRadio`) para popular automaticamente a fila
+     * dinâmica no `MediaController` via `addMediaItems`, além de carregar os chips de filtro.
+     */
     fun playTrack(track: Track) {
         _selectedTrack.value = track
         val controller = mediaController ?: return
@@ -332,38 +357,134 @@ class MusicViewModel(
             return
         }
 
-        val currentSongs = _searchResult.value.songs
-        val indexInSearch = currentSongs.indexOfFirst { it.id == track.id }
-        val newQueue = if (indexInSearch >= 0) {
-            currentSongs
-        } else {
-            val existingQueue = _playbackState.value.queue
-            if (existingQueue.any { it.id == track.id }) {
-                existingQueue
-            } else {
-                listOf(track)
-            }
-        }
-        val startIndex = newQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        radioFetchJob?.cancel()
+        seedVideoId = track.id
 
+        val initialQueue = listOf(track)
         _loadingTrackId.value = track.id
         _playbackState.value = _playbackState.value.copy(
             currentTrack = track,
-            queue = newQueue,
-            currentQueueIndex = startIndex,
+            queue = initialQueue,
+            currentQueueIndex = 0,
             isPlaying = false,
             currentPositionMs = 0L,
             durationMs = (track.durationSeconds * 1000L).coerceAtLeast(0L),
             isBuffering = true,
-            hasNext = newQueue.size > 1,
-            hasPrevious = newQueue.size > 1,
+            hasNext = false,
+            hasPrevious = false,
+            queueSourceTitle = track.title,
+            queueFilterChips = emptyList(),
+            selectedQueueChipParams = null,
+            isLoadingQueueRadio = true,
             errorMessage = null
         )
 
-        val mediaItems = newQueue.map { trackToMediaItem(it) }
-        controller.setMediaItems(mediaItems, startIndex, 0L)
+        // Inicia reprodução imediata da faixa clicada
+        controller.setMediaItem(trackToMediaItem(track))
         controller.prepare()
         controller.play()
+
+        // Busca a Rádio Dinâmica ("A seguir") e os Chips em background
+        radioFetchJob = viewModelScope.launch {
+            val radioResult = repository.getUpNextRadio(videoId = track.id, params = null)
+            radioResult.onSuccess { upNext ->
+                upNext.tracks.forEach { trackMetadataMap[it.id] = it }
+
+                val seenIds = mutableSetOf(track.id)
+                val radioTracks = upNext.tracks.filter { seenIds.add(it.id) }
+
+                val activeController = mediaController
+                if (activeController != null && radioTracks.isNotEmpty()) {
+                    val radioMediaItems = radioTracks.map { trackToMediaItem(it) }
+                    activeController.addMediaItems(radioMediaItems)
+                }
+
+                val selectedParams = upNext.chips.firstOrNull { it.isSelected }?.params
+                _playbackState.value = _playbackState.value.copy(
+                    queueSourceTitle = track.title,
+                    queueFilterChips = upNext.chips,
+                    selectedQueueChipParams = selectedParams,
+                    isLoadingQueueRadio = false
+                )
+            }.onFailure { error ->
+                Log.w("MusicViewModel", "Falha ao carregar rádio dinâmica para ${track.id}: ${error.message}")
+                // Fallback: se o endpoint /next falhar, popula com os resultados da busca atual se disponíveis
+                val fallbackSongs = _searchResult.value.songs
+                val seenIds = mutableSetOf(track.id)
+                val extraTracks = fallbackSongs.filter { seenIds.add(it.id) }
+                val activeController = mediaController
+                if (activeController != null && extraTracks.isNotEmpty()) {
+                    activeController.addMediaItems(extraTracks.map { trackToMediaItem(it) })
+                }
+                _playbackState.value = _playbackState.value.copy(
+                    isLoadingQueueRadio = false
+                )
+            }
+        }
+    }
+
+    /**
+     * Atualiza a fila dinâmica quando o usuário seleciona um Chip de filtro
+     * (ex: "Tudo", "Familiar", "Descobrir", "Popular", "Em alta") na Gaveta da Fila.
+     */
+    fun selectQueueFilterChip(chip: QueueFilterChip) {
+        val currentTrack = _playbackState.value.currentTrack ?: return
+        val baseVideoId = seedVideoId ?: currentTrack.id
+
+        val updatedChipsOptimistic = _playbackState.value.queueFilterChips.map {
+            it.copy(isSelected = it.params == chip.params)
+        }
+        _playbackState.value = _playbackState.value.copy(
+            queueFilterChips = updatedChipsOptimistic,
+            selectedQueueChipParams = chip.params,
+            isLoadingQueueRadio = true
+        )
+
+        radioFetchJob?.cancel()
+        radioFetchJob = viewModelScope.launch {
+            val result = repository.getUpNextRadio(videoId = baseVideoId, params = chip.params)
+            result.onSuccess { upNext ->
+                upNext.tracks.forEach { trackMetadataMap[it.id] = it }
+
+                val controller = mediaController
+                if (controller != null && controller.mediaItemCount > 0) {
+                    val currentIdx = controller.currentMediaItemIndex.coerceAtLeast(0)
+                    if (controller.mediaItemCount > currentIdx + 1) {
+                        controller.removeMediaItems(currentIdx + 1, controller.mediaItemCount)
+                    }
+
+                    val existingIds = (0..currentIdx).mapNotNull { idx ->
+                        if (idx < controller.mediaItemCount) controller.getMediaItemAt(idx).mediaId else null
+                    }.toMutableSet()
+
+                    val newUpcomingTracks = upNext.tracks.filter { existingIds.add(it.id) }
+                    if (newUpcomingTracks.isNotEmpty()) {
+                        controller.addMediaItems(newUpcomingTracks.map { trackToMediaItem(it) })
+                    }
+                    syncTimelineState(controller)
+                }
+
+                val finalChips = if (upNext.chips.isNotEmpty()) {
+                    upNext.chips.map { it.copy(isSelected = it.params == chip.params) }
+                } else {
+                    _playbackState.value.queueFilterChips.map {
+                        it.copy(isSelected = it.params == chip.params)
+                    }
+                }
+
+                _playbackState.value = _playbackState.value.copy(
+                    queueFilterChips = finalChips,
+                    selectedQueueChipParams = chip.params,
+                    isLoadingQueueRadio = false
+                )
+            }.onFailure { error ->
+                Log.w("MusicViewModel", "Falha ao filtrar fila com chip ${chip.title}: ${error.message}")
+                _playbackState.value = _playbackState.value.copy(
+                    isLoadingQueueRadio = false
+                )
+                _userMessage.value = "Não foi possível atualizar o filtro \"${chip.title}\""
+            }
+        }
     }
 
     fun playQueueItemAt(index: Int) {
@@ -427,6 +548,24 @@ class MusicViewModel(
         val removedTrack = currentQueue[index]
         controller.removeMediaItem(index)
         _userMessage.value = "Removida da fila: ${removedTrack.title}"
+    }
+
+    fun toggleShuffle() {
+        val controller = mediaController ?: return
+        val newShuffle = !controller.shuffleModeEnabled
+        controller.shuffleModeEnabled = newShuffle
+        _playbackState.value = _playbackState.value.copy(shuffleModeEnabled = newShuffle)
+    }
+
+    fun toggleRepeat() {
+        val controller = mediaController ?: return
+        val nextMode = when (controller.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+        controller.repeatMode = nextMode
+        _playbackState.value = _playbackState.value.copy(repeatMode = nextMode)
     }
 
     fun togglePlayPause() {
@@ -532,6 +671,7 @@ class MusicViewModel(
 
     override fun onCleared() {
         stopProgressTracker()
+        radioFetchJob?.cancel()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
     }

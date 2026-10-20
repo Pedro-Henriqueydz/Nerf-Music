@@ -76,231 +76,231 @@ fun SearchScreen(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(id = R.string.app_name),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Streaming Livre",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
-        bottomBar = {
-            if (playbackState.currentTrack != null) {
-                MiniPlayerBar(
-                    state = playbackState,
-                    onTogglePlay = { viewModel.togglePlayPause() },
-                    onSkipNext = { viewModel.skipNext() },
-                    onExpandPlayer = {
-                        focusManager.clearFocus()
-                        viewModel.openFullPlayer()
-                    }
-                )
-            }
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Campo de Busca
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onQueryChanged(it) },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(text = stringResource(id = R.string.search_hint)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = stringResource(id = R.string.search_button)
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onQueryChanged("") }) {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = stringResource(id = R.string.clear_search)
-                            )
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    focusManager.clearFocus()
-                    viewModel.performSearch()
-                }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Filtros de busca (Geral vs Músicas)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = selectedFilter == SearchFilter.ALL,
-                    onClick = {
-                        focusManager.clearFocus()
-                        viewModel.onFilterSelected(SearchFilter.ALL)
-                    },
-                    label = { Text(stringResource(id = R.string.filter_all)) }
-                )
-                FilterChip(
-                    selected = selectedFilter == SearchFilter.SONGS,
-                    onClick = {
-                        focusManager.clearFocus()
-                        viewModel.onFilterSelected(SearchFilter.SONGS)
-                    },
-                    label = { Text(stringResource(id = R.string.filter_songs)) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Estados da Tela: Carregamento, Erro ou Lista de Resultados
-            when {
-                isLoading -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.height(10.dp))
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = stringResource(id = R.string.search_loading),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 14.sp
+                                text = stringResource(id = R.string.app_name),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Streaming Livre",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            },
+            bottomBar = {
+                if (playbackState.currentTrack != null) {
+                    MiniPlayerBar(
+                        state = playbackState,
+                        onTogglePlay = { viewModel.togglePlayPause() },
+                        onSkipNext = { viewModel.skipNext() },
+                        onExpandPlayer = {
+                            focusManager.clearFocus()
+                            viewModel.openFullPlayer()
+                        }
+                    )
                 }
-                errorMessage != null && searchResult.isEmpty -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+            }
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp)
+            ) {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Campo de Busca
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.onQueryChanged(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(text = stringResource(id = R.string.search_hint)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = stringResource(id = R.string.search_button)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.onQueryChanged("") }) {
                                 Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = stringResource(id = R.string.clear_search)
                                 )
-                                Spacer(modifier = Modifier.width(12.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        focusManager.clearFocus()
+                        viewModel.performSearch()
+                    }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Filtros de busca (Geral vs Músicas)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedFilter == SearchFilter.ALL,
+                        onClick = {
+                            focusManager.clearFocus()
+                            viewModel.onFilterSelected(SearchFilter.ALL)
+                        },
+                        label = { Text(stringResource(id = R.string.filter_all)) }
+                    )
+                    FilterChip(
+                        selected = selectedFilter == SearchFilter.SONGS,
+                        onClick = {
+                            focusManager.clearFocus()
+                            viewModel.onFilterSelected(SearchFilter.SONGS)
+                        },
+                        label = { Text(stringResource(id = R.string.filter_songs)) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Estados da Tela: Carregamento, Erro ou Lista de Resultados
+                when {
+                    isLoading -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = errorMessage ?: "",
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    text = stringResource(id = R.string.search_loading),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 14.sp
                                 )
                             }
                         }
                     }
-                }
-                searchResult.isEmpty -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.search_empty_prompt),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp
-                        )
+                    errorMessage != null && searchResult.isEmpty -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = errorMessage ?: "",
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Seção de Artistas (Destaque Principal ou Lista)
-                        val allArtists = buildList {
-                            searchResult.topArtist?.let { add(it) }
-                            addAll(searchResult.artists.filter { it.name != searchResult.topArtist?.name })
+                    searchResult.isEmpty -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(id = R.string.search_empty_prompt),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp
+                            )
                         }
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Seção de Artistas (Destaque Principal ou Lista)
+                            val allArtists = buildList {
+                                searchResult.topArtist?.let { add(it) }
+                                addAll(searchResult.artists.filter { it.name != searchResult.topArtist?.name })
+                            }
 
-                        if (allArtists.isNotEmpty()) {
-                            item {
-                                SectionHeader(title = stringResource(id = R.string.section_artists))
+                            if (allArtists.isNotEmpty()) {
+                                item {
+                                    SectionHeader(title = stringResource(id = R.string.section_artists))
+                                }
+                                item {
+                                    ArtistsSection(artists = allArtists)
+                                }
                             }
-                            item {
-                                ArtistsSection(artists = allArtists)
-                            }
-                        }
 
-                        // Seção de Músicas
-                        if (searchResult.songs.isNotEmpty()) {
-                            item {
-                                SectionHeader(
-                                    title = "${stringResource(id = R.string.section_songs)} (${searchResult.songs.size})"
-                                )
+                            // Seção de Músicas
+                            if (searchResult.songs.isNotEmpty()) {
+                                item {
+                                    SectionHeader(
+                                        title = "${stringResource(id = R.string.section_songs)} (${searchResult.songs.size})"
+                                    )
+                                }
+                                items(searchResult.songs, key = { it.id }) { track ->
+                                    SongListItem(
+                                        track = track,
+                                        isSelected = selectedTrack?.id == track.id,
+                                        isLoading = loadingTrackId == track.id,
+                                        isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
+                                        onClick = {
+                                            focusManager.clearFocus()
+                                            viewModel.playTrack(track)
+                                        }
+                                    )
+                                }
                             }
-                            items(searchResult.songs, key = { it.id }) { track ->
-                                SongListItem(
-                                    track = track,
-                                    isSelected = selectedTrack?.id == track.id,
-                                    isLoading = loadingTrackId == track.id,
-                                    isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
-                                    onClick = {
-                                        focusManager.clearFocus()
-                                        viewModel.playTrack(track)
-                                    }
-                                )
-                            }
-                        }
 
-                        item {
-                            Spacer(modifier = Modifier.height(80.dp))
+                            item {
+                                Spacer(modifier = Modifier.height(80.dp))
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-        // Tela Completa do Player com Fundo Dinâmico (Palette) e Fila Animada em 3 Estados
+        // Tela Completa do Player com Fundo Dinâmico (Palette), Fila Animada e Rádio Dinâmica
         AnimatedVisibility(
             visible = isFullPlayerVisible && playbackState.currentTrack != null,
             enter = slideInVertically(initialOffsetY = { it }),
@@ -312,10 +312,13 @@ fun SearchScreen(
                 onTogglePlay = { viewModel.togglePlayPause() },
                 onSkipPrevious = { viewModel.skipPrevious() },
                 onSkipNext = { viewModel.skipNext() },
+                onToggleShuffle = { viewModel.toggleShuffle() },
+                onToggleRepeat = { viewModel.toggleRepeat() },
                 onSeekTo = { positionMs -> viewModel.seekTo(positionMs) },
                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
                 onToggleSave = { trackId -> viewModel.toggleSaveToPlaylist(trackId) },
                 onToggleDownload = { trackId -> viewModel.toggleDownload(trackId) },
+                onSelectQueueChip = { chip -> viewModel.selectQueueFilterChip(chip) },
                 onPlayQueueItem = { index -> viewModel.playQueueItemAt(index) },
                 onMoveQueueItem = { fromIndex, toIndex -> viewModel.moveQueueItem(fromIndex, toIndex) },
                 onRemoveQueueItem = { index -> viewModel.removeQueueItem(index) }
