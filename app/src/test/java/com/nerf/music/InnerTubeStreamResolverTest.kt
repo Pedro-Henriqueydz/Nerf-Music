@@ -51,7 +51,7 @@ class InnerTubeStreamResolverTest {
         }
         """.trimIndent()
 
-        val extractedUrl = resolver.extractAudioUrlFromPlayerResponse(json)
+        val extractedUrl = resolver.extractAudioUrlFromPlayerResponse(json, "TEST_CLIENT")
         assertNotNull("URL de áudio deve ser extraída", extractedUrl)
         assertEquals("Deve selecionar a URL de áudio com maior bitrate", "https://example.com/audio_high.webm", extractedUrl)
     }
@@ -67,12 +67,70 @@ class InnerTubeStreamResolverTest {
         }
         """.trimIndent()
 
-        val url = resolver.extractAudioUrlFromPlayerResponse(loginRequiredJson)
+        val url = resolver.extractAudioUrlFromPlayerResponse(loginRequiredJson, "TEST_CLIENT")
         assertNull("Status LOGIN_REQUIRED não deve retornar URL", url)
 
         val corruptedJson = "{ not json at all }"
-        val corruptedUrl = resolver.extractAudioUrlFromPlayerResponse(corruptedJson)
+        val corruptedUrl = resolver.extractAudioUrlFromPlayerResponse(corruptedJson, "TEST_CLIENT")
         assertNull("JSON corrompido deve retornar null com segurança", corruptedUrl)
+    }
+
+    @Test
+    fun testExtractAudioUrlHandlesCiphersGracefully() {
+        // Simula formato com signatureCipher onde campo url está ausente
+        val cipherJson = """
+        {
+          "playabilityStatus": { "status": "OK" },
+          "streamingData": {
+            "adaptiveFormats": [
+              {
+                "itag": 251,
+                "mimeType": "audio/webm; codecs=\"opus\"",
+                "bitrate": 140000,
+                "signatureCipher": "s=dummy_cipher_sig&sp=sig&url=https%3A%2F%2Fgooglevideo.com"
+              },
+              {
+                "itag": 140,
+                "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                "bitrate": 128000,
+                "cipher": "s=dummy_cipher_sig2&sp=sig&url=https%3A%2F%2Fgooglevideo.com"
+              }
+            ]
+          }
+        }
+        """.trimIndent()
+
+        val url = resolver.extractAudioUrlFromPlayerResponse(cipherJson, "IOS_MUSIC")
+        assertNull("Quando todos os formatos possuem apenas cipher e nenhuma URL direta, deve retornar null com segurança", url)
+    }
+
+    @Test
+    fun testExtractAudioUrlPrefersDirectUrlOverCipher() {
+        val mixedJson = """
+        {
+          "playabilityStatus": { "status": "OK" },
+          "streamingData": {
+            "adaptiveFormats": [
+              {
+                "itag": 251,
+                "mimeType": "audio/webm; codecs=\"opus\"",
+                "bitrate": 140000,
+                "signatureCipher": "s=cipher&url=https%3A%2F%2Fexample.com"
+              },
+              {
+                "itag": 140,
+                "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                "bitrate": 128000,
+                "url": "https://example.com/direct_audio.mp4"
+              }
+            ]
+          }
+        }
+        """.trimIndent()
+
+        val url = resolver.extractAudioUrlFromPlayerResponse(mixedJson, "IOS")
+        assertNotNull("Deve extrair a URL direta disponível mesmo quando outros formatos têm cipher", url)
+        assertEquals("https://example.com/direct_audio.mp4", url)
     }
 
     @Test
@@ -93,7 +151,7 @@ class InnerTubeStreamResolverTest {
         }
         """.trimIndent()
 
-        val extractedUrl = resolver.extractAudioUrlFromPlayerResponse(json)
+        val extractedUrl = resolver.extractAudioUrlFromPlayerResponse(json, "WEB_REMIX")
         assertNotNull("Deve fazer fallback para progressive formats", extractedUrl)
         assertEquals("https://example.com/progressive.mp4", extractedUrl)
     }
@@ -101,13 +159,13 @@ class InnerTubeStreamResolverTest {
     @Test
     fun testLiveStreamResolutionWhenOnline() = runBlocking {
         try {
-            // Testa a resolução com um vídeo de referência conhecido
+            // Valida resolução real para música oficial
             val result = resolver.resolveStreamUrl("dQw4w9WgXcQ")
             if (result.isSuccess) {
                 val streamUrl = result.getOrNull()
                 assertNotNull("URL resolvida não pode ser nula", streamUrl)
                 assertTrue("URL deve apontar para os servidores do googlevideo", streamUrl!!.contains("googlevideo.com"))
-                println("Stream real resolvido com sucesso: ${streamUrl.substring(0, 60)}...")
+                println("Música oficial resolvida com sucesso: ${streamUrl.substring(0, 60)}...")
             }
         } catch (e: Exception) {
             println("Aviso: Teste de rede ignorado por indisponibilidade de conexão: ${e.message}")
