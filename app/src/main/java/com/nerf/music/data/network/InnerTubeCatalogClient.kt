@@ -1,9 +1,11 @@
 package com.nerf.music.data.network
 
 import com.nerf.music.data.model.Artist
+import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
+import com.nerf.music.data.model.UpNextResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -16,14 +18,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 /**
  * Cliente de acesso ao catálogo InnerTube (YouTube Music Web Remix).
  *
- * Realiza buscas e extração estruturada de Músicas e Artistas em português brasileiro (pt-BR)
- * de forma anônima, sem requisição de login ou envio de credenciais.
+ * Realiza buscas e extração estruturada de Músicas, Artistas e Rádio Dinâmica ("Up Next")
+ * em português brasileiro (pt-BR) de forma anônima, sem requisição de login.
  */
 class InnerTubeCatalogClient(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
@@ -32,14 +35,19 @@ class InnerTubeCatalogClient(
         .build()
 ) {
 
+    // Mapa auxiliar que associa o `params` de um Chip ao seu `playlistId` específico (ex: RDAT...)
+    private val chipPlaylistIdMap = ConcurrentHashMap<String, String>()
+
     companion object {
         private const val SEARCH_URL = "https://music.youtube.com/youtubei/v1/search"
+        private const val NEXT_URL = "https://music.youtube.com/youtubei/v1/next"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
         private val DURATION_REGEX = Pattern.compile("^(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})$")
         private val DURATION_INLINE_REGEX = Pattern.compile("\\b(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})\\b")
+        private val YEAR_REGEX = Pattern.compile("^\\d{4}$")
         private val ACCESSIBILITY_DURATION_REGEX = Pattern.compile(
             "(\\d{1,2})\\s*minutos?\\s*e\\s*(\\d{1,2})\\s*segundos?",
             Pattern.CASE_INSENSITIVE
@@ -122,7 +130,6 @@ class InnerTubeCatalogClient(
                     if (allData == null) {
                         Result.success(primary)
                     } else {
-                        // Inclui faixas do Top Result (musicCardShelfRenderer) que possuem duração válida no topo
                         val mergedSongs = mutableListOf<Track>()
                         val songsById = primary.songs.associateBy { it.id }
                         for (track in allData.songs) {
@@ -143,6 +150,271 @@ class InnerTubeCatalogClient(
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Obtém a Rádio Dinâmica ("Up Next") e os Chips de Filtro via endpoint `/youtubei/v1/next`.
+     *
+     * @param videoId ID da música inicial para gerar a rádio ("RDAMVM" + videoId).
+     * @param params Parâmetro opcional de filtro de chip (ex: Descobrir, Familiar, Popular).
+     */
+    suspend fun getUpNextRadio(
+        videoId: String,
+        params: String? = null
+    ): Result<UpNextResult> = withContext(Dispatchers.IO) {
+        if (videoId.isBlank()) {
+            return@withContext Result.success(UpNextResult())
+        }
+
+        try {
+            val payload = buildNextPayload(videoId, params)
+            val request = Request.Builder()
+                .url(NEXT_URL)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", USER_AGENT)
+                .header("Origin", "https://music.youtube.com")
+                .header("Referer", "https://music.youtube.com/")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(
+                    IOException("Servidor respondeu com código HTTP ${response.code}")
+                )
+            }
+
+            val body = response.body?.string()
+                ?: return@withContext Result.failure(IOException("Resposta vazia do servidor"))
+
+            val upNextResult = parseNextResponse(body)
+            Result.success(upNextResult)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    internal fun buildNextPayload(videoId: String, params: String? = null): JSONObject {
+        val root = JSONObject()
+        val context = JSONObject()
+        val client = JSONObject()
+
+        client.put("clientName", "WEB_REMIX")
+        client.put("clientVersion", "1.20231204.01.00")
+        client.put("hl", "pt-BR")
+        client.put("gl", "BR")
+
+        context.put("client", client)
+        root.put("context", context)
+        root.put("videoId", videoId)
+
+        val resolvedPlaylistId = if (!params.isNullOrBlank()) {
+            chipPlaylistIdMap[params] ?: "RDAMVM$videoId"
+        } else {
+            "RDAMVM$videoId"
+        }
+        root.put("playlistId", resolvedPlaylistId)
+        root.put("isAudioOnly", true)
+        root.put("enablePersistentPlaylistPanel", true)
+
+        if (!params.isNullOrBlank()) {
+            root.put("params", params)
+        }
+        return root
+    }
+
+    /**
+     * Faz o parse da resposta do endpoint `/youtubei/v1/next`, extraindo:
+     * - A lista de próximas músicas de `playlistPanelRenderer`.
+     * - Os chips de filtro de `relatedChipCloudRenderer` / `subHeaderChipCloud` (`chipCloudRenderer`).
+     * - O título de origem da fila (ex: "Mix de Stay").
+     */
+    fun parseNextResponse(jsonString: String): UpNextResult {
+        if (jsonString.isBlank()) return UpNextResult()
+
+        return try {
+            val root = JSONObject(jsonString)
+
+            val tabs = root.optJSONObject("contents")
+                ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
+                ?.optJSONObject("tabbedRenderer")
+                ?.optJSONObject("watchNextTabbedResultsRenderer")
+                ?.optJSONArray("tabs")
+
+            val musicQueueRenderer = tabs?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicQueueRenderer")
+                ?: root.optJSONObject("musicQueueRenderer")
+
+            val playlistPanel = musicQueueRenderer
+                ?.optJSONObject("content")
+                ?.optJSONObject("playlistPanelRenderer")
+                ?: root.optJSONObject("playlistPanelRenderer")
+                ?: root.optJSONObject("continuationContents")
+                    ?.optJSONObject("playlistPanelContinuation")
+
+            // 1. Extrair título de origem da fila (ex: "Mix de Stay")
+            val headerSubtitleRuns = musicQueueRenderer
+                ?.optJSONObject("header")
+                ?.optJSONObject("musicQueueHeaderRenderer")
+                ?.optJSONObject("subtitle")
+                ?.optJSONArray("runs")
+            val queueSourceTitle = extractSegmentsFromRuns(headerSubtitleRuns).firstOrNull()
+                ?: playlistPanel?.optString("title")?.takeIf { it.isNotBlank() }
+
+            // 2. Extrair lista de próximas músicas de playlistPanelRenderer
+            val tracks = mutableListOf<Track>()
+            val panelContents = playlistPanel?.optJSONArray("contents") ?: JSONArray()
+            for (i in 0 until panelContents.length()) {
+                val itemObj = panelContents.optJSONObject(i) ?: continue
+                val videoRenderer = itemObj.optJSONObject("playlistPanelVideoRenderer")
+                    ?: itemObj.optJSONObject("playlistPanelVideoWrapperRenderer")
+                        ?.optJSONObject("primaryRenderer")
+                        ?.optJSONObject("playlistPanelVideoRenderer")
+                    ?: continue
+
+                val parsedTrack = parsePlaylistPanelVideoRenderer(videoRenderer)
+                if (parsedTrack != null && tracks.none { it.id == parsedTrack.id }) {
+                    tracks.add(parsedTrack)
+                }
+            }
+
+            // 3. Extrair Chips de filtro de relatedChipCloudRenderer / subHeaderChipCloud
+            val chips = mutableListOf<QueueFilterChip>()
+            val chipCandidates = listOfNotNull(
+                musicQueueRenderer?.optJSONObject("relatedChipCloudRenderer"),
+                musicQueueRenderer?.optJSONObject("subHeaderChipCloud"),
+                musicQueueRenderer?.optJSONObject("header")
+                    ?.optJSONObject("musicQueueHeaderRenderer")
+                    ?.optJSONObject("relatedChipCloudRenderer"),
+                musicQueueRenderer?.optJSONObject("header")
+                    ?.optJSONObject("musicQueueHeaderRenderer")
+                    ?.optJSONObject("subHeaderChipCloud"),
+                playlistPanel?.optJSONObject("relatedChipCloudRenderer"),
+                playlistPanel?.optJSONObject("subHeaderChipCloud"),
+                root.optJSONObject("relatedChipCloudRenderer"),
+                root.optJSONObject("subHeaderChipCloud")
+            )
+
+            for (candidate in chipCandidates) {
+                parseChipsFromContainer(candidate, chips)
+            }
+
+            UpNextResult(
+                tracks = tracks,
+                chips = chips,
+                queueSourceTitle = queueSourceTitle
+            )
+        } catch (e: Exception) {
+            UpNextResult()
+        }
+    }
+
+    private fun parsePlaylistPanelVideoRenderer(renderer: JSONObject): Track? {
+        val titleRuns = renderer.optJSONObject("title")?.optJSONArray("runs") ?: return null
+        val title = extractSegmentsFromRuns(titleRuns).joinToString(" • ").trim()
+        if (title.isEmpty()) return null
+
+        val videoId = renderer.optString("videoId").ifEmpty {
+            renderer.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId") ?: ""
+        }
+        if (videoId.isEmpty()) return null
+
+        val bylineRuns = renderer.optJSONObject("longBylineText")?.optJSONArray("runs")
+            ?: renderer.optJSONObject("shortBylineText")?.optJSONArray("runs")
+            ?: JSONArray()
+        val bylineSegments = extractSegmentsFromRuns(bylineRuns)
+
+        val filteredByline = bylineSegments.filter { segment ->
+            val lower = segment.lowercase(Locale.ROOT)
+            lower !in SONG_MARKERS &&
+                lower !in NON_SONG_MARKERS &&
+                !isPlayOrViewCountSegment(segment) &&
+                !YEAR_REGEX.matcher(segment).matches() &&
+                extractDurationFromSegment(segment) == null
+        }
+
+        val artistName = filteredByline.firstOrNull() ?: "Artista Desconhecido"
+        val albumName = filteredByline.getOrNull(1)
+
+        val lengthRuns = renderer.optJSONObject("lengthText")?.optJSONArray("runs")
+        val rawLength = extractSegmentsFromRuns(lengthRuns).firstOrNull() ?: ""
+        val durationText = extractDurationFromSegment(rawLength) ?: "--:--"
+
+        val thumbnailUrl = getBestThumbnailUrl(
+            renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        )
+
+        return Track(
+            id = videoId,
+            title = title,
+            artist = artistName,
+            album = albumName,
+            thumbnailUrl = thumbnailUrl,
+            durationText = durationText,
+            sourceIdentifier = "INNERTUBE_NEXT_RADIO"
+        )
+    }
+
+    private fun parseChipsFromContainer(
+        container: JSONObject,
+        outChips: MutableList<QueueFilterChip>
+    ) {
+        val chipCloud = container.optJSONObject("chipCloudRenderer")
+            ?: container.optJSONObject("relatedChipCloudRenderer")?.optJSONObject("chipCloudRenderer")
+            ?: container.optJSONObject("relatedChipCloudRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("chipCloudRenderer")
+            ?: container.optJSONObject("content")?.optJSONObject("chipCloudRenderer")
+            ?: container
+
+        val chipsArray = chipCloud.optJSONArray("chips") ?: return
+        for (i in 0 until chipsArray.length()) {
+            val chipItem = chipsArray.optJSONObject(i) ?: continue
+            val chipRenderer = chipItem.optJSONObject("chipCloudChipRenderer") ?: chipItem
+
+            val textRuns = chipRenderer.optJSONObject("text")?.optJSONArray("runs")
+            val chipTitle = extractSegmentsFromRuns(textRuns).firstOrNull()
+                ?: chipRenderer.optJSONObject("accessibilityData")
+                    ?.optJSONObject("accessibilityData")
+                    ?.optString("label")
+                    ?.trim()
+                ?: ""
+
+            if (chipTitle.isEmpty()) continue
+
+            val navEndpoint = chipRenderer.optJSONObject("navigationEndpoint")
+                ?: chipRenderer.optJSONObject("onTap")
+            val watchEndpoint = navEndpoint
+                ?.optJSONObject("queueUpdateCommand")
+                ?.optJSONObject("fetchContentsCommand")
+                ?.optJSONObject("watchEndpoint")
+                ?: navEndpoint?.optJSONObject("watchEndpoint")
+
+            val chipParams = watchEndpoint?.optString("params")?.takeIf { it.isNotEmpty() }
+                ?: chipRenderer.optString("params").takeIf { it.isNotEmpty() }
+                ?: continue
+
+            val chipPlaylistId = watchEndpoint?.optString("playlistId")?.takeIf { it.isNotEmpty() }
+            if (chipPlaylistId != null) {
+                chipPlaylistIdMap[chipParams] = chipPlaylistId
+            }
+
+            val isSelected = chipRenderer.optBoolean("isSelected", false)
+
+            if (outChips.none { it.params == chipParams || it.title.equals(chipTitle, ignoreCase = true) }) {
+                outChips.add(
+                    QueueFilterChip(
+                        title = chipTitle,
+                        params = chipParams,
+                        playlistId = chipPlaylistId,
+                        isSelected = isSelected
+                    )
+                )
+            }
         }
     }
 
@@ -202,7 +474,6 @@ class InnerTubeCatalogClient(
             }
         }
 
-        // Se temos faixas com duração válida vindas da estante de músicas, removemos itens incompletos sem duração
         val hasValidDurations = mergedSongs.any { it.durationText != "--:--" }
         val finalSongs = if (hasValidDurations) {
             mergedSongs.filter { it.durationText != "--:--" }
@@ -322,7 +593,6 @@ class InnerTubeCatalogClient(
                 topArtist = topArtist
             )
         } catch (e: Exception) {
-            // Em caso de JSON malformado ou corrompido, retorna resultado vazio seguro
             SearchResult()
         }
     }
@@ -355,7 +625,6 @@ class InnerTubeCatalogClient(
                 ?.optJSONArray("thumbnails")
         )
 
-        // Se o subtítulo indica Artista, preserva estritamente como Artist
         if (subtitleParts.any { it.lowercase(Locale.ROOT) in ARTIST_MARKERS } ||
             fullSubtitle.contains("Artista", ignoreCase = true) ||
             fullSubtitle.contains("Artist", ignoreCase = true)
@@ -369,7 +638,6 @@ class InnerTubeCatalogClient(
             return Pair(null, artist)
         }
 
-        // Caso seja uma música em destaque (ex: busca direta pelo nome de faixa)
         var videoId = ""
         val onTap = card.optJSONObject("onTap")
         if (onTap != null) {
@@ -424,7 +692,6 @@ class InnerTubeCatalogClient(
         val flexCols = item.optJSONArray("flexColumns") ?: return
         if (flexCols.length() == 0) return
 
-        // Coluna 0: Título principal
         val col0Runs = flexCols.optJSONObject(0)
             ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
             ?.optJSONObject("text")
@@ -433,7 +700,6 @@ class InnerTubeCatalogClient(
         val title = col0Runs.optJSONObject(0)?.optString("text")?.trim() ?: return
         if (title.isEmpty()) return
 
-        // Extrai segmentos da Coluna 1 (subtítulo separado por " • ")
         val col1TextObj = if (flexCols.length() > 1) {
             flexCols.optJSONObject(1)
                 ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
@@ -452,7 +718,6 @@ class InnerTubeCatalogClient(
                 ?.optJSONArray("thumbnails")
         )
 
-        // 1. Extrair videoId do Item (usado para Músicas)
         var videoId = ""
         val overlayPlayRenderer = item.optJSONObject("overlay")
             ?.optJSONObject("musicItemThumbnailOverlayRenderer")
@@ -479,10 +744,8 @@ class InnerTubeCatalogClient(
             }
         }
 
-        // 2. Extrair Duração (procura em flexColumns, fixedColumns e accessibility)
-        var durationText = extractDurationFromItem(item, flexCols)
+        val durationText = extractDurationFromItem(item, flexCols)
 
-        // 3. Checagem de marcadores de tipo (Música vs Artista vs Outros)
         val firstSegmentLower = col1Segments.firstOrNull()?.lowercase(Locale.ROOT) ?: ""
         val hasSongMarker = col1Segments.any { it.lowercase(Locale.ROOT) in SONG_MARKERS }
         val hasArtistMarker = col1Segments.any { it.lowercase(Locale.ROOT) in ARTIST_MARKERS }
@@ -493,7 +756,6 @@ class InnerTubeCatalogClient(
         )
 
         if (isMusic) {
-            // 4. Identificar Artista exato e Álbum para Faixa Musical
             val filteredMeta = col1Segments.filter { segment ->
                 val lower = segment.lowercase(Locale.ROOT)
                 lower !in SONG_MARKERS &&
@@ -502,7 +764,7 @@ class InnerTubeCatalogClient(
                     extractDurationFromSegment(segment) == null
             }
 
-            var artistName = when {
+            val artistName = when {
                 filteredMeta.isNotEmpty() -> filteredMeta[0]
                 !fallbackArtist.isNullOrBlank() -> fallbackArtist
                 else -> extractArtistFromAccessibility(overlayPlayRenderer, title) ?: "Desconhecido"
@@ -527,7 +789,6 @@ class InnerTubeCatalogClient(
                 songs[existingIndex] = newTrack
             }
         } else if (hasArtistMarker) {
-            // 5. Identificar Artista
             val browseId = item.optJSONObject("navigationEndpoint")
                 ?.optJSONObject("browseEndpoint")
                 ?.optString("browseId") ?: "artist_${title.hashCode()}"
@@ -545,10 +806,6 @@ class InnerTubeCatalogClient(
         }
     }
 
-    /**
-     * Concatena os runs de texto de uma coluna e divide pelo separador " • ",
-     * preservando nomes compostos de artistas (ex: "Altare e almogfx") e separando a duração.
-     */
     private fun extractSegmentsFromRuns(runs: JSONArray?): List<String> {
         if (runs == null || runs.length() == 0) return emptyList()
         val fullText = buildString {
@@ -563,7 +820,6 @@ class InnerTubeCatalogClient(
     }
 
     private fun extractDurationFromItem(item: JSONObject, flexCols: JSONArray): String {
-        // 1. Procura nos segmentos de todas as flexColumns (ex: flexColumns[1]...runs)
         for (c in 0 until flexCols.length()) {
             val textObj = flexCols.optJSONObject(c)
                 ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
@@ -576,7 +832,6 @@ class InnerTubeCatalogClient(
                 if (matched != null) return matched
             }
 
-            // Verifica também cada run individualmente
             for (r in 0 until runs.length()) {
                 val runText = runs.optJSONObject(r)?.optString("text")?.trim() ?: ""
                 val matched = extractDurationFromSegment(runText)
@@ -584,7 +839,6 @@ class InnerTubeCatalogClient(
             }
         }
 
-        // 2. Procura nas fixedColumns (usadas em algumas listas de álbuns/músicas do InnerTube)
         val fixedCols = item.optJSONArray("fixedColumns")
         if (fixedCols != null) {
             for (c in 0 until fixedCols.length()) {
@@ -600,7 +854,6 @@ class InnerTubeCatalogClient(
             }
         }
 
-        // 3. Fallback: verifica label de acessibilidade (ex: "3 minutos e 47 segundos")
         for (c in 0 until flexCols.length()) {
             val label = flexCols.optJSONObject(c)
                 ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
@@ -638,8 +891,11 @@ class InnerTubeCatalogClient(
             lower.contains("vezes") ||
             lower.contains("ouvintes") ||
             lower.contains("inscritos") ||
+            lower.contains("marcações") ||
+            lower.contains("gostei") ||
             lower.contains("views") ||
-            lower.contains("plays")
+            lower.contains("plays") ||
+            lower.contains("likes")
     }
 
     private fun extractArtistFromAccessibility(
@@ -651,7 +907,6 @@ class InnerTubeCatalogClient(
             ?.optJSONObject("accessibilityData")
             ?.optString("label")
             ?.trim() ?: return null
-        // Ex: "Reproduzir Stay - Altare"
         val prefixRemoved = label
             .removePrefix("Reproduzir ")
             .removePrefix("Play ")

@@ -4,6 +4,7 @@ import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
+import com.nerf.music.data.model.UpNextResult
 import com.nerf.music.data.network.InnerTubeCatalogClient
 import java.util.regex.Pattern
 
@@ -25,6 +26,13 @@ class MusicRepositoryImpl(
         return catalogClient.search(query, filter).map { rawResult ->
             prioritizeSearchResults(rawResult, query)
         }
+    }
+
+    override suspend fun getUpNextRadio(
+        videoId: String,
+        params: String?
+    ): Result<UpNextResult> {
+        return catalogClient.getUpNextRadio(videoId, params)
     }
 
     /**
@@ -53,13 +61,10 @@ class MusicRepositoryImpl(
         val q = query.trim()
         if (q.isEmpty()) return 3
 
-        // Tier 0: Correspondência EXATA (case-insensitive) no nome do artista ou título da música
         if (track.artist.equals(q, ignoreCase = true) || track.title.equals(q, ignoreCase = true)) {
             return 0
         }
 
-        // Tier 1: Correspondência exata em artista colaborador (ex: "Altare e almogfx")
-        // ou palavra inteira exata no título/artista (sem sufixos como "Altares")
         val collaboratorNames = track.artist.split(COLLAB_SPLIT_REGEX)
             .map { it.trim() }
             .filter { it.isNotEmpty() }
@@ -70,12 +75,10 @@ class MusicRepositoryImpl(
             return 1
         }
 
-        // Tier 2: Substring / prefixo parcial (ex: "Altares" contém "Altare")
         if (track.artist.contains(q, ignoreCase = true) || track.title.contains(q, ignoreCase = true)) {
             return 2
         }
 
-        // Tier 3: Resultados aproximados / fuzzy (ex: "Altar")
         return 3
     }
 
