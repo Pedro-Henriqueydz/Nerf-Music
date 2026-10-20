@@ -11,6 +11,10 @@
     <string name="playback_paused">Pausado</string>
     <string name="play">Reproduzir</string>
     <string name="pause">Pausar</string>
+    <string name="next_track">Próxima faixa</string>
+    <string name="previous_track">Faixa anterior</string>
+    <string name="collapse_player">Minimizar reprodutor</string>
+    <string name="buffering_audio">Carregando fluxo de áudio…</string>
     <string name="demo_audio_title">Áudio de Teste Autorizado (Sinfonia CC-BY)</string>
     <string name="demo_audio_artist">Domínio Público / Creative Commons</string>
     <string name="catalog_indicator">Catálogo InnerTube</string>

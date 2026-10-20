@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.nerf.music.R
 import com.nerf.music.data.model.Artist
-import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.Track
 import com.nerf.music.ui.viewmodel.MusicViewModel
@@ -59,6 +58,7 @@ fun SearchScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
+    val isFullPlayerVisible by viewModel.isFullPlayerVisible.collectAsState()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
 
@@ -99,7 +99,12 @@ fun SearchScreen(
             if (playbackState.currentTrack != null) {
                 MiniPlayerBar(
                     state = playbackState,
-                    onTogglePlay = { viewModel.togglePlayPause() }
+                    onTogglePlay = { viewModel.togglePlayPause() },
+                    onSkipNext = { viewModel.skipNext() },
+                    onExpandPlayer = {
+                        focusManager.clearFocus()
+                        viewModel.openFullPlayer()
+                    }
                 )
             }
         }
@@ -156,12 +161,18 @@ fun SearchScreen(
             ) {
                 FilterChip(
                     selected = selectedFilter == SearchFilter.ALL,
-                    onClick = { viewModel.onFilterSelected(SearchFilter.ALL) },
+                    onClick = {
+                        focusManager.clearFocus()
+                        viewModel.onFilterSelected(SearchFilter.ALL)
+                    },
                     label = { Text(stringResource(id = R.string.filter_all)) }
                 )
                 FilterChip(
                     selected = selectedFilter == SearchFilter.SONGS,
-                    onClick = { viewModel.onFilterSelected(SearchFilter.SONGS) },
+                    onClick = {
+                        focusManager.clearFocus()
+                        viewModel.onFilterSelected(SearchFilter.SONGS)
+                    },
                     label = { Text(stringResource(id = R.string.filter_songs)) }
                 )
             }
@@ -172,7 +183,10 @@ fun SearchScreen(
             AuthorizedTestAudioCard(
                 isPlaying = playbackState.currentTrack?.id == viewModel.authorizedDemoTrack.id && playbackState.isPlaying,
                 isLoading = loadingTrackId == viewModel.authorizedDemoTrack.id,
-                onPlayTestAudio = { viewModel.playAuthorizedTestAudio() }
+                onPlayTestAudio = {
+                    focusManager.clearFocus()
+                    viewModel.playAuthorizedTestAudio()
+                }
             )
 
             // Card de Detalhes da Faixa Selecionada
@@ -180,7 +194,11 @@ fun SearchScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 SelectedTrackInfoCard(
                     track = selectedTrack!!,
-                    isPlaying = playbackState.currentTrack?.id == selectedTrack?.id && playbackState.isPlaying
+                    isPlaying = playbackState.currentTrack?.id == selectedTrack?.id && playbackState.isPlaying,
+                    onClick = {
+                        focusManager.clearFocus()
+                        viewModel.openFullPlayer()
+                    }
                 )
             }
 
@@ -287,7 +305,10 @@ fun SearchScreen(
                                     isSelected = selectedTrack?.id == track.id,
                                     isLoading = loadingTrackId == track.id,
                                     isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
-                                    onClick = { viewModel.playTrack(track) }
+                                    onClick = {
+                                        focusManager.clearFocus()
+                                        viewModel.playTrack(track)
+                                    }
                                 )
                             }
                         }
@@ -299,6 +320,18 @@ fun SearchScreen(
                 }
             }
         }
+    }
+
+    // Tela Completa do Player (Full Player ModalBottomSheet)
+    if (isFullPlayerVisible && playbackState.currentTrack != null) {
+        FullPlayerSheet(
+            state = playbackState,
+            onDismiss = { viewModel.closeFullPlayer() },
+            onTogglePlay = { viewModel.togglePlayPause() },
+            onSkipPrevious = { viewModel.skipPrevious() },
+            onSkipNext = { viewModel.skipNext() },
+            onSeekTo = { positionMs -> viewModel.seekTo(positionMs) }
+        )
     }
 }
 
@@ -575,9 +608,15 @@ fun AuthorizedTestAudioCard(
 }
 
 @Composable
-fun SelectedTrackInfoCard(track: Track, isPlaying: Boolean) {
+fun SelectedTrackInfoCard(
+    track: Track,
+    isPlaying: Boolean,
+    onClick: () -> Unit = {}
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
@@ -602,106 +641,10 @@ fun SelectedTrackInfoCard(track: Track, isPlaying: Boolean) {
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = if (isPlaying) "Reproduzindo fluxo de áudio via Media3 ExoPlayer" else "Pronta para reprodução direta via streaming",
+                    text = if (isPlaying) "Reproduzindo • Toque para abrir o reprodutor" else "Toque para abrir o reprodutor em tela cheia",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-        }
-    }
-}
-
-@Composable
-fun MiniPlayerBar(
-    state: PlaybackState,
-    onTogglePlay: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(68.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        tonalElevation = 8.dp
-    ) {
-        Column {
-            val progress = if (state.durationMs > 0) {
-                (state.currentPositionMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.Transparent
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color.DarkGray)
-                ) {
-                    if (!state.currentTrack?.thumbnailUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = state.currentTrack?.thumbnailUrl,
-                            contentDescription = state.currentTrack?.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = Color.LightGray,
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = state.currentTrack?.title ?: "",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = state.currentTrack?.artist ?: "",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                IconButton(onClick = onTogglePlay) {
-                    if (state.isBuffering) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (state.isPlaying) stringResource(id = R.string.pause) else stringResource(id = R.string.play),
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                }
             }
         }
     }
