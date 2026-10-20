@@ -1,0 +1,26 @@
+<resources>
+    <string name="app_name">NERF Music</string>
+    <string name="search_hint">Pesquisar músicas, artistas ou álbuns…</string>
+    <string name="search_button">Pesquisar</string>
+    <string name="search_empty_prompt">Digite o nome de uma música ou artista para começar</string>
+    <string name="search_no_results">Nenhum resultado encontrado para a sua busca</string>
+    <string name="search_loading">Pesquisando no catálogo…</string>
+    <string name="search_error">Erro ao carregar catálogo. Verifique sua conexão.</string>
+    <string name="track_duration_unknown">--:--</string>
+    <string name="now_playing">Tocando agora</string>
+    <string name="playback_paused">Pausado</string>
+    <string name="play">Reproduzir</string>
+    <string name="pause">Pausar</string>
+    <string name="demo_audio_title">Áudio de Teste Autorizado (Sinfonia CC-BY)</string>
+    <string name="demo_audio_artist">Domínio Público / Creative Commons</string>
+    <string name="catalog_indicator">Catálogo InnerTube</string>
+    <string name="test_audio_button">Ouvir Áudio de Teste (Media3)</string>
+    <string name="playback_disclaimer">Metadados e busca obtidos do catálogo. Áudio demonstrativo via Media3 ExoPlayer com suporte a segundo plano.</string>
+    <string name="filter_all">Geral</string>
+    <string name="filter_songs">Músicas</string>
+    <string name="section_artists">Artistas</string>
+    <string name="section_songs">Músicas</string>
+    <string name="track_selected_notice">Faixa selecionada do catálogo. Streaming direto requer fonte compatível.</string>
+    <string name="selected_track_label">Faixa Selecionada</string>
+    <string name="clear_search">Limpar busca</string>
+</resources>
