@@ -1,5 +1,6 @@
 package com.nerf.music.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -40,7 +41,6 @@ import com.nerf.music.R
 import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.SearchFilter
-import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
 import com.nerf.music.ui.viewmodel.MusicViewModel
 
@@ -54,10 +54,21 @@ fun SearchScreen(
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val searchResult by viewModel.searchResult.collectAsState()
     val selectedTrack by viewModel.selectedTrack.collectAsState()
+    val loadingTrackId by viewModel.loadingTrackId.collectAsState()
+    val userMessage by viewModel.userMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
+
+    // Exibe notificação rápida (Toast) em caso de mensagens ou erros do servidor
+    LaunchedEffect(userMessage) {
+        userMessage?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            viewModel.clearUserMessage()
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -73,7 +84,7 @@ fun SearchScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "PoC Catálogo & Player",
+                            text = "Streaming Livre",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -160,13 +171,17 @@ fun SearchScreen(
             // Card Dedicado ao Áudio de Teste Autorizado (ExoPlayer Media3)
             AuthorizedTestAudioCard(
                 isPlaying = playbackState.currentTrack?.id == viewModel.authorizedDemoTrack.id && playbackState.isPlaying,
+                isLoading = loadingTrackId == viewModel.authorizedDemoTrack.id,
                 onPlayTestAudio = { viewModel.playAuthorizedTestAudio() }
             )
 
-            // Card de Detalhes da Faixa Selecionada do Catálogo
-            if (selectedTrack != null) {
+            // Card de Detalhes da Faixa Selecionada
+            if (selectedTrack != null && selectedTrack?.id != viewModel.authorizedDemoTrack.id) {
                 Spacer(modifier = Modifier.height(8.dp))
-                SelectedTrackInfoCard(track = selectedTrack!!)
+                SelectedTrackInfoCard(
+                    track = selectedTrack!!,
+                    isPlaying = playbackState.currentTrack?.id == selectedTrack?.id && playbackState.isPlaying
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -191,7 +206,7 @@ fun SearchScreen(
                         }
                     }
                 }
-                errorMessage != null -> {
+                errorMessage != null && searchResult.isEmpty -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -270,7 +285,9 @@ fun SearchScreen(
                                 SongListItem(
                                     track = track,
                                     isSelected = selectedTrack?.id == track.id,
-                                    onSelect = { viewModel.selectTrack(track) }
+                                    isLoading = loadingTrackId == track.id,
+                                    isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
+                                    onClick = { viewModel.playTrack(track) }
                                 )
                             }
                         }
@@ -370,12 +387,14 @@ fun ArtistCard(artist: Artist) {
 fun SongListItem(
     track: Track,
     isSelected: Boolean,
-    onSelect: () -> Unit
+    isLoading: Boolean,
+    isPlaying: Boolean,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onSelect)
+            .clickable(onClick = onClick)
             .then(
                 if (isSelected) {
                     Modifier.border(
@@ -459,13 +478,33 @@ fun SongListItem(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Selecionada",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
+            // Indicador de Carregamento ou Botão de Ação
+            IconButton(onClick = onClick) {
+                when {
+                    isLoading -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    isPlaying -> {
+                        Icon(
+                            imageVector = Icons.Default.Pause,
+                            contentDescription = "Pausar",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                    else -> {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Reproduzir",
+                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -474,6 +513,7 @@ fun SongListItem(
 @Composable
 fun AuthorizedTestAudioCard(
     isPlaying: Boolean,
+    isLoading: Boolean,
     onPlayTestAudio: () -> Unit
 ) {
     Card(
@@ -489,12 +529,20 @@ fun AuthorizedTestAudioCard(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(36.dp)
-            )
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(36.dp),
+                    strokeWidth = 3.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -527,12 +575,12 @@ fun AuthorizedTestAudioCard(
 }
 
 @Composable
-fun SelectedTrackInfoCard(track: Track) {
+fun SelectedTrackInfoCard(track: Track, isPlaying: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
         )
     ) {
         Row(
@@ -540,9 +588,9 @@ fun SelectedTrackInfoCard(track: Track) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.Info,
+                imageVector = if (isPlaying) Icons.Default.PlayCircle else Icons.Default.Info,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.tertiary,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(10.dp))
@@ -551,12 +599,12 @@ fun SelectedTrackInfoCard(track: Track) {
                     text = "${stringResource(id = R.string.selected_track_label)}: ${track.title} - ${track.artist}",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = stringResource(id = R.string.track_selected_notice),
+                    text = if (isPlaying) "Reproduzindo fluxo de áudio via Media3 ExoPlayer" else "Pronta para reprodução direta via streaming",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

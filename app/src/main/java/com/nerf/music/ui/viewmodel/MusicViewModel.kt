@@ -20,6 +20,7 @@ import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
 import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.player.DemoStreamResolver
+import com.nerf.music.player.InnerTubeStreamResolver
 import com.nerf.music.player.StreamResolver
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,7 +32,8 @@ import kotlinx.coroutines.launch
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
-    private val streamResolver: StreamResolver = DemoStreamResolver()
+    private val streamResolver: StreamResolver = InnerTubeStreamResolver(),
+    private val demoStreamResolver: StreamResolver = DemoStreamResolver()
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -45,6 +47,12 @@ class MusicViewModel(
 
     private val _selectedTrack = MutableStateFlow<Track?>(null)
     val selectedTrack: StateFlow<Track?> = _selectedTrack.asStateFlow()
+
+    private val _loadingTrackId = MutableStateFlow<String?>(null)
+    val loadingTrackId: StateFlow<String?> = _loadingTrackId.asStateFlow()
+
+    private val _userMessage = MutableStateFlow<String?>(null)
+    val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -171,29 +179,88 @@ class MusicViewModel(
 
     fun selectTrack(track: Track) {
         _selectedTrack.value = track
-    }
-
-    fun playAuthorizedTestAudio() {
-        playTrack(authorizedDemoTrack)
+        playTrack(track)
     }
 
     fun playTrack(track: Track) {
+        _selectedTrack.value = track
+
+        // Se a faixa já for a atual e estiver tocando, apenas pausa
+        if (_playbackState.value.currentTrack?.id == track.id && _playbackState.value.isPlaying) {
+            togglePlayPause()
+            return
+        }
+
+        // Se a faixa já for a atual e estiver pausada, retoma reprodução
+        if (_playbackState.value.currentTrack?.id == track.id && !_playbackState.value.isPlaying && mediaController != null) {
+            mediaController?.play()
+            return
+        }
+
         viewModelScope.launch {
+            _loadingTrackId.value = track.id
             _playbackState.value = _playbackState.value.copy(
                 currentTrack = track,
                 isBuffering = true,
                 errorMessage = null
             )
 
-            val streamResult = streamResolver.resolveStreamUrl(track)
+            val streamResult = streamResolver.resolveStreamUrl(track.id)
+            _loadingTrackId.value = null
+
             streamResult.onSuccess { streamUrl ->
                 val metadata = MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
+                    .setAlbumTitle(track.album)
                     .setArtworkUri(track.thumbnailUrl?.let { Uri.parse(it) })
                     .build()
 
                 val mediaItem = MediaItem.Builder()
+                    .setMediaId(track.id)
+                    .setUri(streamUrl)
+                    .setMediaMetadata(metadata)
+                    .build()
+
+                mediaController?.run {
+                    setMediaItem(mediaItem)
+                    prepare()
+                    play()
+                }
+            }.onFailure { _ ->
+                val errorMsg = "Falha ao carregar a faixa. O servidor recusou a conexão."
+                _playbackState.value = _playbackState.value.copy(
+                    isBuffering = false,
+                    errorMessage = errorMsg
+                )
+                _userMessage.value = errorMsg
+            }
+        }
+    }
+
+    fun playAuthorizedTestAudio() {
+        _selectedTrack.value = authorizedDemoTrack
+        viewModelScope.launch {
+            _loadingTrackId.value = authorizedDemoTrack.id
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = authorizedDemoTrack,
+                isBuffering = true,
+                errorMessage = null
+            )
+
+            val streamResult = demoStreamResolver.resolveStreamUrl(authorizedDemoTrack.id)
+            _loadingTrackId.value = null
+
+            streamResult.onSuccess { streamUrl ->
+                val metadata = MediaMetadata.Builder()
+                    .setTitle(authorizedDemoTrack.title)
+                    .setArtist(authorizedDemoTrack.artist)
+                    .setAlbumTitle(authorizedDemoTrack.album)
+                    .setArtworkUri(authorizedDemoTrack.thumbnailUrl?.let { Uri.parse(it) })
+                    .build()
+
+                val mediaItem = MediaItem.Builder()
+                    .setMediaId(authorizedDemoTrack.id)
                     .setUri(streamUrl)
                     .setMediaMetadata(metadata)
                     .build()
@@ -204,10 +271,12 @@ class MusicViewModel(
                     play()
                 }
             }.onFailure { error ->
+                val errorMsg = "Falha ao carregar o áudio de teste: ${error.localizedMessage}"
                 _playbackState.value = _playbackState.value.copy(
                     isBuffering = false,
-                    errorMessage = "Falha ao resolver áudio: ${error.localizedMessage}"
+                    errorMessage = errorMsg
                 )
+                _userMessage.value = errorMsg
             }
         }
     }
@@ -224,6 +293,10 @@ class MusicViewModel(
 
     fun seekTo(positionMs: Long) {
         mediaController?.seekTo(positionMs)
+    }
+
+    fun clearUserMessage() {
+        _userMessage.value = null
     }
 
     override fun onCleared() {

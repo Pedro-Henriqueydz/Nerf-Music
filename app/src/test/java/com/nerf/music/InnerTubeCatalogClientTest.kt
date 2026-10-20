@@ -308,6 +308,9 @@ class InnerTubeCatalogClientTest {
                 val data = result.getOrNull()
                 assertNotNull("Resultado não deve ser nulo", data)
                 println("Busca online bem-sucedida. Músicas: ${data?.songs?.size}, Artistas: ${data?.artists?.size}, Top: ${data?.topArtist?.name}")
+                data?.songs?.take(5)?.forEach {
+                    println("TRACK_TEST: id=${it.id} | title=${it.title} | artist=${it.artist}")
+                }
                 // Se conectado, deve encontrar o artista ou músicas
                 assertTrue(
                     "Busca por Elis Regina online deve retornar artista ou músicas",
