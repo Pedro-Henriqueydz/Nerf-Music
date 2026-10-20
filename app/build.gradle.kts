@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0.0-poc"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -63,8 +63,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Coil for Async Image Loading (Covers & Thumbnails)
+    // Coil for Async Image Loading (Covers & Thumbnails) & Palette API for Dynamic Colors
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.palette:palette-ktx:1.0.0")
 
     // AndroidX Media3 (ExoPlayer + MediaSession for Background Playback)
     val media3Version = "1.4.1"

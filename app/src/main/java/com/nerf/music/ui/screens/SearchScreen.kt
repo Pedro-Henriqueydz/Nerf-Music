@@ -1,6 +1,9 @@
 package com.nerf.music.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +22,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -65,14 +67,15 @@ fun SearchScreen(
     // Exibe notificação rápida (Toast) em caso de mensagens ou erros do servidor
     LaunchedEffect(userMessage) {
         userMessage?.let { msg ->
-            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             viewModel.clearUserMessage()
         }
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
+    Box(modifier = modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -174,31 +177,6 @@ fun SearchScreen(
                         viewModel.onFilterSelected(SearchFilter.SONGS)
                     },
                     label = { Text(stringResource(id = R.string.filter_songs)) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Card Dedicado ao Áudio de Teste Autorizado (ExoPlayer Media3)
-            AuthorizedTestAudioCard(
-                isPlaying = playbackState.currentTrack?.id == viewModel.authorizedDemoTrack.id && playbackState.isPlaying,
-                isLoading = loadingTrackId == viewModel.authorizedDemoTrack.id,
-                onPlayTestAudio = {
-                    focusManager.clearFocus()
-                    viewModel.playAuthorizedTestAudio()
-                }
-            )
-
-            // Card de Detalhes da Faixa Selecionada
-            if (selectedTrack != null && selectedTrack?.id != viewModel.authorizedDemoTrack.id) {
-                Spacer(modifier = Modifier.height(8.dp))
-                SelectedTrackInfoCard(
-                    track = selectedTrack!!,
-                    isPlaying = playbackState.currentTrack?.id == selectedTrack?.id && playbackState.isPlaying,
-                    onClick = {
-                        focusManager.clearFocus()
-                        viewModel.openFullPlayer()
-                    }
                 )
             }
 
@@ -322,16 +300,27 @@ fun SearchScreen(
         }
     }
 
-    // Tela Completa do Player (Full Player ModalBottomSheet)
-    if (isFullPlayerVisible && playbackState.currentTrack != null) {
-        FullPlayerSheet(
-            state = playbackState,
-            onDismiss = { viewModel.closeFullPlayer() },
-            onTogglePlay = { viewModel.togglePlayPause() },
-            onSkipPrevious = { viewModel.skipPrevious() },
-            onSkipNext = { viewModel.skipNext() },
-            onSeekTo = { positionMs -> viewModel.seekTo(positionMs) }
-        )
+        // Tela Completa do Player com Fundo Dinâmico (Palette) e Fila Animada em 3 Estados
+        AnimatedVisibility(
+            visible = isFullPlayerVisible && playbackState.currentTrack != null,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
+        ) {
+            FullPlayerSheet(
+                state = playbackState,
+                onDismiss = { viewModel.closeFullPlayer() },
+                onTogglePlay = { viewModel.togglePlayPause() },
+                onSkipPrevious = { viewModel.skipPrevious() },
+                onSkipNext = { viewModel.skipNext() },
+                onSeekTo = { positionMs -> viewModel.seekTo(positionMs) },
+                onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
+                onToggleSave = { trackId -> viewModel.toggleSaveToPlaylist(trackId) },
+                onToggleDownload = { trackId -> viewModel.toggleDownload(trackId) },
+                onPlayQueueItem = { index -> viewModel.playQueueItemAt(index) },
+                onMoveQueueItem = { fromIndex, toIndex -> viewModel.moveQueueItem(fromIndex, toIndex) },
+                onRemoveQueueItem = { index -> viewModel.removeQueueItem(index) }
+            )
+        }
     }
 }
 
@@ -538,113 +527,6 @@ fun SongListItem(
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun AuthorizedTestAudioCard(
-    isPlaying: Boolean,
-    isLoading: Boolean,
-    onPlayTestAudio: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onPlayTestAudio),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(36.dp),
-                    strokeWidth = 3.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayCircle,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(id = R.string.test_audio_button),
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (isPlaying) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "(Tocando)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                Text(
-                    text = stringResource(id = R.string.playback_disclaimer),
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun SelectedTrackInfoCard(
-    track: Track,
-    isPlaying: Boolean,
-    onClick: () -> Unit = {}
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.PlayCircle else Icons.Default.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "${stringResource(id = R.string.selected_track_label)}: ${track.title} - ${track.artist}",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = if (isPlaying) "Reproduzindo • Toque para abrir o reprodutor" else "Toque para abrir o reprodutor em tela cheia",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }

@@ -1,15 +1,41 @@
 package com.nerf.music.ui.screens
 
+import android.graphics.drawable.BitmapDrawable
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -19,21 +45,54 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import androidx.core.graphics.ColorUtils
+import androidx.palette.graphics.Palette
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.nerf.music.R
 import com.nerf.music.data.model.PlaybackState
+import com.nerf.music.data.model.Track
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+/**
+ * Estados de expansão da Fila de Reprodução ("Up Next" / "A seguir"):
+ * - [COLLAPSED]: Estado 0 (Oculto) — Apenas o Full Player visível com a barra "A seguir" no rodapé.
+ * - [HALF_EXPANDED]: Estado 1 (Meio Expandido) — Tela dividida ao meio; capa reduzida no topo e fila na metade inferior.
+ * - [EXPANDED]: Estado 2 (Totalmente Expandido) — A fila ocupa a tela inteira.
+ */
+enum class QueueExpansionState {
+    COLLAPSED,
+    HALF_EXPANDED,
+    EXPANDED
+}
 
 /**
  * Formata milissegundos no padrão MM:SS (ex: 01:20, 03:45).
@@ -47,15 +106,20 @@ fun formatDurationMs(durationMs: Long): String {
 }
 
 /**
+ * Ajusta a cor extraída da capa via Palette para garantir contraste suficiente com textos brancos.
+ */
+fun normalizeDynamicPaletteColor(rawRgb: Int): Color {
+    val blended = ColorUtils.blendARGB(rawRgb, android.graphics.Color.BLACK, 0.32f)
+    val composeColor = Color(blended)
+    return if (composeColor.luminance() > 0.35f) {
+        Color(ColorUtils.blendARGB(blended, android.graphics.Color.BLACK, 0.45f))
+    } else {
+        composeColor
+    }
+}
+
+/**
  * Mini Player Persistente (Bottom Bar) no estilo YouTube Music / Material 3.
- *
- * Exibe:
- * - Thumbnail quadrada com cantos arredondados
- * - Título com efeito marquee para nomes longos
- * - Nome do artista
- * - Botão Play/Pause (ou CircularProgressIndicator em STATE_BUFFERING)
- * - Botão Próxima faixa
- * - Linha de progresso (LinearProgressIndicator) sutil na base do mini player
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -79,12 +143,11 @@ fun MiniPlayerBar(
     )
 
     Surface(
+        onClick = onExpandPlayer,
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onExpandPlayer),
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         color = Color(0xFF212121),
         tonalElevation = 10.dp,
         shadowElevation = 8.dp,
@@ -98,7 +161,6 @@ fun MiniPlayerBar(
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Thumbnail quadrada
                 Box(
                     modifier = Modifier
                         .size(46.dp)
@@ -124,7 +186,6 @@ fun MiniPlayerBar(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // Título (com marquee se for longo) e Artista
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center
@@ -149,7 +210,6 @@ fun MiniPlayerBar(
 
                 Spacer(modifier = Modifier.width(4.dp))
 
-                // Botão Play/Pause ou CircularProgressIndicator quando em buffering
                 IconButton(onClick = onTogglePlay) {
                     if (state.isBuffering) {
                         CircularProgressIndicator(
@@ -171,7 +231,6 @@ fun MiniPlayerBar(
                     }
                 }
 
-                // Botão Próxima faixa
                 IconButton(onClick = onSkipNext) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
@@ -182,7 +241,6 @@ fun MiniPlayerBar(
                 }
             }
 
-            // Linha de progresso sutil na base do Mini Player
             LinearProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier
@@ -198,11 +256,13 @@ fun MiniPlayerBar(
 /**
  * Full Player Screen (Tela Completa de Reprodução) estilo YouTube Music / Material 3.
  *
- * Apresentada como ModalBottomSheet expansivo de tela cheia com:
- * - Imagem da capa (Artwork) em alta definição no centro com cantos arredondados
- * - Título da música em destaque (com marquee) e Artista
- * - Slider interativo sincronizado com currentPositionMs e durationMs + textos MM:SS
- * - Controles principais: Anterior, Play/Pause (destacado com suporte a STATE_BUFFERING) e Próxima
+ * Funcionalidades:
+ * - Fundo dinâmico extraído da capa da música via Palette API (`darkMutedSwatch` / `dominantSwatch`)
+ *   animado suavemente com `animateColorAsState`.
+ * - Fileira de botões arredondados de ação: Favoritar, Salvar e Download.
+ * - Fila de reprodução ("A seguir") acionada por gestos (swipe up/down) com 3 estados:
+ *   Estado 0 (Oculto), Estado 1 (Meio Expandido com capa reduzida) e Estado 2 (Totalmente Expandido).
+ * - Suporte a Drag-and-Drop (reordenação) e Swipe-to-Dismiss (remoção) sincronizados com o ExoPlayer.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -212,11 +272,73 @@ fun FullPlayerSheet(
     onTogglePlay: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
-    onSeekTo: (Long) -> Unit
+    onSeekTo: (Long) -> Unit,
+    onToggleFavorite: (String) -> Unit,
+    onToggleSave: (String) -> Unit,
+    onToggleDownload: (String) -> Unit,
+    onPlayQueueItem: (Int) -> Unit,
+    onMoveQueueItem: (Int, Int) -> Unit,
+    onRemoveQueueItem: (Int) -> Unit
 ) {
     val track = state.currentTrack ?: return
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
 
+    // 1. Extração de Cor Dinâmica da Capa via Palette API
+    var targetPaletteColor by remember { mutableStateOf(Color(0xFF381E17)) }
+    val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
+
+    LaunchedEffect(track.id, artworkUrl) {
+        if (artworkUrl.isNullOrBlank()) {
+            targetPaletteColor = Color(0xFF2C1914)
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                val loader = ImageLoader(context)
+                val request = ImageRequest.Builder(context)
+                    .data(artworkUrl)
+                    .allowHardware(false) // Obrigatório para leitura de pixels pelo Palette
+                    .build()
+                val result = loader.execute(request)
+                if (result is SuccessResult) {
+                    val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
+                    if (bitmap != null) {
+                        val palette = Palette.from(bitmap).generate()
+                        val extractedRgb = palette.darkMutedSwatch?.rgb
+                            ?: palette.dominantSwatch?.rgb
+                            ?: palette.darkVibrantSwatch?.rgb
+                            ?: palette.mutedSwatch?.rgb
+                            ?: Color(0xFF2C1914).toArgb()
+                        targetPaletteColor = normalizeDynamicPaletteColor(extractedRgb)
+                    }
+                }
+            } catch (_: Exception) {
+                targetPaletteColor = Color(0xFF2C1914)
+            }
+        }
+    }
+
+    val animatedTopColor by animateColorAsState(
+        targetValue = targetPaletteColor,
+        animationSpec = tween(durationMillis = 750),
+        label = "DynamicCoverGradientColor"
+    )
+
+    // 2. Estado de Expansão da Fila (0 = Oculto, 1 = Meio Expandido, 2 = Totalmente Expandido)
+    var queueState by remember { mutableStateOf(QueueExpansionState.COLLAPSED) }
+
+    // Tratamento do botão Voltar do Android: se a fila estiver aberta, recolhe a fila; senão, fecha o Player
+    BackHandler {
+        when (queueState) {
+            QueueExpansionState.EXPANDED -> queueState = QueueExpansionState.HALF_EXPANDED
+            QueueExpansionState.HALF_EXPANDED -> queueState = QueueExpansionState.COLLAPSED
+            QueueExpansionState.COLLAPSED -> onDismiss()
+        }
+    }
+
+    // 3. Estado do Slider de Progresso
     var isDraggingSlider by remember { mutableStateOf(false) }
     var dragPositionFraction by remember { mutableFloatStateOf(0f) }
 
@@ -234,93 +356,806 @@ fun FullPlayerSheet(
         state.currentPositionMs
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        dragHandle = null,
-        containerColor = Color(0xFF0F0F0F),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        val backgroundBrush = Brush.verticalGradient(
-            colors = listOf(
-                Color(0xFF2C1914),
-                Color(0xFF141414),
-                Color(0xFF0A0A0A)
-            )
+    val backgroundBrush = Brush.verticalGradient(
+        colors = listOf(
+            animatedTopColor,
+            ColorUtils.blendARGB(animatedTopColor.toArgb(), 0xFF0F0F0F.toInt(), 0.65f).let { Color(it) },
+            Color(0xFF0F0F0F)
         )
+    )
 
-        Column(
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFF0F0F0F)
+    ) {
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(backgroundBrush)
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Cabeçalho Superior (Botão Minimizar + Indicador "Tocando agora")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = stringResource(id = R.string.collapse_player),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(32.dp)
+            val totalHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
+            val collapsedPeekHeightDp = 68.dp
+            val collapsedPeekPx = with(density) { collapsedPeekHeightDp.toPx() }
+
+            // Âncoras verticais (coordenada Y do topo da folha da Fila)
+            val anchorCollapsedY = (totalHeightPx - collapsedPeekPx).coerceAtLeast(0f)
+            val anchorHalfExpandedY = totalHeightPx * 0.44f
+            val anchorExpandedY = 0f
+
+            val sheetOffsetY = remember { Animatable(anchorCollapsedY) }
+
+            // Sincroniza âncora quando queueState muda programaticamente
+            LaunchedEffect(queueState, anchorCollapsedY, anchorHalfExpandedY) {
+                val targetY = when (queueState) {
+                    QueueExpansionState.COLLAPSED -> anchorCollapsedY
+                    QueueExpansionState.HALF_EXPANDED -> anchorHalfExpandedY
+                    QueueExpansionState.EXPANDED -> anchorExpandedY
+                }
+                sheetOffsetY.animateTo(
+                    targetValue = targetY,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                )
+            }
+
+            val currentSheetY = sheetOffsetY.value.coerceIn(anchorExpandedY, anchorCollapsedY)
+
+            // Fração de transição entre Estado 0 (Oculto) -> Estado 1 (Meio Expandido)
+            val halfExpansionFraction = if (anchorCollapsedY > anchorHalfExpandedY) {
+                ((anchorCollapsedY - currentSheetY) / (anchorCollapsedY - anchorHalfExpandedY)).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+
+            // Fração de transição entre Estado 1 (Meio Expandido) -> Estado 2 (Totalmente Expandido)
+            val fullExpansionFraction = if (anchorHalfExpandedY > anchorExpandedY) {
+                ((anchorHalfExpandedY - currentSheetY) / (anchorHalfExpandedY - anchorExpandedY)).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+
+            // Tamanho dinâmico da capa: grande no Estado 0, compacta no Estado 1
+            val targetArtworkSizeDp = (280f - (155f * halfExpansionFraction)).dp
+            val animatedArtworkSize by animateDpAsState(
+                targetValue = targetArtworkSizeDp,
+                label = "ArtworkDynamicSize"
+            )
+
+            // Função para finalizar o gesto de arraste da folha da Fila e ancorar em um dos 3 estados
+            fun snapQueueSheet(velocityY: Float) {
+                val pos = sheetOffsetY.value
+                val nextState = when {
+                    // Swipe rápido para cima
+                    velocityY < -900f -> {
+                        if (queueState == QueueExpansionState.COLLAPSED && pos > anchorHalfExpandedY * 0.7f) {
+                            QueueExpansionState.HALF_EXPANDED
+                        } else {
+                            QueueExpansionState.EXPANDED
+                        }
+                    }
+                    // Swipe rápido para baixo
+                    velocityY > 900f -> {
+                        if (queueState == QueueExpansionState.EXPANDED && pos < anchorHalfExpandedY * 1.3f) {
+                            QueueExpansionState.HALF_EXPANDED
+                        } else {
+                            QueueExpansionState.COLLAPSED
+                        }
+                    }
+                    // Escolha pela âncora mais próxima da posição solta
+                    else -> {
+                        val distCollapsed = abs(pos - anchorCollapsedY)
+                        val distHalf = abs(pos - anchorHalfExpandedY)
+                        val distExpanded = abs(pos - anchorExpandedY)
+                        when (minOf(distCollapsed, distHalf, distExpanded)) {
+                            distExpanded -> QueueExpansionState.EXPANDED
+                            distHalf -> QueueExpansionState.HALF_EXPANDED
+                            else -> QueueExpansionState.COLLAPSED
+                        }
+                    }
+                }
+                queueState = nextState
+                val targetY = when (nextState) {
+                    QueueExpansionState.COLLAPSED -> anchorCollapsedY
+                    QueueExpansionState.HALF_EXPANDED -> anchorHalfExpandedY
+                    QueueExpansionState.EXPANDED -> anchorExpandedY
+                }
+                coroutineScope.launch {
+                    sheetOffsetY.animateTo(
+                        targetValue = targetY,
+                        initialVelocity = velocityY,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
                     )
                 }
+            }
 
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            val queueSheetDraggableState = rememberDraggableState { deltaY ->
+                coroutineScope.launch {
+                    val newY = (sheetOffsetY.value + deltaY).coerceIn(anchorExpandedY, anchorCollapsedY)
+                    sheetOffsetY.snapTo(newY)
+                }
+            }
+
+            // =========================================================================
+            // CAMADA 1: CONTEÚDO PRINCIPAL DO FULL PLAYER (Adapta-se ao Meio Expandido)
+            // =========================================================================
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha((1f - fullExpansionFraction * 1.25f).coerceIn(0f, 1f))
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Cabeçalho Superior
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = stringResource(id = R.string.now_playing).uppercase(Locale.getDefault()),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    if (!track.album.isNullOrBlank()) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = stringResource(id = R.string.collapse_player),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Text(
-                            text = track.album,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            text = stringResource(id = R.string.now_playing).uppercase(Locale.getDefault()),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (!track.album.isNullOrBlank()) {
+                            Text(
+                                text = track.album,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.size(48.dp))
+                }
+
+                Spacer(modifier = Modifier.height((16f * (1f - halfExpansionFraction * 0.75f)).dp))
+
+                // Imagem da Capa (Artwork) — diminui suavemente quando a fila está em HALF_EXPANDED
+                Box(
+                    modifier = Modifier
+                        .size(animatedArtworkSize)
+                        .shadow(
+                            elevation = (22f * (1f - halfExpansionFraction * 0.5f)).dp,
+                            shape = RoundedCornerShape(18.dp),
+                            clip = false
+                        )
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xFF262626)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!artworkUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = artworkUrl,
+                            contentDescription = track.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(72.dp)
                         )
                     }
                 }
 
-                // Espaçador simétrico para centralizar o título
-                Spacer(modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height((18f * (1f - halfExpansionFraction * 0.65f)).dp))
+
+                // Título da Música e Artista
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = if (halfExpansionFraction > 0.5f) Alignment.CenterHorizontally else Alignment.Start
+                ) {
+                    Text(
+                        text = track.title,
+                        fontSize = (22f - (4f * halfExpansionFraction)).sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .basicMarquee()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = track.artist,
+                        fontSize = (15f - (2f * halfExpansionFraction)).sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Ações do Full Player (Favoritar, Salvar, Download) — visíveis no Estado 0
+                if (halfExpansionFraction < 0.45f) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    PlayerActionRow(
+                        isFavorite = state.favoriteTrackIds.contains(track.id),
+                        isSaved = state.savedTrackIds.contains(track.id),
+                        isDownloaded = state.downloadedTrackIds.contains(track.id),
+                        onToggleFavorite = { onToggleFavorite(track.id) },
+                        onToggleSave = { onToggleSave(track.id) },
+                        onToggleDownload = { onToggleDownload(track.id) },
+                        modifier = Modifier.alpha((1f - halfExpansionFraction * 2.2f).coerceIn(0f, 1f))
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Barra de Progresso Interativa (Slider) + Tempos MM:SS
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .alpha((1f - halfExpansionFraction * 2.2f).coerceIn(0f, 1f))
+                    ) {
+                        Slider(
+                            value = displayedFraction,
+                            onValueChange = { newFraction ->
+                                isDraggingSlider = true
+                                dragPositionFraction = newFraction.coerceIn(0f, 1f)
+                            },
+                            onValueChangeFinished = {
+                                if (effectiveDurationMs > 0L) {
+                                    val targetMs = (dragPositionFraction * effectiveDurationMs).toLong()
+                                    onSeekTo(targetMs)
+                                }
+                                isDraggingSlider = false
+                            },
+                            enabled = effectiveDurationMs > 0L,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = Color(0xFF3D3D3D)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = formatDurationMs(displayedPositionMs),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val totalTimeText = if (effectiveDurationMs > 0L) {
+                                formatDurationMs(effectiveDurationMs)
+                            } else if (track.durationText.isNotBlank() && track.durationText != "--:--") {
+                                track.durationText
+                            } else {
+                                "00:00"
+                            }
+                            Text(
+                                text = totalTimeText,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.End
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height((14f * (1f - halfExpansionFraction * 0.5f)).dp))
+
+                // Controles Principais: Anterior, Play/Pause e Próxima
+                val mainPlayButtonSize = (72f - (16f * halfExpansionFraction)).dp
+                val sideButtonSize = (52f - (10f * halfExpansionFraction)).dp
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalIconButton(
+                        onClick = onSkipPrevious,
+                        modifier = Modifier.size(sideButtonSize),
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = Color(0xFF262626),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = stringResource(id = R.string.previous_track),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Surface(
+                        onClick = onTogglePlay,
+                        modifier = Modifier.size(mainPlayButtonSize),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        shadowElevation = 10.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (state.isBuffering) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(30.dp),
+                                    strokeWidth = 3.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (state.isPlaying) {
+                                        stringResource(id = R.string.pause)
+                                    } else {
+                                        stringResource(id = R.string.play)
+                                    },
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    FilledTonalIconButton(
+                        onClick = onSkipNext,
+                        modifier = Modifier.size(sideButtonSize),
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = Color(0xFF262626),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = stringResource(id = R.string.next_track),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.weight(0.6f))
+            // =========================================================================
+            // CAMADA 2: FILA DE REPRODUÇÃO ("A SEGUIR" / UP NEXT) COM 3 ESTADOS POR GESTO
+            // =========================================================================
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset { IntOffset(0, currentSheetY.roundToInt()) },
+                shape = RoundedCornerShape(
+                    topStart = (22f * (1f - fullExpansionFraction)).dp,
+                    topEnd = (22f * (1f - fullExpansionFraction)).dp
+                ),
+                color = Color(0xFF181818),
+                tonalElevation = 12.dp,
+                shadowElevation = 16.dp
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Barra de Gesto "A seguir" (Arraste vertical para alternar entre os 3 estados)
+                    QueueDragHeader(
+                        state = state,
+                        queueState = queueState,
+                        modifier = Modifier.draggable(
+                            orientation = Orientation.Vertical,
+                            state = queueSheetDraggableState,
+                            onDragStopped = { velocity -> snapQueueSheet(velocity) }
+                        )
+                    )
 
-            // Imagem da Capa (Artwork) Grande e Destacada no Centro
+                    HorizontalDivider(color = Color(0xFF2A2A2A), thickness = 1.dp)
+
+                    // Lista da Fila com Histórico, Música Atual, Drag-and-Drop e Swipe-to-Dismiss
+                    QueueTrackList(
+                        queue = state.queue,
+                        currentQueueIndex = state.currentQueueIndex,
+                        isPlaying = state.isPlaying,
+                        onPlayQueueItem = onPlayQueueItem,
+                        onMoveQueueItem = onMoveQueueItem,
+                        onRemoveQueueItem = onRemoveQueueItem,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Fileira de botões arredondados abaixo do título/artista (estilo YouTube Music):
+ * Favoritar, Salvar e Download.
+ */
+@Composable
+fun PlayerActionRow(
+    isFavorite: Boolean,
+    isSaved: Boolean,
+    isDownloaded: Boolean,
+    onToggleFavorite: () -> Unit,
+    onToggleSave: () -> Unit,
+    onToggleDownload: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.Start),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RoundedActionPillButton(
+            icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            label = if (isFavorite) {
+                stringResource(id = R.string.action_favorited)
+            } else {
+                stringResource(id = R.string.action_favorite)
+            },
+            isActive = isFavorite,
+            onClick = onToggleFavorite
+        )
+
+        RoundedActionPillButton(
+            icon = if (isSaved) Icons.AutoMirrored.Filled.PlaylistAddCheck else Icons.AutoMirrored.Filled.PlaylistAdd,
+            label = if (isSaved) {
+                stringResource(id = R.string.action_saved)
+            } else {
+                stringResource(id = R.string.action_save)
+            },
+            isActive = isSaved,
+            onClick = onToggleSave
+        )
+
+        RoundedActionPillButton(
+            icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
+            label = if (isDownloaded) {
+                stringResource(id = R.string.action_downloaded)
+            } else {
+                stringResource(id = R.string.action_download)
+            },
+            isActive = isDownloaded,
+            onClick = onToggleDownload
+        )
+    }
+}
+
+@Composable
+private fun RoundedActionPillButton(
+    icon: ImageVector,
+    label: String,
+    isActive: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = if (isActive) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+        } else {
+            Color(0xFF282828)
+        },
+        border = if (isActive) {
+            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            null
+        }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+/**
+ * Cabeçalho da folha "A seguir" ("Up Next"), responsável por receber o gesto vertical (swipe up/down).
+ */
+@Composable
+private fun QueueDragHeader(
+    state: PlaybackState,
+    queueState: QueueExpansionState,
+    modifier: Modifier = Modifier
+) {
+    val nextTrack = state.queue.getOrNull(state.currentQueueIndex + 1)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(68.dp)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        // Pílula indicadora de arraste (Drag Handle Pill)
+        Box(
+            modifier = Modifier
+                .width(40.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color(0xFF666666))
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(id = R.string.up_next).uppercase(Locale.getDefault()),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                val subtitleText = when {
+                    queueState == QueueExpansionState.COLLAPSED && nextTrack != null ->
+                        "Próxima: ${nextTrack.title} • ${nextTrack.artist}"
+                    else ->
+                        "${state.queue.size} faixas na fila • ${stringResource(id = R.string.queue_drag_hint)}"
+                }
+                Text(
+                    text = subtitleText,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Icon(
+                imageVector = if (queueState == QueueExpansionState.EXPANDED) {
+                    Icons.Default.KeyboardArrowDown
+                } else {
+                    Icons.Default.KeyboardArrowUp
+                },
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Lista interativa da Fila de Reprodução sincronizada com `MediaController.currentTimeline`:
+ * - Músicas anteriores (Histórico) exibidas com opacidade reduzida
+ * - Música atual em destaque
+ * - Próximas faixas
+ * - Reordenação via Drag-and-Drop isolada da BottomSheet
+ * - Remoção via Swipe-to-Dismiss
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QueueTrackList(
+    queue: List<Track>,
+    currentQueueIndex: Int,
+    isPlaying: Boolean,
+    onPlayQueueItem: (Int) -> Unit,
+    onMoveQueueItem: (Int, Int) -> Unit,
+    onRemoveQueueItem: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val density = LocalDensity.current
+    val itemHeightPx = with(density) { 68.dp.toPx() }
+
+    var draggedIndex by remember { mutableStateOf<Int?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    val currentQueueState by rememberUpdatedState(queue)
+    val currentMoveCallback by rememberUpdatedState(onMoveQueueItem)
+
+    LazyColumn(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        itemsIndexed(
+            items = queue,
+            key = { _, track -> track.id }
+        ) { index, track ->
+            val currentIndex by rememberUpdatedState(index)
+            val isHistory = index < currentQueueIndex
+            val isCurrent = index == currentQueueIndex
+            val isBeingDragged = draggedIndex == index
+
+            val dismissState = rememberSwipeToDismissBoxState(
+                confirmValueChange = { value ->
+                    if (
+                        (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) &&
+                        currentQueueState.size > 1 &&
+                        draggedIndex == null
+                    ) {
+                        onRemoveQueueItem(currentIndex)
+                        true
+                    } else {
+                        false
+                    }
+                }
+            )
+
+            SwipeToDismissBox(
+                state = dismissState,
+                enableDismissFromStartToEnd = queue.size > 1 && draggedIndex == null,
+                enableDismissFromEndToStart = queue.size > 1 && draggedIndex == null,
+                modifier = Modifier
+                    .zIndex(if (isBeingDragged) 10f else 0f)
+                    .graphicsLayer {
+                        translationY = if (isBeingDragged) dragOffsetY else 0f
+                        scaleX = if (isBeingDragged) 1.03f else 1f
+                        scaleY = if (isBeingDragged) 1.03f else 1f
+                    },
+                backgroundContent = {
+                    val isSwiping = dismissState.targetValue != SwipeToDismissBoxValue.Settled
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSwiping) Color(0xFFB00020) else Color.Transparent)
+                            .padding(horizontal = 20.dp),
+                        contentAlignment = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                            Alignment.CenterStart
+                        } else {
+                            Alignment.CenterEnd
+                        }
+                    ) {
+                        if (isSwiping) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Remover da fila",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+            ) {
+                QueueTrackRow(
+                    track = track,
+                    isHistory = isHistory,
+                    isCurrent = isCurrent,
+                    isPlaying = isPlaying && isCurrent,
+                    isBeingDragged = isBeingDragged,
+                    onClick = { onPlayQueueItem(currentIndex) },
+                    onStartDrag = {
+                        draggedIndex = currentIndex
+                        dragOffsetY = 0f
+                    },
+                    onDragDelta = { deltaY ->
+                        val activeIdx = draggedIndex ?: return@QueueTrackRow
+                        dragOffsetY += deltaY
+                        val steps = (dragOffsetY / itemHeightPx).toInt()
+                        if (steps != 0) {
+                            val targetIdx = (activeIdx + steps).coerceIn(0, currentQueueState.lastIndex)
+                            if (targetIdx != activeIdx) {
+                                currentMoveCallback(activeIdx, targetIdx)
+                                draggedIndex = targetIdx
+                                dragOffsetY -= steps * itemHeightPx
+                            }
+                        }
+                    },
+                    onEndDrag = {
+                        draggedIndex = null
+                        dragOffsetY = 0f
+                    }
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(90.dp))
+        }
+    }
+}
+
+@Composable
+private fun QueueTrackRow(
+    track: Track,
+    isHistory: Boolean,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    isBeingDragged: Boolean,
+    onClick: () -> Unit,
+    onStartDrag: () -> Unit,
+    onDragDelta: (Float) -> Unit,
+    onEndDrag: () -> Unit
+) {
+    val currentOnStartDrag by rememberUpdatedState(onStartDrag)
+    val currentOnDragDelta by rememberUpdatedState(onDragDelta)
+    val currentOnEndDrag by rememberUpdatedState(onEndDrag)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (isHistory && !isBeingDragged) 0.48f else 1f)
+            .clickable(onClick = onClick)
+            // Suporte a clique longo no item para iniciar Drag-and-Drop isolado da BottomSheet
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { currentOnStartDrag() },
+                    onDragEnd = { currentOnEndDrag() },
+                    onDragCancel = { currentOnEndDrag() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        currentOnDragDelta(dragAmount.y)
+                    }
+                )
+            }
+            .then(
+                if (isCurrent || isBeingDragged) {
+                    Modifier.border(
+                        width = 1.5.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                } else {
+                    Modifier
+                }
+            ),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                isBeingDragged -> Color(0xFF303030)
+                isCurrent -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f)
+                else -> Color(0xFF222222)
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Capa da Faixa na Fila
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.88f)
-                    .aspectRatio(1f)
-                    .shadow(
-                        elevation = 24.dp,
-                        shape = RoundedCornerShape(20.dp),
-                        clip = false
-                    )
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFF262626)),
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF333333)),
                 contentAlignment = Alignment.Center
             ) {
-                val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
-                if (!artworkUrl.isNullOrEmpty()) {
+                if (!track.thumbnailUrl.isNullOrEmpty()) {
                     AsyncImage(
-                        model = artworkUrl,
+                        model = track.thumbnailUrl,
                         contentDescription = track.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
@@ -329,173 +1164,79 @@ fun FullPlayerSheet(
                     Icon(
                         imageVector = Icons.Default.MusicNote,
                         contentDescription = null,
-                        tint = Color.Gray,
-                        modifier = Modifier.size(96.dp)
+                        tint = Color.LightGray,
+                        modifier = Modifier.size(22.dp)
                     )
+                }
+
+                if (isCurrent) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.55f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.weight(0.6f))
+            Spacer(modifier = Modifier.width(10.dp))
 
-            // Informações da Música: Título em destaque e Artista
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.Start
-            ) {
+            // Título, Artista e Status (Histórico / Tocando agora / Duração)
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.title,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .basicMarquee()
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(2.dp))
+                val statusPrefix = when {
+                    isCurrent -> "${stringResource(id = R.string.now_playing)} • "
+                    isHistory -> "${stringResource(id = R.string.queue_history_badge)} • "
+                    else -> ""
+                }
                 Text(
-                    text = track.artist,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
+                    text = "$statusPrefix${track.artist} • ${track.durationText}",
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Barra de Progresso Interativa (Slider) + Tempos (Atual e Total)
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Slider(
-                    value = displayedFraction,
-                    onValueChange = { newFraction ->
-                        isDraggingSlider = true
-                        dragPositionFraction = newFraction.coerceIn(0f, 1f)
-                    },
-                    onValueChangeFinished = {
-                        if (effectiveDurationMs > 0L) {
-                            val targetMs = (dragPositionFraction * effectiveDurationMs).toLong()
-                            onSeekTo(targetMs)
-                        }
-                        isDraggingSlider = false
-                    },
-                    enabled = effectiveDurationMs > 0L,
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = Color(0xFF3D3D3D)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = formatDurationMs(displayedPositionMs),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    val totalTimeText = if (effectiveDurationMs > 0L) {
-                        formatDurationMs(effectiveDurationMs)
-                    } else if (track.durationText.isNotBlank() && track.durationText != "--:--") {
-                        track.durationText
-                    } else {
-                        "00:00"
-                    }
-                    Text(
-                        text = totalTimeText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.End
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Controles Principais: Anterior, Play/Pause (Destacado) e Próxima
-            Row(
+            // Alça de Reordenação (Drag Handle) isolada para arraste imediato sem conflito com a BottomSheet
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                    .size(40.dp)
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { currentOnStartDrag() },
+                            onDragEnd = { currentOnEndDrag() },
+                            onDragCancel = { currentOnEndDrag() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                currentOnDragDelta(dragAmount.y)
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                // Botão Anterior
-                FilledTonalIconButton(
-                    onClick = onSkipPrevious,
-                    modifier = Modifier.size(56.dp),
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = Color(0xFF262626),
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = stringResource(id = R.string.previous_track),
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                // Botão Principal Play/Pause (Maior e Destacado)
-                Surface(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .clip(CircleShape)
-                        .clickable(onClick = onTogglePlay),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
-                    shadowElevation = 12.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        if (state.isBuffering) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(34.dp),
-                                strokeWidth = 3.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Icon(
-                                imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (state.isPlaying) {
-                                    stringResource(id = R.string.pause)
-                                } else {
-                                    stringResource(id = R.string.play)
-                                },
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(40.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Botão Próxima
-                FilledTonalIconButton(
-                    onClick = onSkipNext,
-                    modifier = Modifier.size(56.dp),
-                    shape = CircleShape,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = Color(0xFF262626),
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = stringResource(id = R.string.next_track),
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Segure e arraste para reordenar",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
             }
-
-            Spacer(modifier = Modifier.weight(0.4f))
         }
     }
 }

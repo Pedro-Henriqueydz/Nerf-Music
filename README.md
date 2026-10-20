@@ -20,16 +20,17 @@ app/src/main/java/com/nerf/music/
 │       ├── MusicRepository.kt       # Interface limpa de acesso ao catálogo
 │       └── MusicRepositoryImpl.kt   # Implementação do repositório
 ├── player/
-│   ├── AudioPlayerService.kt        # MediaSessionService Media3 com suporte a segundo plano e notificações
-│   ├── StreamResolver.kt            # Interface para resolução de streaming (desacoplada)
-│   └── DemoStreamResolver.kt        # Fonte de áudio autorizada para validação do ExoPlayer (CC-BY)
+│   ├── AudioPlayerService.kt        # MediaSessionService Media3 com ResolvingDataSource e segundo plano
+│   ├── StreamResolver.kt            # Interface para resolução de streaming
+│   └── NewPipeStreamResolver.kt     # Extrator real de fluxos de áudio via NewPipeExtractor
 └── ui/
     ├── MainActivity.kt              # Entrypoint com enableEdgeToEdge
     ├── theme/                       # Cores e tema Material 3 Dark
     ├── viewmodel/
     │   └── MusicViewModel.kt        # Conexão entre Repositório, MediaController e Compose
     └── screens/
-        └── SearchScreen.kt          # Tela de busca com MiniPlayer persistente
+        ├── SearchScreen.kt          # Tela de busca com abas e MiniPlayer persistente
+        └── PlayerScreen.kt          # Full Player com Palette dinâmica e Fila ("A seguir") em 3 estágios
 ```
 
 ---
@@ -37,8 +38,8 @@ app/src/main/java/com/nerf/music/
 ## 2. Separação Estrita: Catálogo vs. Reprodução de Áudio
 
 - **Catálogo de Metadados:** Obtido através de chamadas anônimas e públicas ao endpoint `https://music.youtube.com/youtubei/v1/search` com identificador `WEB_REMIX` e localização `pt-BR / BR`. Não requer login, conta de usuário ou chaves privadas.
-- **Motor de Áudio:** Implementado via **AndroidX Media3 ExoPlayer** encapsulado em um `MediaSessionService` (`AudioPlayerService`). Garante notificação no sistema, foco de áudio e background playback.
-- **Resolução de Stream:** Desacoplada sob a interface `StreamResolver`. Para validação de playback, utiliza fonte licenciada da suíte oficial do ExoPlayer (`https://storage.googleapis.com/exoplayer-test-media-0/play.mp3`), sem quebrar controles de acesso ou DRM.
+- **Motor de Áudio:** Implementado via **AndroidX Media3 ExoPlayer** encapsulado em um `MediaSessionService` (`AudioPlayerService`) com `ResolvingDataSource.Factory` para resolução JIT da fila nativa (`currentTimeline`).
+- **Resolução de Stream Real:** Implementada em `NewPipeStreamResolver` usando `NewPipeExtractor` para extrair diretamente o stream de áudio de maior bitrate a partir do `videoId`.
 
 ---
 

@@ -1,8 +1,10 @@
 package com.nerf.music
 
 import com.nerf.music.data.model.Track
+import com.nerf.music.ui.screens.QueueExpansionState
 import com.nerf.music.ui.screens.formatDurationMs
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerUiUtilsTest {
@@ -28,5 +30,14 @@ class PlayerUiUtilsTest {
             "https://lh3.googleusercontent.com/somepath=w544-h544-l90-rj",
             track.highResThumbnailUrl
         )
+    }
+
+    @Test
+    fun testQueueExpansionStatesExist() {
+        val states = QueueExpansionState.entries
+        assertEquals(3, states.size)
+        assertTrue(states.contains(QueueExpansionState.COLLAPSED))
+        assertTrue(states.contains(QueueExpansionState.HALF_EXPANDED))
+        assertTrue(states.contains(QueueExpansionState.EXPANDED))
     }
 }
