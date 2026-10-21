@@ -1,6 +1,7 @@
 package com.nerf.music.data.repository
 
 import com.nerf.music.data.model.AlbumDetail
+import com.nerf.music.data.model.ArtistDetail
 import com.nerf.music.data.model.HomeFeedData
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.SearchFilter
@@ -46,6 +47,11 @@ interface MusicRepository {
      * Obtém os detalhes completos de um álbum ou playlist via [browseId].
      */
     suspend fun getAlbumOrPlaylist(browseId: String): Result<AlbumDetail>
+
+    /**
+     * Obtém os detalhes completos do perfil de um artista via [browseId] (channelId UC...).
+     */
+    suspend fun getArtist(browseId: String): Result<ArtistDetail>
 
     /**
      * Obtém a fila de próximas músicas (Rádio Dinâmica / Mix) e os chips de filtro

@@ -9,8 +9,8 @@ import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Interface para persistência do histórico do ouvinte, preferências de gosto musical
- * e cache offline do feed da Home.
+ * Interface para persistência do histórico do ouvinte, preferências de gosto musical,
+ * histórico de pesquisas e cache offline do feed da Home.
  */
 interface UserHistoryRepository {
     fun getRecentlyPlayed(): List<Track>
@@ -19,12 +19,17 @@ interface UserHistoryRepository {
     fun getFavoriteSeedVideoId(): String?
     fun getCachedHomeFeed(): List<HomeSection>
     fun saveCachedHomeFeed(sections: List<HomeSection>)
+    fun getTracksByArtist(artistName: String): List<Track>
+    fun getSearchHistory(): List<String>
+    fun addSearchQuery(query: String)
+    fun removeSearchQuery(query: String)
+    fun clearSearchHistory()
     fun clearHistory()
 }
 
 /**
  * Implementação local do histórico baseada em SharedPreferences e JSON serializado.
- * Garante que os itens de "Ouvir novamente", artistas favoritos e cache nunca sejam zerados
+ * Garante que os itens de "Ouvir novamente", buscas recentes, artistas favoritos e cache nunca sejam zerados
  * ao fechar ou reabrir o app.
  */
 class UserHistoryRepositoryImpl(
@@ -35,10 +40,12 @@ class UserHistoryRepositoryImpl(
         private const val TAG = "UserHistoryRepository"
         private const val PREFS_NAME = "nerf_user_history_prefs"
         private const val KEY_RECENTLY_PLAYED = "recently_played_tracks"
+        private const val KEY_SEARCH_HISTORY = "search_history_queries"
         private const val KEY_ARTIST_COUNTS = "artist_play_counts"
         private const val KEY_LAST_SEED_VIDEO_ID = "last_seed_video_id"
         private const val KEY_CACHED_HOME = "cached_home_feed"
         private const val MAX_RECENT_TRACKS = 40
+        private const val MAX_SEARCH_QUERIES = 25
     }
 
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -66,7 +73,6 @@ class UserHistoryRepositoryImpl(
     }
 
     override fun recordTrackPlayed(track: Track) {
-        // Ignora cards que não sejam faixas individuais reproduzíveis
         if (track.id.isBlank() || track.isAlbumOrPlaylist) return
 
         try {
@@ -91,6 +97,14 @@ class UserHistoryRepositoryImpl(
         }
     }
 
+    override fun getTracksByArtist(artistName: String): List<Track> {
+        val cleanName = artistName.trim().lowercase()
+        if (cleanName.isBlank()) return emptyList()
+        return getRecentlyPlayed().filter {
+            it.artist.trim().lowercase().contains(cleanName) || cleanName.contains(it.artist.trim().lowercase())
+        }
+    }
+
     override fun getTopArtists(limit: Int): List<String> {
         if (artistCounts.isEmpty()) {
             loadArtistCounts()
@@ -104,8 +118,6 @@ class UserHistoryRepositoryImpl(
     override fun getFavoriteSeedVideoId(): String? {
         val lastSeed = prefs.getString(KEY_LAST_SEED_VIDEO_ID, null)
         if (!lastSeed.isNullOrBlank()) return lastSeed
-
-        // Fallback: primeira faixa válida do histórico
         return getRecentlyPlayed().firstOrNull { it.id.isNotBlank() && !it.isAlbumOrPlaylist }?.id
     }
 
@@ -126,6 +138,42 @@ class UserHistoryRepositoryImpl(
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao salvar cache da Home: ${e.message}", e)
         }
+    }
+
+    override fun getSearchHistory(): List<String> {
+        val rawJson = prefs.getString(KEY_SEARCH_HISTORY, null) ?: return emptyList()
+        return try {
+            json.decodeFromString<List<String>>(rawJson)
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao deserializar histórico de buscas: ${e.message}")
+            emptyList()
+        }
+    }
+
+    override fun addSearchQuery(query: String) {
+        val clean = query.trim()
+        if (clean.isBlank()) return
+        try {
+            val current = getSearchHistory().filterNot { it.equals(clean, ignoreCase = true) }.toMutableList()
+            current.add(0, clean)
+            val trimmed = current.take(MAX_SEARCH_QUERIES)
+            prefs.edit().putString(KEY_SEARCH_HISTORY, json.encodeToString(trimmed)).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao salvar busca recente: ${e.message}", e)
+        }
+    }
+
+    override fun removeSearchQuery(query: String) {
+        try {
+            val updated = getSearchHistory().filterNot { it.equals(query, ignoreCase = true) }
+            prefs.edit().putString(KEY_SEARCH_HISTORY, json.encodeToString(updated)).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao remover busca recente: ${e.message}", e)
+        }
+    }
+
+    override fun clearSearchHistory() {
+        prefs.edit().remove(KEY_SEARCH_HISTORY).apply()
     }
 
     override fun clearHistory() {

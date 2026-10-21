@@ -2,6 +2,7 @@ package com.nerf.music.data.repository
 
 import com.nerf.music.data.model.AlbumDetail
 import com.nerf.music.data.model.Artist
+import com.nerf.music.data.model.ArtistDetail
 import com.nerf.music.data.model.HomeFeedData
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.SearchFilter
@@ -49,6 +50,10 @@ class MusicRepositoryImpl(
 
     override suspend fun getAlbumOrPlaylist(browseId: String): Result<AlbumDetail> {
         return catalogClient.getAlbumOrPlaylist(browseId)
+    }
+
+    override suspend fun getArtist(browseId: String): Result<ArtistDetail> {
+        return catalogClient.getArtist(browseId)
     }
 
     override suspend fun getUpNextRadio(

@@ -202,7 +202,7 @@ fun MainScreen(
         )
     }
 
-    val pivotItems = listOf(Screen.Home, Screen.Explore, Screen.Library)
+    val pivotItems = listOf(Screen.Home, Screen.Explore, Screen.Search, Screen.Library)
 
     val navigateToSearch: () -> Unit = {
         if (currentRoute != Screen.Search.route) {
@@ -217,7 +217,7 @@ fun MainScreen(
             modifier = Modifier.fillMaxSize(),
             containerColor = YtmBlack,
             bottomBar = {
-                val isAlbumRoute = currentRoute.startsWith("album")
+                val isDetailRoute = currentRoute.startsWith("album") || currentRoute.startsWith("artist")
                 Column(modifier = Modifier.fillMaxWidth()) {
                     // Mini Player persistente: visível em todas as telas (incluindo Álbum)
                     if (playbackState.currentTrack != null) {
@@ -230,7 +230,7 @@ fun MainScreen(
                     }
 
                     // Pivot Bar oficial do YouTube Music (#1D1D1D, oculta dentro de telas de detalhes de álbum)
-                    if (!isAlbumRoute) {
+                    if (!isDetailRoute) {
                         YtmPivotBar(
                             items = pivotItems,
                             currentRoute = currentRoute,
@@ -260,13 +260,40 @@ fun MainScreen(
                 composable(Screen.Home.route) {
                     HomeScreen(
                         viewModel = viewModel,
-                        onOpenSearch = navigateToSearch,
                         onOpenAlbum = { browseId ->
                             navController.navigate("album/$browseId") {
                                 launchSingleTop = true
                             }
                         }
                     )
+                }
+                composable(Screen.Explore.route) {
+                    ExploreScreen(
+                        viewModel = viewModel
+                    )
+                }
+                composable(Screen.Search.route) {
+                    SearchScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = {
+                            if (navController.previousBackStackEntry != null) {
+                                navController.popBackStack()
+                            }
+                        },
+                        onOpenAlbum = { albumId ->
+                            navController.navigate("album/$albumId") {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenArtist = { artistId ->
+                            navController.navigate("artist/$artistId") {
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                }
+                composable(Screen.Library.route) {
+                    LibraryScreen()
                 }
                 composable(
                     route = "album/{browseId}",
@@ -276,24 +303,33 @@ fun MainScreen(
                     AlbumScreen(
                         browseId = browseId,
                         viewModel = viewModel,
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = { navController.popBackStack() },
+                        onOpenArtist = { artistId ->
+                            navController.navigate("artist/$artistId") {
+                                launchSingleTop = true
+                            }
+                        }
                     )
                 }
-                composable(Screen.Explore.route) {
-                    ExploreScreen(
+                composable(
+                    route = "artist/{browseId}",
+                    arguments = listOf(navArgument("browseId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val browseId = backStackEntry.arguments?.getString("browseId").orEmpty()
+                    ArtistScreen(
+                        browseId = browseId,
                         viewModel = viewModel,
-                        onOpenSearch = navigateToSearch
-                    )
-                }
-                composable(Screen.Library.route) {
-                    LibraryScreen(
-                        onOpenSearch = navigateToSearch
-                    )
-                }
-                composable(Screen.Search.route) {
-                    SearchScreen(
-                        viewModel = viewModel,
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = { navController.popBackStack() },
+                        onOpenAlbum = { albumId ->
+                            navController.navigate("album/$albumId") {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenArtist = { artistId ->
+                            navController.navigate("artist/$artistId") {
+                                launchSingleTop = true
+                            }
+                        }
                     )
                 }
             }

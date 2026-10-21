@@ -49,6 +49,7 @@ fun AlbumScreen(
     browseId: String,
     viewModel: MusicViewModel,
     onNavigateBack: () -> Unit,
+    onOpenArtist: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val album by viewModel.albumDetail.collectAsState()

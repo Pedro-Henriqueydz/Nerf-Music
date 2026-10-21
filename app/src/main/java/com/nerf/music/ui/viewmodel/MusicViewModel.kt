@@ -17,6 +17,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.nerf.music.data.model.AlbumDetail
+import com.nerf.music.data.model.ArtistDetail
 import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.PlaybackState
@@ -108,6 +109,21 @@ class MusicViewModel(
     private val _albumError = MutableStateFlow<String?>(null)
     val albumError: StateFlow<String?> = _albumError.asStateFlow()
 
+    private val _artistDetail = MutableStateFlow<ArtistDetail?>(null)
+    val artistDetail: StateFlow<ArtistDetail?> = _artistDetail.asStateFlow()
+
+    private val _isLoadingArtist = MutableStateFlow(false)
+    val isLoadingArtist: StateFlow<Boolean> = _isLoadingArtist.asStateFlow()
+
+    private val _artistError = MutableStateFlow<String?>(null)
+    val artistError: StateFlow<String?> = _artistError.asStateFlow()
+
+    private val _libraryTracksForArtist = MutableStateFlow<List<Track>>(emptyList())
+    val libraryTracksForArtist: StateFlow<List<Track>> = _libraryTracksForArtist.asStateFlow()
+
+    private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
+    val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
+
     // Histórico da sessão para o Speed Dial ("Ouvidas Recentemente")
     private val _recentlyPlayed = MutableStateFlow<List<Track>>(emptyList())
     val recentlyPlayed: StateFlow<List<Track>> = _recentlyPlayed.asStateFlow()
@@ -135,6 +151,7 @@ class MusicViewModel(
             if (cachedHome.isNotEmpty() && _homeSections.value.isEmpty()) {
                 _homeSections.value = cachedHome
             }
+            _searchHistory.value = historyRepo.getSearchHistory()
         }
 
         if (!hasCheckedForUpdates) {
@@ -480,6 +497,7 @@ class MusicViewModel(
             _searchResult.value = SearchResult()
             return
         }
+        addSearchHistory(query)
 
         viewModelScope.launch {
             _isLoading.value = true
@@ -948,6 +966,46 @@ class MusicViewModel(
         controller.setMediaItems(mediaItems, targetIndex, 0L)
         controller.prepare()
         controller.play()
+    }
+
+    fun loadSearchHistory() {
+        _searchHistory.value = userHistoryRepository?.getSearchHistory() ?: emptyList()
+    }
+
+    fun addSearchHistory(query: String) {
+        val clean = query.trim()
+        if (clean.isBlank()) return
+        userHistoryRepository?.addSearchQuery(clean)
+        _searchHistory.value = userHistoryRepository?.getSearchHistory() ?: emptyList()
+    }
+
+    fun removeSearchHistory(query: String) {
+        userHistoryRepository?.removeSearchQuery(query)
+        _searchHistory.value = userHistoryRepository?.getSearchHistory() ?: emptyList()
+    }
+
+    fun clearSearchHistory() {
+        userHistoryRepository?.clearSearchHistory()
+        _searchHistory.value = emptyList()
+    }
+
+    fun loadArtist(browseId: String) {
+        viewModelScope.launch {
+            _isLoadingArtist.value = true
+            _artistError.value = null
+            _artistDetail.value = null
+            repository.getArtist(browseId).onSuccess { artist ->
+                _artistDetail.value = artist
+                artist.topSongs.forEach { trackMetadataMap[it.id] = it }
+                artist.videos.forEach { trackMetadataMap[it.id] = it }
+                _libraryTracksForArtist.value = userHistoryRepository?.getTracksByArtist(artist.name) ?: emptyList()
+                _isLoadingArtist.value = false
+            }.onFailure { error ->
+                Log.e("MusicViewModel", "Erro ao carregar perfil do artista $browseId", error)
+                _artistError.value = "Não foi possível carregar as informações do artista."
+                _isLoadingArtist.value = false
+            }
+        }
     }
 
     override fun onCleared() {

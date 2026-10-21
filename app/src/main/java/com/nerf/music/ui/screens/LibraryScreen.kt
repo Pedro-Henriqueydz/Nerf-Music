@@ -17,7 +17,6 @@ import com.nerf.music.ui.theme.*
 
 @Composable
 fun LibraryScreen(
-    onOpenSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -25,7 +24,7 @@ fun LibraryScreen(
             .fillMaxSize()
             .background(YtmBlack)
     ) {
-        YtmTopBar(onSearchClick = onOpenSearch)
+        YtmTopBar()
 
         Column(
             modifier = Modifier

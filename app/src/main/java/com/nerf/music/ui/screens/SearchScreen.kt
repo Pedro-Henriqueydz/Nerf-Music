@@ -1,7 +1,12 @@
 package com.nerf.music.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,13 +14,18 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -24,53 +34,93 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.nerf.music.R
 import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.SearchFilter
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.nerf.music.data.model.Track
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Tela de Pesquisa redesenhada réplica do YouTube Music:
+ * - Foco automático na barra de busca com teclado virtual aberto ao entrar.
+ * - Barra superior com voltar, campo de busca com microfone (pesquisa por voz nativa) e limpar.
+ * - Estado vazio:
+ *   1. "Recent searches": carrossel horizontal de faixas e álbuns tocados recentemente.
+ *   2. "Histórico de pesquisas": consultas anteriores com ícone de relógio, setinha diagonal para autocompletar e remoção.
+ * - Estado com busca ativa:
+ *   - Filtros de pesquisa ("Geral", "Músicas").
+ *   - Destaque do Artista (abre a nova tela ArtistScreen ao clicar).
+ *   - Lista de Músicas com reprodução imediata.
+ */
 @Composable
 fun SearchScreen(
     viewModel: MusicViewModel,
     onNavigateBack: (() -> Unit)? = null,
+    onOpenAlbum: (String) -> Unit = {},
+    onOpenArtist: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val searchResult by viewModel.searchResult.collectAsState()
-    val selectedTrack by viewModel.selectedTrack.collectAsState()
-    val loadingTrackId by viewModel.loadingTrackId.collectAsState()
+    val searchHistory by viewModel.searchHistory.collectAsState()
+    val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
+    val playbackState by viewModel.playbackState.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    val playbackState by viewModel.playbackState.collectAsState()
+
     val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    val context = LocalContext.current
+
+    // Reconhecimento de voz nativo do Android
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                viewModel.onQueryChanged(spokenText)
+                viewModel.performSearch()
+            }
+        }
+    }
+
+    // Auto-foco na barra de pesquisa ao entrar na tela
+    LaunchedEffect(Unit) {
+        viewModel.loadSearchHistory()
+        try {
+            focusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(YtmBlack)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp)
     ) {
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Barra de Pesquisa superior estilo YouTube Music
+        // Barra Superior de Pesquisa (YouTube Music style)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (onNavigateBack != null) {
@@ -78,8 +128,7 @@ fun SearchScreen(
                     onClick = {
                         focusManager.clearFocus()
                         onNavigateBack()
-                    },
-                    modifier = Modifier.padding(end = 4.dp)
+                    }
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -87,395 +136,571 @@ fun SearchScreen(
                         tint = YtmWhite
                     )
                 }
+            } else {
+                Spacer(modifier = Modifier.width(8.dp))
             }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onQueryChanged(it) },
-                modifier = Modifier.weight(1f),
-                placeholder = {
-                    Text(
-                        text = "Pesquise músicas, artistas, álbuns",
-                        fontFamily = YouTubeSansFontFamily,
-                        color = YtmTextSecondary,
-                        fontSize = 14.sp
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = stringResource(id = R.string.search_button),
-                        tint = YtmTextSecondary
-                    )
-                },
-                trailingIcon = {
+            // Input Pill
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xFF212121))
+                    .padding(horizontal = 14.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Pesquise músicas, artistas...",
+                                fontFamily = YouTubeSansFontFamily,
+                                color = YtmTextSecondary,
+                                fontSize = 15.sp
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.onQueryChanged(it) },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = YtmWhite,
+                                fontSize = 15.sp,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            cursorBrush = SolidColor(OrangeSecondary),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                focusManager.clearFocus()
+                                viewModel.performSearch()
+                            }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                        )
+                    }
+
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onQueryChanged("") }) {
+                        IconButton(
+                            onClick = { viewModel.onQueryChanged("") },
+                            modifier = Modifier.size(32.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Clear,
-                                contentDescription = stringResource(id = R.string.clear_search),
-                                tint = YtmWhite
+                                contentDescription = "Limpar busca",
+                                tint = YtmWhite,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(50),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    focusManager.clearFocus()
-                    viewModel.performSearch()
-                }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = YtmGrey11,
-                    unfocusedContainerColor = YtmGrey11,
-                    focusedBorderColor = YtmWhite20Pct,
-                    unfocusedBorderColor = Color.Transparent
-                )
-            )
+
+                    // Botão Microfone (Reconhecimento de Voz Nativo)
+                    IconButton(
+                        onClick = {
+                            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "pt-BR")
+                                putExtra(RecognizerIntent.EXTRA_PROMPT, "Fale o que deseja ouvir")
+                            }
+                            try {
+                                speechLauncher.launch(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Reconhecimento de voz indisponível", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Pesquisa por voz",
+                            tint = YtmWhite,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
         }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Filtros de busca (Geral vs Músicas)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Conteúdo da Tela de Pesquisa
+        if (searchQuery.isBlank()) {
+            // ESTADO INICIAL: Recent Searches + Histórico de Pesquisas
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 10.dp),
+                contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                FilterChip(
-                    selected = selectedFilter == SearchFilter.ALL,
-                    onClick = {
-                        focusManager.clearFocus()
-                        viewModel.onFilterSelected(SearchFilter.ALL)
-                    },
-                    label = { Text(stringResource(id = R.string.filter_all)) }
-                )
-                FilterChip(
-                    selected = selectedFilter == SearchFilter.SONGS,
-                    onClick = {
-                        focusManager.clearFocus()
-                        viewModel.onFilterSelected(SearchFilter.SONGS)
-                    },
-                    label = { Text(stringResource(id = R.string.filter_songs)) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Estados da Tela: Carregamento, Erro ou Lista de Resultados
-            when {
-                isLoading -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.height(10.dp))
+                // 1. Carrossel de Buscas Recentes ("Recent searches")
+                if (recentlyPlayed.isNotEmpty()) {
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = stringResource(id = R.string.search_loading),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 14.sp
+                                text = "Buscas recentes",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = YtmWhite,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(recentlyPlayed) { track ->
+                                    RecentSearchCard(
+                                        track = track,
+                                        onClick = {
+                                            val albumId = track.browseId?.takeIf { it.isNotBlank() }
+                                                ?: if (track.isAlbumOrPlaylist) track.id else null
+                                            if (albumId != null) {
+                                                onOpenAlbum(albumId)
+                                            } else {
+                                                viewModel.playTrack(track)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(18.dp))
+                        }
+                    }
+                }
+
+                // 2. Histórico de Consultas de Texto (com ícone de relógio e setinha)
+                if (searchHistory.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Histórico de pesquisas",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = YtmWhite
+                            )
+                            Text(
+                                text = "Limpar",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp,
+                                color = YtmTextSecondary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .clickable { viewModel.clearSearchHistory() }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    items(searchHistory, key = { it }) { queryText ->
+                        SearchHistoryRowItem(
+                            query = queryText,
+                            onQueryClick = {
+                                focusManager.clearFocus()
+                                viewModel.onQueryChanged(queryText)
+                                viewModel.performSearch()
+                            },
+                            onInsertQuery = {
+                                viewModel.onQueryChanged(queryText)
+                            },
+                            onRemoveQuery = {
+                                viewModel.removeSearchHistory(queryText)
+                            }
+                        )
+                    }
+                }
+            }
+        } else {
+            // ESTADO COM BUSCA ATIVA: Filtros + Resultados
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Filtros de busca (Geral, Músicas)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SearchFilter.values().forEach { filter ->
+                        val isSelected = filter == selectedFilter
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { viewModel.onFilterSelected(filter) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) YtmWhite else YtmGrey11
+                        ) {
+                            Text(
+                                text = filter.displayName,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp,
+                                color = if (isSelected) YtmBlack else YtmWhite,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                             )
                         }
                     }
                 }
-                errorMessage != null && searchResult.isEmpty -> {
-                    Box(
+
+                if (isLoading) {
+                    LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = errorMessage ?: "",
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    }
+                            .height(2.dp),
+                        color = YtmWhite,
+                        trackColor = Color.Transparent
+                    )
                 }
-                searchResult.isEmpty -> {
+
+                if (errorMessage != null) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = stringResource(id = R.string.search_empty_prompt),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = errorMessage ?: "",
+                            fontFamily = YouTubeSansFontFamily,
+                            color = YtmTextSecondary,
                             fontSize = 14.sp
                         )
                     }
                 }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Seção de Artistas (Destaque Principal ou Lista)
-                        val allArtists = buildList {
-                            searchResult.topArtist?.let { add(it) }
-                            addAll(searchResult.artists.filter { it.name != searchResult.topArtist?.name })
-                        }
 
-                        if (allArtists.isNotEmpty()) {
-                            item {
-                                SectionHeader(title = stringResource(id = R.string.section_artists))
-                            }
-                            item {
-                                ArtistsSection(artists = allArtists)
-                            }
-                        }
-
-                        // Seção de Músicas
-                        if (searchResult.songs.isNotEmpty()) {
-                            item {
-                                SectionHeader(
-                                    title = "${stringResource(id = R.string.section_songs)} (${searchResult.songs.size})"
-                                )
-                            }
-                            items(searchResult.songs, key = { it.id }) { track ->
-                                SongListItem(
-                                    track = track,
-                                    isSelected = selectedTrack?.id == track.id,
-                                    isLoading = loadingTrackId == track.id,
-                                    isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
-                                    onClick = {
-                                        focusManager.clearFocus()
-                                        viewModel.playTrack(track)
-                                    }
-                                )
-                            }
-                        }
-
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    // Destaque do Artista (Top Result)
+                    val primaryArtist = searchResult.topArtist ?: searchResult.artists.firstOrNull()
+                    if (primaryArtist != null) {
                         item {
-                            Spacer(modifier = Modifier.height(100.dp))
+                            Text(
+                                text = "Artista",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = YtmWhite,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                            ArtistResultCard(
+                                artist = primaryArtist,
+                                onClick = { onOpenArtist(primaryArtist.id) }
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+                        }
+                    }
+
+                    // Músicas encontradas
+                    items(searchResult.songs, key = { it.id }) { track ->
+                        val isPlaying = track.id == playbackState.currentTrack?.id
+                        SearchSongRowItem(
+                            track = track,
+                            isPlaying = isPlaying,
+                            onClick = {
+                                if (track.isAlbumOrPlaylist || !track.browseId.isNullOrBlank()) {
+                                    onOpenAlbum(track.browseId ?: track.id)
+                                } else {
+                                    viewModel.playTrack(track)
+                                }
+                            }
+                        )
+                    }
+
+                    // Outros Artistas
+                    if (searchResult.artists.size > 1) {
+                        item {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "Outros Artistas",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = YtmWhite,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        items(searchResult.artists.drop(1), key = { it.id }) { artist ->
+                            ArtistResultCard(
+                                artist = artist,
+                                onClick = { onOpenArtist(artist.id) }
+                            )
                         }
                     }
                 }
             }
         }
     }
-
-@Composable
-fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        fontSize = 16.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(vertical = 4.dp)
-    )
 }
 
+/**
+ * Card para o carrossel de Buscas Recentes ("Recent searches").
+ */
 @Composable
-fun ArtistsSection(artists: List<Artist>) {
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 4.dp)
+private fun RecentSearchCard(
+    track: Track,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(115.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
     ) {
-        items(artists, key = { it.id }) { artist ->
-            ArtistCard(artist = artist)
+        Box(
+            modifier = Modifier
+                .size(115.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(YtmGrey11)
+        ) {
+            val thumb = track.thumbnailUrl
+            if (!thumb.isNullOrBlank()) {
+                AsyncImage(
+                    model = thumb,
+                    contentDescription = track.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = YtmIconInactive,
+                    modifier = Modifier.size(36.dp).align(Alignment.Center)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = track.title,
+            fontFamily = YouTubeSansFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.5.sp,
+            color = YtmWhite,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = track.artist,
+            fontFamily = YouTubeSansFontFamily,
+            fontSize = 11.5.sp,
+            color = YtmTextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
+ * Linha de item do histórico de pesquisa com ícone de relógio e setinha diagonal.
+ */
+@Composable
+private fun SearchHistoryRowItem(
+    query: String,
+    onQueryClick: () -> Unit,
+    onInsertQuery: () -> Unit,
+    onRemoveQuery: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onQueryClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.History,
+            contentDescription = null,
+            tint = YtmTextSecondary,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = query,
+            fontFamily = YouTubeSansFontFamily,
+            fontSize = 14.5.sp,
+            color = YtmWhite,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(
+            onClick = onInsertQuery,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.NorthWest,
+                contentDescription = "Completar pesquisa",
+                tint = YtmTextSecondary,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        IconButton(
+            onClick = onRemoveQuery,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Remover do histórico",
+                tint = YtmIconInactive,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }
 
+/**
+ * Card de Artista nos resultados de busca com avatar circular.
+ */
 @Composable
-fun ArtistCard(artist: Artist) {
-    Card(
-        modifier = Modifier.width(130.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+private fun ArtistResultCard(
+    artist: Artist,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(YtmGrey11)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(CircleShape)
-                    .background(Color.DarkGray)
-            ) {
-                if (!artist.thumbnailUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = artist.thumbnailUrl,
-                        contentDescription = artist.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = Color.LightGray,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(36.dp)
-                    )
-                }
+            val thumb = artist.thumbnailUrl
+            if (!thumb.isNullOrBlank()) {
+                AsyncImage(
+                    model = thumb,
+                    contentDescription = artist.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = YtmIconInactive,
+                    modifier = Modifier.size(28.dp).align(Alignment.Center)
+                )
             }
-            Spacer(modifier = Modifier.height(6.dp))
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = artist.name,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = YtmWhite,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (!artist.subtitle.isNullOrBlank()) {
-                Text(
-                    text = artist.subtitle,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = artist.subtitle ?: "Artista",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = YtmTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
+/**
+ * Linha de resultado para faixa musical.
+ */
 @Composable
-fun SongListItem(
+private fun SearchSongRowItem(
     track: Track,
-    isSelected: Boolean,
-    isLoading: Boolean,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = Modifier
+    Row(
+        modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .then(
-                if (isSelected) {
-                    Modifier.border(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                } else Modifier
-            ),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
-        )
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
+        Box(
             modifier = Modifier
-                .padding(8.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+                .size(48.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(YtmGrey11)
         ) {
-            // Imagem de Capa
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.DarkGray)
-            ) {
-                if (!track.thumbnailUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = track.thumbnailUrl,
-                        contentDescription = track.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        tint = Color.LightGray,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(26.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Metadados (Título, Artista, Álbum, Duração)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = track.title,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            val thumb = track.thumbnailUrl
+            if (!thumb.isNullOrBlank()) {
+                AsyncImage(
+                    model = thumb,
+                    contentDescription = track.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                val subtitle = "${track.artist} • ${track.durationText}"
-                Text(
-                    text = subtitle,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = YtmIconInactive,
+                    modifier = Modifier.size(24.dp).align(Alignment.Center)
                 )
             }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Indicador de Carregamento ou Botão de Ação
-            IconButton(onClick = onClick) {
-                when {
-                    isLoading -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    isPlaying -> {
-                        Icon(
-                            imageVector = Icons.Default.Pause,
-                            contentDescription = "Pausar",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                    else -> {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Reproduzir",
-                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.5.sp,
+                color = if (isPlaying) OrangeSecondary else YtmWhite,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            val sub = if (track.durationText != "--:--" && track.durationText.isNotBlank()) {
+                "${track.artist} • ${track.durationText}"
+            } else {
+                track.artist
             }
+            Text(
+                text = sub,
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 12.5.sp,
+                color = YtmTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        IconButton(onClick = { /* Opções */ }, modifier = Modifier.size(36.dp)) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "Mais opções",
+                tint = YtmIconInactive,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

@@ -45,7 +45,6 @@ import com.nerf.music.ui.viewmodel.MusicViewModel
 @Composable
 fun HomeScreen(
     viewModel: MusicViewModel,
-    onOpenSearch: () -> Unit = {},
     onOpenAlbum: (browseId: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -79,8 +78,8 @@ fun HomeScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Navbar oficial estilo YouTube Music com Lupa de Pesquisa
-            YtmTopBar(onSearchClick = onOpenSearch)
+            // Top Navbar oficial estilo YouTube Music (sem lupa no topo, pesquisa na navbar inferior)
+            YtmTopBar()
 
             when {
                 isLoading && homeSections.isEmpty() -> {
@@ -253,7 +252,6 @@ fun HomeScreen(
  */
 @Composable
 fun YtmTopBar(
-    onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -284,21 +282,6 @@ fun YtmTopBar(
                 letterSpacing = (-0.5).sp,
                 color = YtmWhite
             )
-        }
-
-        // Ações à direita: Apenas Lupa de Pesquisa (sem conta/login)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            IconButton(onClick = onSearchClick) {
-                Icon(
-                    imageVector = Icons.Outlined.Search,
-                    contentDescription = "Pesquisar",
-                    tint = YtmWhite,
-                    modifier = Modifier.size(25.dp)
-                )
-            }
         }
     }
 }

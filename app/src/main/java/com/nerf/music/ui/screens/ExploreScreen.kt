@@ -30,7 +30,7 @@ import com.nerf.music.ui.viewmodel.MusicViewModel
 @Composable
 fun ExploreScreen(
     viewModel: MusicViewModel,
-    onOpenSearch: () -> Unit = {},
+    onOpenSearch: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val homeSections by viewModel.homeSections.collectAsState()
@@ -41,7 +41,7 @@ fun ExploreScreen(
             .fillMaxSize()
             .background(YtmBlack)
     ) {
-        YtmTopBar(onSearchClick = onOpenSearch)
+        YtmTopBar()
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -60,19 +60,19 @@ fun ExploreScreen(
                         icon = Icons.Outlined.Album,
                         label = "Novos\nlançamentos",
                         modifier = Modifier.weight(1f),
-                        onClick = onOpenSearch
+                        onClick = { onOpenSearch?.invoke() }
                     )
                     YtmExploreQuickButton(
                         icon = Icons.AutoMirrored.Outlined.TrendingUp,
                         label = "Paradas\nmusicais",
                         modifier = Modifier.weight(1f),
-                        onClick = onOpenSearch
+                        onClick = { onOpenSearch?.invoke() }
                     )
                     YtmExploreQuickButton(
                         icon = Icons.Outlined.Mood,
                         label = "Momentos\ne gêneros",
                         modifier = Modifier.weight(1f),
-                        onClick = onOpenSearch
+                        onClick = { onOpenSearch?.invoke() }
                     )
                 }
             }
