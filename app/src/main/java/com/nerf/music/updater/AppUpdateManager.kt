@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.nerf.music.BuildConfig
+import com.nerf.music.data.repository.SemanticVersion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -56,31 +57,12 @@ class AppUpdateManager(
          * Retorna `true` se a versão atual do app for menor que a versão remota.
          */
         fun isCurrentVersionOlder(currentVersion: String, remoteTagName: String): Boolean {
-            val currentParts = parseVersionParts(currentVersion)
-            val remoteParts = parseVersionParts(remoteTagName)
-            if (remoteParts.isEmpty()) return false
-
-            val maxLen = maxOf(currentParts.size, remoteParts.size)
-            for (i in 0 until maxLen) {
-                val cur = currentParts.getOrElse(i) { 0 }
-                val rem = remoteParts.getOrElse(i) { 0 }
-                if (cur < rem) return true
-                if (cur > rem) return false
-            }
-            return false
+            return SemanticVersion.isRemoteVersionStrictlyNewer(currentVersion, remoteTagName)
         }
 
         internal fun parseVersionParts(rawVersion: String): List<Int> {
-            val cleaned = rawVersion
-                .trim()
-                .removePrefix("v")
-                .removePrefix("V")
-                .substringBefore("-")
-                .substringBefore("+")
-
-            if (cleaned.isBlank()) return emptyList()
-            return cleaned.split(".")
-                .mapNotNull { part -> part.trim().toIntOrNull() }
+            val semVer = SemanticVersion.parse(rawVersion)
+            return listOf(semVer.major, semVer.minor, semVer.patch)
         }
     }
 
@@ -93,9 +75,7 @@ class AppUpdateManager(
      * Consulta a última release no GitHub e retorna [AppUpdateInfo] caso exista uma versão mais nova
      * que `BuildConfig.VERSION_NAME`.
      */
-    suspend fun checkForUpdate(
-        currentVersionName: String = BuildConfig.VERSION_NAME
-    ): AppUpdateInfo? = withContext(Dispatchers.IO) {
+    suspend fun fetchLatestRelease(): AppUpdateInfo? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
                 .url(LATEST_RELEASE_API_URL)
@@ -111,16 +91,21 @@ class AppUpdateManager(
                 }
 
                 val bodyString = response.body?.string().orEmpty()
-                val releaseInfo = parseLatestReleaseJson(bodyString) ?: return@withContext null
-
-                if (isCurrentVersionOlder(currentVersionName, releaseInfo.tagName)) {
-                    releaseInfo
-                } else {
-                    null
-                }
+                parseLatestReleaseJson(bodyString)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Não foi possível verificar atualizações: ${e.message}")
+            Log.w(TAG, "Não foi possível consultar última release: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun checkForUpdate(
+        currentVersionName: String = BuildConfig.VERSION_NAME
+    ): AppUpdateInfo? = withContext(Dispatchers.IO) {
+        val releaseInfo = fetchLatestRelease() ?: return@withContext null
+        if (isCurrentVersionOlder(currentVersionName, releaseInfo.tagName)) {
+            releaseInfo
+        } else {
             null
         }
     }

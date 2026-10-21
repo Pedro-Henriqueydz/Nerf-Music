@@ -26,8 +26,9 @@ import com.nerf.music.data.model.Track
 import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
 import com.nerf.music.player.AudioPlayerService
+import com.nerf.music.data.repository.UpdateRepository
+import com.nerf.music.data.repository.UpdateRepositoryImpl
 import com.nerf.music.updater.AppUpdateInfo
-import com.nerf.music.updater.AppUpdateManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +39,7 @@ import kotlinx.coroutines.launch
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
-    private val appUpdateManager: AppUpdateManager = AppUpdateManager()
+    private val updateRepository: UpdateRepository = UpdateRepositoryImpl()
 ) : ViewModel() {
 
     companion object {
@@ -165,7 +166,7 @@ class MusicViewModel(
 
     fun checkForAppUpdates() {
         viewModelScope.launch {
-            val update = appUpdateManager.checkForUpdate()
+            val update = updateRepository.checkForUpdate()
             if (update != null) {
                 _availableUpdate.value = update
             }
@@ -179,7 +180,7 @@ class MusicViewModel(
     fun confirmAndDownloadUpdate(context: Context) {
         val updateInfo = _availableUpdate.value ?: return
         _availableUpdate.value = null
-        appUpdateManager.downloadAndInstallApk(
+        updateRepository.downloadAndInstallApk(
             context = context,
             updateInfo = updateInfo,
             onStatusMessage = { msg -> _userMessage.value = msg }
