@@ -3,10 +3,8 @@ package com.nerf.music.data.model
 import kotlinx.serialization.Serializable
 
 /**
- * Representa os metadados de uma faixa musical retornada pelo catálogo.
- *
- * IMPORTANTE: Ter os metadados no catálogo NÃO garante que a faixa é reproduzível
- * diretamente sem autorização ou resolução de stream específica.
+ * Representa os metadados de uma faixa musical ou card reproduzível (álbum/mix/playlist)
+ * retornado pelo catálogo InnerTube.
  */
 @Serializable
 data class Track(
@@ -17,11 +15,12 @@ data class Track(
     val thumbnailUrl: String? = null,
     val durationText: String = "--:--",
     val durationSeconds: Long = 0,
-    val sourceIdentifier: String = "INNERTUBE_WEB_REMIX"
+    val sourceIdentifier: String = "INNERTUBE_WEB_REMIX",
+    val playlistId: String? = null
 ) {
     /**
      * Retorna a URL da capa em alta resolução (544x544) quando proveniente do Google/YouTube Music,
-     * ideal para exibição em destaque na tela completa do Player.
+     * ideal para exibição em destaque nos cards e na tela completa do Player.
      */
     val highResThumbnailUrl: String?
         get() = thumbnailUrl?.replace(Regex("=w\\d+-h\\d+"), "=w544-h544")

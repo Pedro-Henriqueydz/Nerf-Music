@@ -1,7 +1,10 @@
 ﻿package com.nerf.music.data.network
 
 import com.nerf.music.data.model.Artist
+import com.nerf.music.data.model.HomeChip
+import com.nerf.music.data.model.HomeFeedData
 import com.nerf.music.data.model.HomeSection
+import com.nerf.music.data.model.HomeSectionStyle
 import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
@@ -197,11 +200,60 @@ class InnerTubeCatalogClient(
     }
 
     /**
-     * Obtem o feed principal da Home via endpoint `/youtubei/v1/browse` com browseId "FEmusic_home".
+     * Obtém o feed principal da Home via endpoint `/youtubei/v1/browse` com browseId "FEmusic_home".
      */
-    suspend fun getHomeFeed(): Result<List<HomeSection>> = withContext(Dispatchers.IO) {
+    suspend fun getHomeFeed(): Result<List<HomeSection>> =
+        getHomeFeedData(params = null).map { it.sections }
+
+    /**
+     * Obtém os dados completos da Home (Chips de Humor/Atividade + Seções de Carrosséis e Quick Picks),
+     * mesclando `FEmusic_home` e `FEmusic_explore` quando nenhum filtro de chip está selecionado.
+     */
+    suspend fun getHomeFeedData(params: String? = null): Result<HomeFeedData> = withContext(Dispatchers.IO) {
         try {
-            val payload = buildBrowsePayload("FEmusic_home")
+            if (!params.isNullOrBlank()) {
+                val body = executeBrowseRequest("FEmusic_home", params).getOrThrow()
+                val chips = parseHomeChips(body)
+                val sections = parseHomeFeedResponse(body)
+                return@withContext Result.success(HomeFeedData(chips = chips, sections = sections))
+            }
+
+            coroutineScope {
+                val homeDeferred = async { executeBrowseRequest("FEmusic_home", null) }
+                val exploreDeferred = async { executeBrowseRequest("FEmusic_explore", null) }
+
+                val homeRes = homeDeferred.await()
+                val exploreRes = exploreDeferred.await()
+
+                val homeBody = homeRes.getOrElse { return@coroutineScope Result.failure(it) }
+                val chips = parseHomeChips(homeBody)
+                val mergedSections = parseHomeFeedResponse(homeBody).toMutableList()
+
+                exploreRes.getOrNull()?.let { exploreBody ->
+                    val exploreSections = parseHomeFeedResponse(exploreBody)
+                    for (sec in exploreSections) {
+                        if (mergedSections.none { it.title.equals(sec.title, ignoreCase = true) }) {
+                            mergedSections.add(sec)
+                        }
+                    }
+                }
+
+                val firstQuickPicksIdx = mergedSections.indexOfFirst { it.style == HomeSectionStyle.QUICK_PICKS_GRID }
+                if (firstQuickPicksIdx > 0) {
+                    val quickPicksSec = mergedSections.removeAt(firstQuickPicksIdx)
+                    mergedSections.add(0, quickPicksSec)
+                }
+
+                Result.success(HomeFeedData(chips = chips, sections = mergedSections))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun executeBrowseRequest(browseId: String, params: String? = null): Result<String> {
+        return try {
+            val payload = buildBrowsePayload(browseId, params)
             val request = Request.Builder()
                 .url(BROWSE_URL)
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
@@ -212,22 +264,20 @@ class InnerTubeCatalogClient(
 
             val response = httpClient.newCall(request).execute()
             if (!response.isSuccessful) {
-                return@withContext Result.failure(
-                    IOException("Servidor respondeu com codigo HTTP ${response.code}")
+                return Result.failure(
+                    IOException("Servidor respondeu com código HTTP ${response.code}")
                 )
             }
 
             val body = response.body?.string()
-                ?: return@withContext Result.failure(IOException("Resposta vazia do servidor"))
-
-            val sections = parseHomeFeedResponse(body)
-            Result.success(sections)
+                ?: return Result.failure(IOException("Resposta vazia do servidor"))
+            Result.success(body)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    internal fun buildBrowsePayload(browseId: String): JSONObject {
+    internal fun buildBrowsePayload(browseId: String, params: String? = null): JSONObject {
         val root = JSONObject()
         val context = JSONObject()
         val client = JSONObject()
@@ -240,6 +290,9 @@ class InnerTubeCatalogClient(
         context.put("client", client)
         root.put("context", context)
         root.put("browseId", browseId)
+        if (!params.isNullOrBlank()) {
+            root.put("params", params)
+        }
         return root
     }
 
@@ -255,14 +308,20 @@ class InnerTubeCatalogClient(
 
         context.put("client", client)
         root.put("context", context)
-        root.put("videoId", videoId)
 
-        val resolvedPlaylistId = if (!params.isNullOrBlank()) {
-            chipPlaylistIdMap[params] ?: "RDAMVM$videoId"
+        if (videoId.startsWith("playlist_")) {
+            val rawPlaylistId = videoId.removePrefix("playlist_")
+            root.put("playlistId", rawPlaylistId)
         } else {
-            "RDAMVM$videoId"
+            root.put("videoId", videoId)
+            val resolvedPlaylistId = if (!params.isNullOrBlank()) {
+                chipPlaylistIdMap[params] ?: "RDAMVM$videoId"
+            } else {
+                "RDAMVM$videoId"
+            }
+            root.put("playlistId", resolvedPlaylistId)
         }
-        root.put("playlistId", resolvedPlaylistId)
+
         root.put("isAudioOnly", true)
         root.put("enablePersistentPlaylistPanel", true)
 
@@ -976,8 +1035,57 @@ class InnerTubeCatalogClient(
     }
 
     /**
+     * Extrai os chips de filtro de humor/atividade do cabeçalho da Home (`chipCloudRenderer`).
+     */
+    fun parseHomeChips(jsonString: String): List<HomeChip> {
+        val rawChips = mutableListOf<HomeChip>()
+        try {
+            val root = JSONObject(jsonString)
+            val chipsArray = root.optJSONObject("contents")
+                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+                ?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONObject("header")
+                ?.optJSONObject("chipCloudRenderer")
+                ?.optJSONArray("chips") ?: return rawChips
+
+            for (i in 0 until chipsArray.length()) {
+                val chipRenderer = chipsArray.optJSONObject(i)
+                    ?.optJSONObject("chipCloudChipRenderer") ?: continue
+                val title = chipRenderer.optJSONObject("text")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                    ?.trim() ?: continue
+                val params = chipRenderer.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("browseEndpoint")
+                    ?.optString("params")
+                    ?.trim() ?: continue
+
+                if (title.isNotEmpty() && params.isNotEmpty() && !title.equals("Podcasts", ignoreCase = true)) {
+                    rawChips.add(HomeChip(title = title, params = params))
+                }
+            }
+        } catch (e: Exception) {
+            // Retorna chips extraídos
+        }
+
+        val preferredOrder = listOf(
+            "Energia", "Relax", "Para treinar", "Foco", "Festa",
+            "Romance", "Positividade", "Para ouvir no trânsito", "Para dormir", "Triste"
+        )
+        return rawChips.sortedBy { chip ->
+            val idx = preferredOrder.indexOfFirst { it.equals(chip.title, ignoreCase = true) }
+            if (idx == -1) 999 else idx
+        }
+    }
+
+    /**
      * Faz o parse da resposta de /youtubei/v1/browse para o feed Home,
-     * extraindo as seções com carrosséis horizontais (musicCarouselShelfRenderer).
+     * extraindo as seções com carrosséis horizontais e grades de 4 faixas (`musicCarouselShelfRenderer`).
      */
     fun parseHomeFeedResponse(jsonString: String): List<HomeSection> {
         val sections = mutableListOf<HomeSection>()
@@ -1005,14 +1113,25 @@ class InnerTubeCatalogClient(
                     ?.trim()
                     ?: continue
 
+                val strapline = header.optJSONObject("strapline")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+
+                val numItemsPerColumn = carousel.optString("numItemsPerColumn", "1").toIntOrNull() ?: 1
+
                 val itemsArray = carousel.optJSONArray("contents") ?: continue
                 val sectionSongs = mutableListOf<Track>()
                 val dummyArtists = mutableListOf<Artist>()
+                var hasResponsiveItems = false
 
                 for (j in 0 until itemsArray.length()) {
                     val itemWrapper = itemsArray.optJSONObject(j) ?: continue
                     val responsiveItem = itemWrapper.optJSONObject("musicResponsiveListItemRenderer")
                     if (responsiveItem != null) {
+                        hasResponsiveItems = true
                         parseResponsiveListItem(responsiveItem, sectionSongs, dummyArtists)
                     } else {
                         val twoRowItem = itemWrapper.optJSONObject("musicTwoRowItemRenderer")
@@ -1026,7 +1145,19 @@ class InnerTubeCatalogClient(
                 }
 
                 if (sectionSongs.isNotEmpty()) {
-                    sections.add(HomeSection(title = title, items = sectionSongs))
+                    val style = if (numItemsPerColumn >= 4 || hasResponsiveItems) {
+                        HomeSectionStyle.QUICK_PICKS_GRID
+                    } else {
+                        HomeSectionStyle.TWO_ROW_CAROUSEL
+                    }
+                    sections.add(
+                        HomeSection(
+                            title = title,
+                            items = sectionSongs,
+                            strapline = strapline,
+                            style = style
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -1040,19 +1171,38 @@ class InnerTubeCatalogClient(
         val title = titleObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.trim() ?: return null
         if (title.isEmpty()) return null
 
-        val navEndpoint = item.optJSONObject("navigationEndpoint")
-            ?: item.optJSONObject("thumbnailOverlay")
-                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                ?.optJSONObject("content")
-                ?.optJSONObject("musicPlayButtonRenderer")
-                ?.optJSONObject("playNavigationEndpoint")
+        val overlayPlayNav = item.optJSONObject("thumbnailOverlay")
+            ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("musicPlayButtonRenderer")
+            ?.optJSONObject("playNavigationEndpoint")
+        val itemNav = item.optJSONObject("navigationEndpoint")
 
-        val videoId = navEndpoint?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
-        if (videoId.isEmpty()) return null
+        val videoId = overlayPlayNav?.optJSONObject("watchEndpoint")?.optString("videoId")
+            ?.takeIf { it.isNotEmpty() }
+            ?: itemNav?.optJSONObject("watchEndpoint")?.optString("videoId").orEmpty()
+
+        val playlistId = overlayPlayNav?.optJSONObject("watchPlaylistEndpoint")?.optString("playlistId")
+            ?.takeIf { it.isNotEmpty() }
+            ?: overlayPlayNav?.optJSONObject("watchEndpoint")?.optString("playlistId")
+                ?.takeIf { it.isNotEmpty() }
+            ?: itemNav?.optJSONObject("watchPlaylistEndpoint")?.optString("playlistId")
+                ?.takeIf { it.isNotEmpty() }
+            ?: itemNav?.optJSONObject("browseEndpoint")?.optString("browseId")
+                ?.removePrefix("VL")
+                ?.takeIf { it.startsWith("RD") || it.startsWith("PL") || it.startsWith("OL") }
+                .orEmpty()
+
+        if (videoId.isEmpty() && playlistId.isEmpty()) return null
 
         val subtitleRuns = item.optJSONObject("subtitle")?.optJSONArray("runs")
-        val subtitleSegments = if (subtitleRuns != null) extractSegmentsFromRuns(subtitleRuns) else emptyList()
-        val artist = subtitleSegments.firstOrNull() ?: "Desconhecido"
+        val subtitleBuilder = StringBuilder()
+        if (subtitleRuns != null) {
+            for (r in 0 until subtitleRuns.length()) {
+                subtitleBuilder.append(subtitleRuns.optJSONObject(r)?.optString("text").orEmpty())
+            }
+        }
+        val artist = subtitleBuilder.toString().trim().ifEmpty { "YouTube Music" }
 
         val thumbnails = item.optJSONObject("thumbnailRenderer")
             ?.optJSONObject("musicThumbnailRenderer")
@@ -1060,15 +1210,16 @@ class InnerTubeCatalogClient(
             ?.optJSONArray("thumbnails")
         val thumbnailUrl = getBestThumbnailUrl(thumbnails)
 
+        val resolvedId = videoId.ifEmpty { "playlist_$playlistId" }
         return Track(
-            id = videoId,
+            id = resolvedId,
             title = title,
             artist = artist,
             album = null,
             thumbnailUrl = thumbnailUrl,
             durationText = "--:--",
-            sourceIdentifier = "INNERTUBE_WEB_REMIX"
+            sourceIdentifier = "INNERTUBE_WEB_REMIX",
+            playlistId = playlistId.ifEmpty { null }
         )
     }
-
 }

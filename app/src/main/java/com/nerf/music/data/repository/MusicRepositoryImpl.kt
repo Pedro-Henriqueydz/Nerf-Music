@@ -1,6 +1,7 @@
-﻿package com.nerf.music.data.repository
+package com.nerf.music.data.repository
 
 import com.nerf.music.data.model.Artist
+import com.nerf.music.data.model.HomeFeedData
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
@@ -33,6 +34,10 @@ class MusicRepositoryImpl(
         return catalogClient.getHomeFeed()
     }
 
+    override suspend fun getHomeFeedData(params: String?): Result<HomeFeedData> {
+        return catalogClient.getHomeFeedData(params)
+    }
+
     override suspend fun getUpNextRadio(
         videoId: String,
         params: String?
@@ -48,64 +53,61 @@ class MusicRepositoryImpl(
         val cleanedQuery = query.trim()
         if (cleanedQuery.isEmpty()) return result
 
-        val boostedSongs = result.songs.sortedBy { track ->
-            calculateTrackRelevanceTier(track, cleanedQuery)
-        }
+        val queryTokens = cleanedQuery.lowercase().split(Pattern.compile("\\s+")).filter { it.isNotEmpty() }
 
-        val boostedArtists = result.artists.sortedBy { artist ->
-            calculateArtistRelevanceTier(artist, cleanedQuery)
-        }
+        val sortedSongs = result.songs.sortedWith(
+            compareBy<Track> { track ->
+                computeTrackScore(track, cleanedQuery, queryTokens)
+            }
+        )
+
+        val sortedArtists = result.artists.sortedWith(
+            compareBy<Artist> { artist ->
+                computeArtistScore(artist, cleanedQuery)
+            }
+        )
 
         return result.copy(
-            songs = boostedSongs,
-            artists = boostedArtists
+            songs = sortedSongs,
+            artists = sortedArtists
         )
     }
 
-    internal fun calculateTrackRelevanceTier(track: Track, query: String): Int {
-        val q = query.trim()
-        if (q.isEmpty()) return 3
+    private fun computeTrackScore(track: Track, exactQuery: String, tokens: List<String>): Int {
+        val title = track.title.trim()
+        val artist = track.artist.trim()
 
-        if (track.artist.equals(q, ignoreCase = true) || track.title.equals(q, ignoreCase = true)) {
-            return 0
+        val exactTitleMatch = title.equals(exactQuery, ignoreCase = true)
+        val exactArtistMatch = artist.equals(exactQuery, ignoreCase = true)
+
+        if (exactTitleMatch && exactArtistMatch) return 0
+        if (exactTitleMatch) return 1
+        if (exactArtistMatch) return 2
+
+        val titleWords = title.lowercase().split(Pattern.compile("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+        val artistWords = artist.lowercase().split(Pattern.compile("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+
+        val allTokensMatchExactWord = tokens.all { token ->
+            titleWords.contains(token) || artistWords.contains(token)
+        }
+        if (allTokensMatchExactWord) return 3
+
+        if (title.startsWith(exactQuery, ignoreCase = true) || artist.startsWith(exactQuery, ignoreCase = true)) {
+            return 4
         }
 
-        val collaboratorNames = track.artist.split(COLLAB_SPLIT_REGEX)
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-        if (collaboratorNames.any { it.equals(q, ignoreCase = true) } ||
-            containsExactWord(track.artist, q) ||
-            containsExactWord(track.title, q)
-        ) {
-            return 1
+        if (title.contains(exactQuery, ignoreCase = true) || artist.contains(exactQuery, ignoreCase = true)) {
+            return 5
         }
 
-        if (track.artist.contains(q, ignoreCase = true) || track.title.contains(q, ignoreCase = true)) {
-            return 2
-        }
+        return 6
+    }
 
+    private fun computeArtistScore(artist: Artist, exactQuery: String): Int {
+        val name = artist.name.trim()
+        if (name.equals(exactQuery, ignoreCase = true)) return 0
+        if (name.startsWith(exactQuery, ignoreCase = true)) return 1
+        if (name.contains(exactQuery, ignoreCase = true)) return 2
         return 3
-    }
-
-    private fun calculateArtistRelevanceTier(artist: Artist, query: String): Int {
-        val q = query.trim()
-        return when {
-            artist.name.equals(q, ignoreCase = true) -> 0
-            containsExactWord(artist.name, q) -> 1
-            artist.name.contains(q, ignoreCase = true) -> 2
-            else -> 3
-        }
-    }
-
-    private fun containsExactWord(text: String, word: String): Boolean {
-        if (text.isBlank() || word.isBlank()) return false
-        val pattern = Pattern.compile(
-            "(?i)(^|[^\\p{L}\\p{N}])${Pattern.quote(word)}($|[^\\p{L}\\p{N}])"
-        )
-        return pattern.matcher(text).find()
-    }
-
-    companion object {
-        private val COLLAB_SPLIT_REGEX = Regex("(?i)\\s+(?:e|&|feat\\.?|ft\\.?|x)\\s+|,\\s*")
     }
 }

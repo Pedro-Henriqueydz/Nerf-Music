@@ -37,13 +37,16 @@ import coil.compose.AsyncImage
 import com.nerf.music.R
 import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.SearchFilter
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.nerf.music.data.model.Track
+import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
     viewModel: MusicViewModel,
+    onNavigateBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -56,50 +59,53 @@ fun SearchScreen(
     val playbackState by viewModel.playbackState.collectAsState()
     val focusManager = LocalFocusManager.current
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(id = R.string.app_name),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Buscar",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(modifier = Modifier.height(10.dp))
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(YtmBlack)
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(modifier = Modifier.height(8.dp))
 
-            // Campo de Busca
+        // Barra de Pesquisa superior estilo YouTube Music
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onNavigateBack != null) {
+                IconButton(
+                    onClick = {
+                        focusManager.clearFocus()
+                        onNavigateBack()
+                    },
+                    modifier = Modifier.padding(end = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Voltar",
+                        tint = YtmWhite
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.onQueryChanged(it) },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(text = stringResource(id = R.string.search_hint)) },
+                modifier = Modifier.weight(1f),
+                placeholder = {
+                    Text(
+                        text = "Pesquise músicas, artistas, álbuns",
+                        fontFamily = YouTubeSansFontFamily,
+                        color = YtmTextSecondary,
+                        fontSize = 14.sp
+                    )
+                },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = stringResource(id = R.string.search_button)
+                        contentDescription = stringResource(id = R.string.search_button),
+                        tint = YtmTextSecondary
                     )
                 },
                 trailingIcon = {
@@ -107,23 +113,27 @@ fun SearchScreen(
                         IconButton(onClick = { viewModel.onQueryChanged("") }) {
                             Icon(
                                 imageVector = Icons.Default.Clear,
-                                contentDescription = stringResource(id = R.string.clear_search)
+                                contentDescription = stringResource(id = R.string.clear_search),
+                                tint = YtmWhite
                             )
                         }
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(50),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     focusManager.clearFocus()
                     viewModel.performSearch()
                 }),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                    focusedContainerColor = YtmGrey11,
+                    unfocusedContainerColor = YtmGrey11,
+                    focusedBorderColor = YtmWhite20Pct,
+                    unfocusedBorderColor = Color.Transparent
                 )
             )
+        }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -269,7 +279,6 @@ fun SearchScreen(
             }
         }
     }
-}
 
 @Composable
 fun SectionHeader(title: String) {

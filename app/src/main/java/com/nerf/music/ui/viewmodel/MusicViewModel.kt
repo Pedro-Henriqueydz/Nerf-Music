@@ -16,6 +16,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.QueueFilterChip
@@ -79,6 +80,12 @@ class MusicViewModel(
     private val _availableUpdate = MutableStateFlow<AppUpdateInfo?>(null)
     val availableUpdate: StateFlow<AppUpdateInfo?> = _availableUpdate.asStateFlow()
 
+    private val _homeChips = MutableStateFlow<List<HomeChip>>(emptyList())
+    val homeChips: StateFlow<List<HomeChip>> = _homeChips.asStateFlow()
+
+    private val _selectedHomeChip = MutableStateFlow<HomeChip?>(null)
+    val selectedHomeChip: StateFlow<HomeChip?> = _selectedHomeChip.asStateFlow()
+
     private val _homeSections = MutableStateFlow<List<HomeSection>>(emptyList())
     val homeSections: StateFlow<List<HomeSection>> = _homeSections.asStateFlow()
 
@@ -124,18 +131,36 @@ class MusicViewModel(
         }, MoreExecutors.directExecutor())
     }
 
-    fun loadHomeFeed() {
+    fun loadHomeFeed(params: String? = _selectedHomeChip.value?.params) {
         viewModelScope.launch {
             _isLoadingHome.value = true
             _homeError.value = null
-            repository.getHomeFeed().onSuccess { sections ->
-                _homeSections.value = sections
+            repository.getHomeFeedData(params).onSuccess { feedData ->
+                if (feedData.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
+                    _homeChips.value = feedData.chips
+                }
+                _homeSections.value = feedData.sections
                 _isLoadingHome.value = false
-            }.onFailure { error ->
+            }.onFailure {
                 _homeError.value = "Não foi possível carregar o feed inicial."
                 _isLoadingHome.value = false
             }
         }
+    }
+
+    fun selectHomeChip(chip: HomeChip?) {
+        val nextChip = if (chip == null || _selectedHomeChip.value?.params == chip.params) {
+            null
+        } else {
+            chip
+        }
+        _selectedHomeChip.value = nextChip
+        loadHomeFeed(params = nextChip?.params)
+    }
+
+    fun playSection(section: HomeSection) {
+        val firstTrack = section.items.firstOrNull() ?: return
+        playTrack(firstTrack)
     }
 
     fun checkForAppUpdates() {
@@ -446,6 +471,43 @@ class MusicViewModel(
             isLoadingQueueRadio = true,
             errorMessage = null
         )
+
+        if (track.id.startsWith("playlist_")) {
+            radioFetchJob = viewModelScope.launch {
+                val radioResult = repository.getUpNextRadio(videoId = track.id, params = null)
+                radioResult.onSuccess { upNext ->
+                    upNext.tracks.forEach { trackMetadataMap[it.id] = it }
+                    val firstReal = upNext.tracks.firstOrNull()
+                    val activeController = mediaController
+                    if (activeController != null && firstReal != null) {
+                        seedVideoId = firstReal.id
+                        _selectedTrack.value = firstReal
+                        _loadingTrackId.value = firstReal.id
+                        val mediaItems = upNext.tracks.map { trackToMediaItem(it) }
+                        activeController.setMediaItems(mediaItems)
+                        activeController.prepare()
+                        activeController.play()
+                    }
+                    val selectedParams = upNext.chips.firstOrNull { it.isSelected }?.params
+                    _playbackState.value = _playbackState.value.copy(
+                        currentTrack = firstReal ?: track,
+                        queue = upNext.tracks.ifEmpty { listOf(track) },
+                        queueSourceTitle = track.title,
+                        queueFilterChips = upNext.chips,
+                        selectedQueueChipParams = selectedParams,
+                        isLoadingQueueRadio = false
+                    )
+                }.onFailure { error ->
+                    Log.w("MusicViewModel", "Falha ao abrir playlist ${track.id}: ${error.message}")
+                    _loadingTrackId.value = null
+                    _playbackState.value = _playbackState.value.copy(
+                        isBuffering = false,
+                        isLoadingQueueRadio = false
+                    )
+                }
+            }
+            return
+        }
 
         // Inicia reprodução imediata da faixa clicada
         controller.setMediaItem(trackToMediaItem(track))

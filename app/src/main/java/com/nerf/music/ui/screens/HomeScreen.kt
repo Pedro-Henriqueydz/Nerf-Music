@@ -1,20 +1,30 @@
 package com.nerf.music.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Cast
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -22,69 +32,75 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeSection
+import com.nerf.music.data.model.HomeSectionStyle
 import com.nerf.music.data.model.Track
+import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: MusicViewModel,
+    onOpenSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val homeChips by viewModel.homeChips.collectAsState()
+    val selectedChip by viewModel.selectedHomeChip.collectAsState()
     val homeSections by viewModel.homeSections.collectAsState()
     val isLoading by viewModel.isLoadingHome.collectAsState()
     val homeError by viewModel.homeError.collectAsState()
     val recentlyPlayed by viewModel.recentlyPlayed.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "NERF Music",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Início",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
-    ) { innerPadding ->
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(YtmBlack)
+    ) {
+        // Gradiente atmosférico superior idêntico ao cabeçalho da Home do YouTube Music
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
+                .fillMaxWidth()
+                .height(280.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF38131A).copy(alpha = 0.65f),
+                            Color(0xFF18121E).copy(alpha = 0.35f),
+                            YtmBlack
+                        )
+                    )
+                )
+        )
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Top Navbar oficial estilo YouTube Music com Lupa de Pesquisa
+            YtmTopBar(onSearchClick = onOpenSearch)
+
             when {
                 isLoading && homeSections.isEmpty() -> {
-                    Column(
+                    Box(
                         modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                        contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Carregando músicas em alta...",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(
+                                color = YtmWhite,
+                                strokeWidth = 2.5.dp,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "Carregando o seu feed...",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 14.sp,
+                                color = YtmTextSecondary
+                            )
+                        }
                     }
                 }
+
                 homeError != null && homeSections.isEmpty() -> {
                     Column(
                         modifier = Modifier
@@ -94,54 +110,122 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = homeError ?: "Erro desconhecido",
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 15.sp
+                            text = homeError ?: "Erro ao carregar a Home",
+                            fontFamily = YouTubeSansFontFamily,
+                            color = ErrorColor,
+                            fontSize = 16.sp
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = { viewModel.loadHomeFeed() },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = YtmWhite,
+                                contentColor = YtmBlack
+                            ),
+                            shape = RoundedCornerShape(50)
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Tentar Novamente")
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Tentar novamente",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
+
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                        contentPadding = PaddingValues(bottom = 110.dp),
+                        verticalArrangement = Arrangement.spacedBy(28.dp)
                     ) {
-                        // 1. Seção Speed Dial (Ouvidas Recentemente na sessão atual)
-                        if (recentlyPlayed.isNotEmpty()) {
+                        // 1. Fileira de Chips de Humor e Atividade (chipCloudRenderer)
+                        if (homeChips.isNotEmpty()) {
                             item {
-                                HomeSectionHeader(title = "Ouvidas recentemente")
-                                Spacer(modifier = Modifier.height(8.dp))
-                                HomeTrackCarousel(
-                                    tracks = recentlyPlayed,
-                                    currentPlayingId = playbackState.currentTrack?.id,
-                                    onTrackClick = { track -> viewModel.playTrack(track) }
+                                YtmMoodChipsRow(
+                                    chips = homeChips,
+                                    selectedChip = selectedChip,
+                                    onChipClick = { chip -> viewModel.selectHomeChip(chip) }
                                 )
                             }
                         }
 
-                        // 2. Seções dinâmicas da API InnerTube (ex: Escolha a dedo, Músicas em alta)
-                        items(homeSections) { section ->
-                            HomeSectionHeader(title = section.title)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            HomeTrackCarousel(
-                                tracks = section.items,
-                                currentPlayingId = playbackState.currentTrack?.id,
-                                onTrackClick = { track -> viewModel.playTrack(track) }
-                            )
+                        // Indicador sutil de atualização ao trocar de chip
+                        if (isLoading) {
+                            item {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(2.dp),
+                                    color = YtmWhite,
+                                    trackColor = Color.Transparent
+                                )
+                            }
                         }
 
-                        // Espaçador inferior para garantir rolagem livre acima do Mini Player e Nav Bar
-                        item {
-                            Spacer(modifier = Modifier.height(100.dp))
+                        // 2. Seção "Ouvir novamente" (Speed Dial da sessão atual)
+                        if (recentlyPlayed.isNotEmpty() && selectedChip == null) {
+                            item {
+                                YtmSectionHeader(
+                                    title = "Ouvir novamente",
+                                    strapline = "COM BASE NO QUE VOCÊ OUVIU",
+                                    actionLabel = null,
+                                    onActionClick = null
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    items(recentlyPlayed, key = { "recent_${it.id}" }) { track ->
+                                        HomeSongCard(
+                                            track = track,
+                                            isPlaying = track.id == playbackState.currentTrack?.id,
+                                            onClick = { viewModel.playTrack(track) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Seções do YouTube Music (Quick Picks 4xN e Carrosséis TwoRow 155dp)
+                        items(homeSections, key = { it.title }) { section ->
+                            val isQuickPicks = section.style == HomeSectionStyle.QUICK_PICKS_GRID
+                            val defaultStrapline = when {
+                                !section.strapline.isNullOrBlank() -> section.strapline
+                                section.title.contains("Escolha a dedo", ignoreCase = true) ->
+                                    "COMECE UMA RÁDIO COM BASE EM UMA MÚSICA"
+                                section.title.contains("Em alta", ignoreCase = true) ->
+                                    "AS MÚSICAS MAIS TOCADAS DO MOMENTO"
+                                else -> null
+                            }
+
+                            YtmSectionHeader(
+                                title = section.title,
+                                strapline = defaultStrapline,
+                                actionLabel = if (isQuickPicks) "Reproduzir tudo" else null,
+                                onActionClick = if (isQuickPicks) {
+                                    { viewModel.playSection(section) }
+                                } else null
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (isQuickPicks) {
+                                YtmQuickPicksGridCarousel(
+                                    tracks = section.items,
+                                    currentPlayingId = playbackState.currentTrack?.id,
+                                    onTrackClick = { track -> viewModel.playTrack(track) }
+                                )
+                            } else {
+                                YtmTwoRowCarousel(
+                                    tracks = section.items,
+                                    currentPlayingId = playbackState.currentTrack?.id,
+                                    onTrackClick = { track -> viewModel.playTrack(track) }
+                                )
+                            }
                         }
                     }
                 }
@@ -150,22 +234,356 @@ fun HomeScreen(
     }
 }
 
+/**
+ * Barra superior idêntica ao YouTube Music:
+ * - Esquerda: Emblema circular vermelho com play branco + título "Music" em YouTube Sans Bold.
+ * - Direita: Ícone Cast, Lupa de Busca (abre a SearchScreen) e Avatar do usuário.
+ */
 @Composable
-private fun HomeSectionHeader(
-    title: String,
+fun YtmTopBar(
+    onSearchClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Text(
-        text = title,
-        fontSize = 18.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier.padding(horizontal = 16.dp)
-    )
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .height(56.dp)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Logo estilo YouTube Music
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(OrangePrimary),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .border(1.3.dp, YtmWhite, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = YtmWhite,
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Music",
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 23.sp,
+                letterSpacing = (-0.5).sp,
+                color = YtmWhite
+            )
+        }
+
+        // Ações à direita: Cast, Lupa de Busca e Perfil
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            IconButton(onClick = onSearchClick) {
+                Icon(
+                    imageVector = Icons.Outlined.Search,
+                    contentDescription = "Pesquisar",
+                    tint = YtmWhite,
+                    modifier = Modifier.size(25.dp)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(YtmGrey10)
+                    .border(1.dp, YtmWhite20Pct, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Person,
+                    contentDescription = "Perfil",
+                    tint = YtmWhite,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Fileira horizontal de chips de humor/atividade (Energia, Relax, Para treinar, Foco, etc.)
+ * com as dimensões exatas extraídas do APK do YouTube Music (14sp, raio 8dp, fundo #1AFFFFFF).
+ */
+@Composable
+fun YtmMoodChipsRow(
+    chips: List<HomeChip>,
+    selectedChip: HomeChip?,
+    onChipClick: (HomeChip) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(chips, key = { it.title }) { chip ->
+            val isSelected = selectedChip?.params == chip.params
+            Surface(
+                modifier = Modifier
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onChipClick(chip) },
+                shape = RoundedCornerShape(8.dp),
+                color = if (isSelected) YtmWhite else YtmWhite10Pct,
+                border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, YtmDivider)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = chip.title,
+                        fontFamily = YouTubeSansFontFamily,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        fontSize = 14.sp,
+                        color = if (isSelected) YtmBlack else YtmWhite,
+                        maxLines = 1
+                    )
+                    if (isSelected) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Limpar filtro",
+                            tint = YtmBlack,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Cabeçalho de seção estilo YouTube Music (`music_carousel_shelf_basic_header`).
+ */
+@Composable
+fun YtmSectionHeader(
+    title: String,
+    strapline: String? = null,
+    actionLabel: String? = null,
+    onActionClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            if (!strapline.isNullOrBlank()) {
+                Text(
+                    text = strapline.uppercase(),
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.4.sp,
+                    color = YtmTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+            }
+            Text(
+                text = title,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = YtmWhite,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        if (actionLabel != null && onActionClick != null) {
+            Surface(
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .clip(RoundedCornerShape(50))
+                    .clickable { onActionClick() },
+                shape = RoundedCornerShape(50),
+                color = Color.Transparent,
+                border = androidx.compose.foundation.BorderStroke(1.dp, YtmWhite20Pct)
+            ) {
+                Text(
+                    text = actionLabel,
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    color = YtmWhite,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Grade horizontal de 4 faixas por coluna ("Quick Picks" / "Escolha a dedo" / "Em alta"),
+ * replicando fielmente o `numItemsPerColumn = 4` do YouTube Music.
+ */
+@Composable
+fun YtmQuickPicksGridCarousel(
+    tracks: List<Track>,
+    currentPlayingId: String?,
+    onTrackClick: (Track) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val columns = remember(tracks) { tracks.chunked(4) }
+
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        items(columns) { columnTracks ->
+            Column(
+                modifier = Modifier.width(310.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                columnTracks.forEach { track ->
+                    YtmQuickPickRowItem(
+                        track = track,
+                        isPlaying = track.id == currentPlayingId,
+                        onClick = { onTrackClick(track) }
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun HomeTrackCarousel(
+fun YtmQuickPickRowItem(
+    track: Track,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Thumbnail 52x52dp com cantos de 4dp (padrão music_responsive_list_item)
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(YtmGrey11),
+            contentAlignment = Alignment.Center
+        ) {
+            val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
+            if (!artworkUrl.isNullOrEmpty()) {
+                AsyncImage(
+                    model = artworkUrl,
+                    contentDescription = track.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = YtmIconInactive,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            if (isPlaying) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.55f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = "Tocando",
+                        tint = YtmWhite,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Título e Artista
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = if (isPlaying) OrangeSecondary else YtmWhite,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            val subtitleText = if (track.durationText != "--:--" && track.durationText.isNotBlank()) {
+                "${track.artist} • ${track.durationText}"
+            } else {
+                track.artist
+            }
+            Text(
+                text = subtitleText,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Normal,
+                fontSize = 13.sp,
+                color = YtmTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "Opções",
+                tint = YtmIconInactive,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Carrossel horizontal de cards grandes (155dp) para Álbuns, Mixes, Playlists e Vídeos
+ * (`music_two_row_item` do APK do YouTube Music).
+ */
+@Composable
+fun YtmTwoRowCarousel(
     tracks: List<Track>,
     currentPlayingId: String?,
     onTrackClick: (Track) -> Unit,
@@ -187,8 +605,9 @@ private fun HomeTrackCarousel(
 }
 
 /**
- * Card quadrado grande com bordas arredondadas, título em negrito (truncado em 1 linha)
- * e artista/subtítulo em cinza abaixo (Material 3).
+ * Card `music_two_row_item` oficial do YouTube Music:
+ * - Capa quadrada de 155dp com cantos arredondados de 8dp e botão Play sobreposto.
+ * - Título em YouTube Sans Bold/SemiBold e subtítulo cinza (#AAAAAA) abaixo.
  */
 @Composable
 fun HomeSongCard(
@@ -199,16 +618,15 @@ fun HomeSongCard(
 ) {
     Column(
         modifier = modifier
-            .width(150.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .width(155.dp)
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
     ) {
-        // Capa quadrada grande
         Box(
             modifier = Modifier
-                .size(150.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF242424))
+                .size(155.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(YtmGrey11)
         ) {
             val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
             if (!artworkUrl.isNullOrEmpty()) {
@@ -222,51 +640,52 @@ fun HomeSongCard(
                 Icon(
                     imageVector = Icons.Default.MusicNote,
                     contentDescription = null,
-                    tint = Color.Gray,
+                    tint = YtmIconInactive,
                     modifier = Modifier
                         .size(48.dp)
                         .align(Alignment.Center)
                 )
             }
 
-            // Indicador sutil de reprodução atual
-            if (isPlaying) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.45f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "▶ Tocando",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+            // Botão Play translúcido no canto inferior direito igual ao overlay do YT Music
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xCC000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.GraphicEq else Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = YtmWhite,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Título em negrito (truncado em 1 linha)
         Text(
             text = track.title,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            fontFamily = YouTubeSansFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            color = if (isPlaying) OrangeSecondary else YtmWhite,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
 
         Spacer(modifier = Modifier.height(2.dp))
 
-        // Artista / Subtítulo em cinza
         Text(
             text = track.artist,
-            fontSize = 11.sp,
+            fontFamily = YouTubeSansFontFamily,
             fontWeight = FontWeight.Normal,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            color = YtmTextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )

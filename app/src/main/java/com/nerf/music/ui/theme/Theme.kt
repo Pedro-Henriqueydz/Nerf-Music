@@ -27,6 +27,7 @@ fun NERFMusicTheme(
 ) {
     MaterialTheme(
         colorScheme = DarkColorScheme,
+        typography = YtmTypography,
         content = content
     )
 }
