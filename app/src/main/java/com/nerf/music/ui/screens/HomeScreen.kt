@@ -46,6 +46,7 @@ import com.nerf.music.ui.viewmodel.MusicViewModel
 fun HomeScreen(
     viewModel: MusicViewModel,
     onOpenSearch: () -> Unit = {},
+    onOpenAlbum: (browseId: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val homeChips by viewModel.homeChips.collectAsState()
@@ -226,7 +227,15 @@ fun HomeScreen(
                                 YtmTwoRowCarousel(
                                     tracks = section.items,
                                     currentPlayingId = playbackState.currentTrack?.id,
-                                    onTrackClick = { track -> viewModel.playTrack(track) }
+                                    onTrackClick = { track ->
+                                        val albumId = track.browseId?.takeIf { it.isNotBlank() }
+                                            ?: if (track.isAlbumOrPlaylist) track.id else null
+                                        if (albumId != null) {
+                                            onOpenAlbum(albumId)
+                                        } else {
+                                            viewModel.playTrack(track)
+                                        }
+                                    }
                                 )
                             }
                         }

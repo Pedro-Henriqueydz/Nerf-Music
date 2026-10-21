@@ -16,6 +16,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.nerf.music.data.model.AlbumDetail
 import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.PlaybackState
@@ -25,6 +26,8 @@ import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
 import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
+import com.nerf.music.data.repository.UserHistoryRepository
+import com.nerf.music.data.repository.UserHistoryRepositoryImpl
 import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.data.repository.UpdateRepository
 import com.nerf.music.data.repository.UpdateRepositoryImpl
@@ -96,6 +99,15 @@ class MusicViewModel(
     private val _homeError = MutableStateFlow<String?>(null)
     val homeError: StateFlow<String?> = _homeError.asStateFlow()
 
+    private val _albumDetail = MutableStateFlow<AlbumDetail?>(null)
+    val albumDetail: StateFlow<AlbumDetail?> = _albumDetail.asStateFlow()
+
+    private val _isLoadingAlbum = MutableStateFlow(false)
+    val isLoadingAlbum: StateFlow<Boolean> = _isLoadingAlbum.asStateFlow()
+
+    private val _albumError = MutableStateFlow<String?>(null)
+    val albumError: StateFlow<String?> = _albumError.asStateFlow()
+
     // Histórico da sessão para o Speed Dial ("Ouvidas Recentemente")
     private val _recentlyPlayed = MutableStateFlow<List<Track>>(emptyList())
     val recentlyPlayed: StateFlow<List<Track>> = _recentlyPlayed.asStateFlow()
@@ -109,8 +121,22 @@ class MusicViewModel(
     private var radioFetchJob: Job? = null
     private var seedVideoId: String? = null
     private var hasCheckedForUpdates = false
+    private var userHistoryRepository: UserHistoryRepository? = null
 
     fun initializePlayerController(context: Context) {
+        if (userHistoryRepository == null) {
+            val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
+            userHistoryRepository = historyRepo
+            val recents = historyRepo.getRecentlyPlayed()
+            if (recents.isNotEmpty()) {
+                _recentlyPlayed.value = recents.take(5)
+            }
+            val cachedHome = historyRepo.getCachedHomeFeed()
+            if (cachedHome.isNotEmpty() && _homeSections.value.isEmpty()) {
+                _homeSections.value = cachedHome
+            }
+        }
+
         if (!hasCheckedForUpdates) {
             hasCheckedForUpdates = true
             checkForAppUpdates()
@@ -144,12 +170,17 @@ class MusicViewModel(
         viewModelScope.launch {
             _isLoadingHome.value = true
             _homeError.value = null
-            repository.getHomeFeedData(params).onSuccess { feedData ->
+            val historyRepo = userHistoryRepository
+            val seedId = historyRepo?.getFavoriteSeedVideoId()
+            val topArtists = historyRepo?.getTopArtists(5) ?: emptyList()
+
+            repository.getPersonalizedHomeFeedData(seedId, topArtists, params).onSuccess { feedData ->
                 if (feedData.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
                     _homeChips.value = feedData.chips
                 }
                 _homeSections.value = feedData.sections
                 _isLoadingHome.value = false
+                historyRepo?.saveCachedHomeFeed(feedData.sections)
             }.onFailure {
                 _homeError.value = "Não foi possível carregar o feed inicial."
                 _isLoadingHome.value = false
@@ -503,8 +534,10 @@ class MusicViewModel(
         radioFetchJob?.cancel()
         seedVideoId = track.id
 
-        // Atualiza histórico do Speed Dial com no máximo 5 faixas
-        val updatedRecent = (listOf(track) + _recentlyPlayed.value.filterNot { it.id == track.id }).take(5)
+        // Registra no histórico persistente do usuário (sobrevive a fechamento do app)
+        userHistoryRepository?.recordTrackPlayed(track)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
+            ?: (listOf(track) + _recentlyPlayed.value.filterNot { it.id == track.id }).take(5)
         _recentlyPlayed.value = updatedRecent
 
         val initialQueue = listOf(track)
@@ -850,6 +883,71 @@ class MusicViewModel(
 
     fun clearUserMessage() {
         _userMessage.value = null
+    }
+
+    /**
+     * Carrega detalhes completos do álbum ou playlist a partir do browseId.
+     */
+    fun loadAlbum(browseId: String) {
+        viewModelScope.launch {
+            _isLoadingAlbum.value = true
+            _albumError.value = null
+            _albumDetail.value = null
+            repository.getAlbumOrPlaylist(browseId).onSuccess { album ->
+                _albumDetail.value = album
+                album.tracks.forEach { trackMetadataMap[it.id] = it }
+                _isLoadingAlbum.value = false
+            }.onFailure { error ->
+                Log.e("MusicViewModel", "Erro ao carregar álbum/playlist $browseId", error)
+                _albumError.value = "Não foi possível carregar as faixas deste álbum."
+                _isLoadingAlbum.value = false
+            }
+        }
+    }
+
+    /**
+     * Enfileira todas as faixas do álbum no player e inicia a reprodução imediatamente no índice solicitado.
+     */
+    fun playAlbum(album: AlbumDetail, startIndex: Int = 0) {
+        if (album.tracks.isEmpty()) return
+        val targetIndex = startIndex.coerceIn(0, album.tracks.size - 1)
+        val targetTrack = album.tracks[targetIndex]
+
+        _selectedTrack.value = targetTrack
+        val controller = mediaController ?: return
+
+        radioFetchJob?.cancel()
+        seedVideoId = targetTrack.id
+
+        userHistoryRepository?.recordTrackPlayed(targetTrack)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        _recentlyPlayed.value = updatedRecent
+
+        album.tracks.forEach { trackMetadataMap[it.id] = it }
+
+        _loadingTrackId.value = targetTrack.id
+        _playbackState.value = _playbackState.value.copy(
+            currentTrack = targetTrack,
+            queue = album.tracks,
+            currentQueueIndex = targetIndex,
+            isPlaying = false,
+            currentPositionMs = 0L,
+            durationMs = (targetTrack.durationSeconds * 1000L).coerceAtLeast(0L),
+            isBuffering = true,
+            hasNext = targetIndex < album.tracks.size - 1,
+            hasPrevious = targetIndex > 0,
+            queueSourceTitle = album.title,
+            queueFilterChips = emptyList(),
+            selectedQueueChipParams = null,
+            isLoadingQueueRadio = false,
+            errorMessage = null
+        )
+
+        val mediaItems = album.tracks.map { trackToMediaItem(it) }
+        controller.setMediaItems(mediaItems, targetIndex, 0L)
+        controller.prepare()
+        controller.play()
     }
 
     override fun onCleared() {

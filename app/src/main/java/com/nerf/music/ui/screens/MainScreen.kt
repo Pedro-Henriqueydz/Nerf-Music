@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -215,8 +217,9 @@ fun MainScreen(
             modifier = Modifier.fillMaxSize(),
             containerColor = YtmBlack,
             bottomBar = {
+                val isAlbumRoute = currentRoute.startsWith("album")
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Mini Player persistente: posicionado logo acima da PivotBar em todas as abas
+                    // Mini Player persistente: visível em todas as telas (incluindo Álbum)
                     if (playbackState.currentTrack != null) {
                         MiniPlayerBar(
                             state = playbackState,
@@ -226,22 +229,24 @@ fun MainScreen(
                         )
                     }
 
-                    // Pivot Bar oficial do YouTube Music (#1D1D1D, sem pílula de seleção, fonte YouTube Sans)
-                    YtmPivotBar(
-                        items = pivotItems,
-                        currentRoute = currentRoute,
-                        onTabSelected = { screen ->
-                            if (currentRoute != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                    // Pivot Bar oficial do YouTube Music (#1D1D1D, oculta dentro de telas de detalhes de álbum)
+                    if (!isAlbumRoute) {
+                        YtmPivotBar(
+                            items = pivotItems,
+                            currentRoute = currentRoute,
+                            onTabSelected = { screen ->
+                                if (currentRoute != screen.route) {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         ) { innerPadding ->
@@ -255,7 +260,23 @@ fun MainScreen(
                 composable(Screen.Home.route) {
                     HomeScreen(
                         viewModel = viewModel,
-                        onOpenSearch = navigateToSearch
+                        onOpenSearch = navigateToSearch,
+                        onOpenAlbum = { browseId ->
+                            navController.navigate("album/$browseId") {
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                }
+                composable(
+                    route = "album/{browseId}",
+                    arguments = listOf(navArgument("browseId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val browseId = backStackEntry.arguments?.getString("browseId").orEmpty()
+                    AlbumScreen(
+                        browseId = browseId,
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
                 composable(Screen.Explore.route) {

@@ -1,5 +1,6 @@
 package com.nerf.music.data.repository
 
+import com.nerf.music.data.model.AlbumDetail
 import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.HomeFeedData
 import com.nerf.music.data.model.HomeSection
@@ -36,6 +37,18 @@ class MusicRepositoryImpl(
 
     override suspend fun getHomeFeedData(params: String?): Result<HomeFeedData> {
         return catalogClient.getHomeFeedData(params)
+    }
+
+    override suspend fun getPersonalizedHomeFeedData(
+        seedVideoId: String?,
+        topArtists: List<String>,
+        params: String?
+    ): Result<HomeFeedData> {
+        return catalogClient.getPersonalizedHomeFeedData(seedVideoId, topArtists, params)
+    }
+
+    override suspend fun getAlbumOrPlaylist(browseId: String): Result<AlbumDetail> {
+        return catalogClient.getAlbumOrPlaylist(browseId)
     }
 
     override suspend fun getUpNextRadio(

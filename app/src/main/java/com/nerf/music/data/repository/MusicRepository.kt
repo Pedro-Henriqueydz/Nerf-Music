@@ -1,5 +1,6 @@
 package com.nerf.music.data.repository
 
+import com.nerf.music.data.model.AlbumDetail
 import com.nerf.music.data.model.HomeFeedData
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.SearchFilter
@@ -31,6 +32,20 @@ interface MusicRepository {
     suspend fun getHomeFeedData(params: String? = null): Result<HomeFeedData> {
         return getHomeFeed().map { HomeFeedData(chips = emptyList(), sections = it) }
     }
+
+    /**
+     * Obtém o feed personalizado com base no histórico do usuário.
+     */
+    suspend fun getPersonalizedHomeFeedData(
+        seedVideoId: String? = null,
+        topArtists: List<String> = emptyList(),
+        params: String? = null
+    ): Result<HomeFeedData>
+
+    /**
+     * Obtém os detalhes completos de um álbum ou playlist via [browseId].
+     */
+    suspend fun getAlbumOrPlaylist(browseId: String): Result<AlbumDetail>
 
     /**
      * Obtém a fila de próximas músicas (Rádio Dinâmica / Mix) e os chips de filtro

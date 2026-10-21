@@ -1,5 +1,6 @@
 ﻿package com.nerf.music.data.network
 
+import com.nerf.music.data.model.AlbumDetail
 import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeFeedData
@@ -202,6 +203,87 @@ class InnerTubeCatalogClient(
     /**
      * Obtém o feed principal da Home via endpoint `/youtubei/v1/browse` com browseId "FEmusic_home".
      */
+    /**
+     * Obtém os detalhes completos de um álbum ou playlist via endpoint `/youtubei/v1/browse`.
+     */
+    suspend fun getAlbumOrPlaylist(browseId: String): Result<AlbumDetail> = withContext(Dispatchers.IO) {
+        try {
+            val body = executeBrowseRequest(browseId, null).getOrThrow()
+            val album = parseAlbumResponse(body, browseId)
+            Result.success(album)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Obtém o feed da Home personalizado de acordo com as faixas e artistas mais ouvidos pelo usuário.
+     */
+    suspend fun getPersonalizedHomeFeedData(
+        seedVideoId: String? = null,
+        topArtists: List<String> = emptyList(),
+        params: String? = null
+    ): Result<HomeFeedData> = withContext(Dispatchers.IO) {
+        try {
+            val baseFeedResult = getHomeFeedData(params)
+            val baseFeed = baseFeedResult.getOrThrow()
+            val chips = baseFeed.chips
+            val sections = baseFeed.sections.toMutableList()
+
+            // 1. Personalização da "Escolha a dedo" (Quick Picks) usando a rádio do favorito do usuário
+            if (!seedVideoId.isNullOrBlank()) {
+                val radioRes = getUpNextRadio(seedVideoId)
+                radioRes.getOrNull()?.let { upNext ->
+                    if (upNext.tracks.isNotEmpty()) {
+                        val quickPicks = HomeSection(
+                            title = "Escolha a dedo",
+                            items = upNext.tracks.take(16),
+                            style = HomeSectionStyle.QUICK_PICKS_GRID
+                        )
+                        sections.removeAll { it.style == HomeSectionStyle.QUICK_PICKS_GRID }
+                        sections.add(0, quickPicks)
+                    }
+                }
+            }
+
+            // 2. Personalização baseada nos artistas mais ouvidos pelo ouvinte
+            if (topArtists.isNotEmpty()) {
+                val favoriteArtist = topArtists.first()
+                val artistSearchRes = search(favoriteArtist, SearchFilter.SONGS).getOrNull()
+
+                if (artistSearchRes != null && artistSearchRes.songs.isNotEmpty()) {
+                    val recommendedSection = HomeSection(
+                        title = "Músicas em alta para você",
+                        strapline = "COM BASE NO QUE VOCÊ OUVE ($favoriteArtist)",
+                        items = artistSearchRes.songs.take(10),
+                        style = HomeSectionStyle.TWO_ROW_CAROUSEL
+                    )
+                    val insertIdx = if (sections.isNotEmpty() && sections[0].style == HomeSectionStyle.QUICK_PICKS_GRID) 1 else 0
+                    sections.add(insertIdx, recommendedSection)
+                }
+
+                if (topArtists.size > 1) {
+                    val secondArtist = topArtists[1]
+                    val secondSearchRes = search(secondArtist, SearchFilter.SONGS).getOrNull()
+                    if (secondSearchRes != null && secondSearchRes.songs.isNotEmpty()) {
+                        val secondSection = HomeSection(
+                            title = "Mais de $secondArtist",
+                            strapline = "OUTRO ARTISTA QUE VOCÊ CURTE",
+                            items = secondSearchRes.songs.take(10),
+                            style = HomeSectionStyle.TWO_ROW_CAROUSEL
+                        )
+                        val insertIdx = if (sections.size > 2) 2 else sections.size
+                        sections.add(insertIdx, secondSection)
+                    }
+                }
+            }
+
+            Result.success(HomeFeedData(chips = chips, sections = sections))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getHomeFeed(): Result<List<HomeSection>> =
         getHomeFeedData(params = null).map { it.sections }
 
@@ -1037,6 +1119,196 @@ class InnerTubeCatalogClient(
     /**
      * Extrai os chips de filtro de humor/atividade do cabeçalho da Home (`chipCloudRenderer`).
      */
+    /**
+     * Faz o parse da resposta de `/browse` de um álbum ou playlist, extraindo
+     * metadados de cabeçalho, capa, avatar do artista e a lista numerada de faixas.
+     */
+    fun parseAlbumResponse(rawJson: String, browseId: String): AlbumDetail {
+        val root = JSONObject(rawJson)
+        val twoCol = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+
+        var headerObj: JSONObject? = null
+        val tabs = twoCol?.optJSONArray("tabs")
+        if (tabs != null && tabs.length() > 0) {
+            val secContents = tabs.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents")
+            if (secContents != null) {
+                for (i in 0 until secContents.length()) {
+                    val s = secContents.optJSONObject(i)
+                    if (s?.has("musicResponsiveHeaderRenderer") == true) {
+                        headerObj = s.optJSONObject("musicResponsiveHeaderRenderer")
+                        break
+                    }
+                }
+            }
+        }
+        if (headerObj == null) {
+            val rootHeader = root.optJSONObject("header")
+            headerObj = rootHeader?.optJSONObject("musicResponsiveHeaderRenderer")
+                ?: rootHeader?.optJSONObject("musicDetailHeaderRenderer")
+        }
+
+        val title = headerObj?.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: "Álbum"
+
+        val subtitleRuns = headerObj?.optJSONObject("subtitle")?.optJSONArray("runs")
+        var albumType = "Álbum"
+        var year: String? = null
+        if (subtitleRuns != null) {
+            for (i in 0 until subtitleRuns.length()) {
+                val t = subtitleRuns.optJSONObject(i)?.optString("text")?.trim().orEmpty()
+                if (t.matches(Regex("\\d{4}"))) {
+                    year = t
+                } else if (t.equals("Single", ignoreCase = true) || t.equals("EP", ignoreCase = true) || t.equals("Álbum", ignoreCase = true) || t.equals("Album", ignoreCase = true) || t.equals("Playlist", ignoreCase = true)) {
+                    albumType = t
+                }
+            }
+        }
+
+        val straplineRuns = headerObj?.optJSONObject("straplineTextOne")?.optJSONArray("runs")
+        val straplineBuilder = StringBuilder()
+        if (straplineRuns != null) {
+            for (i in 0 until straplineRuns.length()) {
+                straplineBuilder.append(straplineRuns.optJSONObject(i)?.optString("text").orEmpty())
+            }
+        }
+        val artistName = straplineBuilder.toString().trim().ifEmpty {
+            subtitleRuns?.optJSONObject(0)?.optString("text")?.trim() ?: "Artista"
+        }
+
+        val albumThumbnails = headerObj?.optJSONObject("thumbnail")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+            ?: headerObj?.optJSONObject("thumbnail")
+                ?.optJSONObject("croppedSquareThumbnailRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.optJSONArray("thumbnails")
+        val albumThumbUrl = getBestThumbnailUrl(albumThumbnails)
+
+        val artistThumbnails = headerObj?.optJSONObject("straplineThumbnail")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+        val artistThumbUrl = getBestThumbnailUrl(artistThumbnails)
+
+        val tracks = mutableListOf<Track>()
+        val secListContents = twoCol?.optJSONObject("secondaryContents")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
+            ?: tabs?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents")
+
+        if (secListContents != null) {
+            for (i in 0 until secListContents.length()) {
+                val sec = secListContents.optJSONObject(i)
+                val shelf = sec?.optJSONObject("musicShelfRenderer")
+                    ?: sec?.optJSONObject("musicPlaylistShelfRenderer")
+                val shelfItems = shelf?.optJSONArray("contents") ?: continue
+
+                for (j in 0 until shelfItems.length()) {
+                    val item = shelfItems.optJSONObject(j)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+
+                    val itemTitle = item.optJSONArray("flexColumns")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")
+                        ?.optJSONArray("runs")
+                        ?.optJSONObject(0)
+                        ?.optString("text") ?: continue
+
+                    val videoId = item.optJSONObject("playlistItemData")?.optString("videoId")
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: item.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")?.optString("videoId")
+                        ?: item.optJSONObject("overlay")
+                            ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                            ?.optJSONObject("content")
+                            ?.optJSONObject("musicPlayButtonRenderer")
+                            ?.optJSONObject("playNavigationEndpoint")
+                            ?.optJSONObject("watchEndpoint")
+                            ?.optString("videoId")
+                        ?: continue
+
+                    val fc1Runs = item.optJSONArray("flexColumns")
+                        ?.optJSONObject(1)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")
+                        ?.optJSONArray("runs")
+                    val fc1Builder = StringBuilder()
+                    if (fc1Runs != null) {
+                        for (r in 0 until fc1Runs.length()) {
+                            fc1Builder.append(fc1Runs.optJSONObject(r)?.optString("text").orEmpty())
+                        }
+                    }
+                    val trackArtist = fc1Builder.toString().trim().ifEmpty { artistName }
+
+                    val durationText = item.optJSONArray("fixedColumns")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
+                        ?.optJSONObject("text")
+                        ?.optJSONArray("runs")
+                        ?.optJSONObject(0)
+                        ?.optString("text") ?: "--:--"
+
+                    val itemThumbnails = item.optJSONObject("thumbnail")
+                        ?.optJSONObject("musicThumbnailRenderer")
+                        ?.optJSONObject("thumbnail")
+                        ?.optJSONArray("thumbnails")
+                    val itemThumbUrl = getBestThumbnailUrl(itemThumbnails) ?: albumThumbUrl
+
+                    tracks.add(
+                        Track(
+                            id = videoId,
+                            title = itemTitle,
+                            artist = trackArtist,
+                            album = title,
+                            thumbnailUrl = itemThumbUrl,
+                            durationText = durationText,
+                            durationSeconds = parseDurationToSeconds(durationText),
+                            sourceIdentifier = "INNERTUBE_WEB_REMIX",
+                            browseId = browseId
+                        )
+                    )
+                }
+            }
+        }
+
+        return AlbumDetail(
+            browseId = browseId,
+            title = title,
+            artistName = artistName,
+            artistThumbnailUrl = artistThumbUrl,
+            albumType = albumType,
+            year = year,
+            thumbnailUrl = albumThumbUrl,
+            tracks = tracks
+        )
+    }
+
+    private fun parseDurationToSeconds(duration: String): Long {
+        val parts = duration.trim().split(":")
+        return when (parts.size) {
+            2 -> {
+                val mins = parts[0].toLongOrNull() ?: 0L
+                val secs = parts[1].toLongOrNull() ?: 0L
+                mins * 60 + secs
+            }
+            3 -> {
+                val hrs = parts[0].toLongOrNull() ?: 0L
+                val mins = parts[1].toLongOrNull() ?: 0L
+                val secs = parts[2].toLongOrNull() ?: 0L
+                hrs * 3600 + mins * 60 + secs
+            }
+            else -> 0L
+        }
+    }
+
     fun parseHomeChips(jsonString: String): List<HomeChip> {
         val rawChips = mutableListOf<HomeChip>()
         try {
@@ -1210,7 +1482,11 @@ class InnerTubeCatalogClient(
             ?.optJSONArray("thumbnails")
         val thumbnailUrl = getBestThumbnailUrl(thumbnails)
 
-        val resolvedId = videoId.ifEmpty { "playlist_$playlistId" }
+        val browseId = itemNav?.optJSONObject("browseEndpoint")?.optString("browseId")
+            ?.takeIf { it.isNotEmpty() }
+            ?: overlayPlayNav?.optJSONObject("browseEndpoint")?.optString("browseId")
+
+        val resolvedId = videoId.ifEmpty { browseId ?: "playlist_$playlistId" }
         return Track(
             id = resolvedId,
             title = title,
@@ -1219,7 +1495,8 @@ class InnerTubeCatalogClient(
             thumbnailUrl = thumbnailUrl,
             durationText = "--:--",
             sourceIdentifier = "INNERTUBE_WEB_REMIX",
-            playlistId = playlistId.ifEmpty { null }
+            playlistId = playlistId.ifEmpty { null },
+            browseId = browseId
         )
     }
 }
