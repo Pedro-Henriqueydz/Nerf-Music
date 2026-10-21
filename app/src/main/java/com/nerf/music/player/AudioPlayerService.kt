@@ -1,5 +1,6 @@
 package com.nerf.music.player
 
+import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -131,7 +132,18 @@ class AudioPlayerService : MediaSessionService() {
             }
         })
 
-        mediaSession = MediaSession.Builder(this, player).build()
+        val sessionActivityPendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntent ->
+            PendingIntent.getActivity(
+                this,
+                0,
+                launchIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        mediaSession = MediaSession.Builder(this, player).apply {
+            sessionActivityPendingIntent?.let { setSessionActivity(it) }
+        }.build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -140,9 +152,12 @@ class AudioPlayerService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
-            stopSelf()
+        if (player != null) {
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
         }
+        stopSelf()
     }
 
     override fun onDestroy() {

@@ -26,4 +26,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Reconecta e sincroniza a UI com o estado real do serviço de áudio ao voltar para o app
+        viewModel.syncWithPlayer()
+    }
 }

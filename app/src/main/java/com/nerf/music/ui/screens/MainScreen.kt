@@ -34,6 +34,12 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.navigation.compose.rememberNavController
 import com.nerf.music.BuildConfig
 import com.nerf.music.ui.theme.*
@@ -93,6 +99,29 @@ fun MainScreen(
     val availableUpdate by viewModel.availableUpdate.collectAsState()
 
     val context = LocalContext.current
+
+    // Solicita permissão de notificação no Android 13+ (API 33+) para controle de mídia em segundo plano
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        var hasNotificationPermission by remember {
+            mutableStateOf(
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            )
+        }
+        val permissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            hasNotificationPermission = isGranted
+        }
+
+        LaunchedEffect(Unit) {
+            if (!hasNotificationPermission) {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     // Notificações rápidas (Toasts) de mensagens ou erros
     LaunchedEffect(userMessage) {

@@ -117,18 +117,26 @@ class MusicViewModel(
             loadHomeFeed()
         }
 
-        if (mediaController != null) return
+        if (mediaController != null) {
+            syncWithPlayer()
+            return
+        }
 
+        val appContext = context.applicationContext
         val sessionToken = SessionToken(
-            context,
-            ComponentName(context, AudioPlayerService::class.java)
+            appContext,
+            ComponentName(appContext, AudioPlayerService::class.java)
         )
-        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+        controllerFuture = MediaController.Builder(appContext, sessionToken).buildAsync()
         controllerFuture?.addListener({
-            val controller = controllerFuture?.get() ?: return@addListener
-            mediaController = controller
-            setupPlayerListener(controller)
-            syncTimelineState(controller)
+            try {
+                val controller = controllerFuture?.get() ?: return@addListener
+                mediaController = controller
+                setupPlayerListener(controller)
+                syncTimelineState(controller)
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Erro ao obter MediaController conectado", e)
+            }
         }, MoreExecutors.directExecutor())
     }
 
@@ -237,9 +245,23 @@ class MusicViewModel(
     /**
      * Sincroniza a fila da UI diretamente com o `currentTimeline` real do MediaController.
      */
+    /**
+     * Força a sincronização imediata da interface com o estado real do player
+     * ao reconectar ou ao trazer o app para primeiro plano (onResume).
+     */
+    fun syncWithPlayer() {
+        val controller = mediaController ?: return
+        syncTimelineState(controller)
+    }
+
     private fun syncTimelineState(player: Player) {
         val timeline = player.currentTimeline
         val itemCount = player.mediaItemCount
+        val isCurrentlyPlaying = player.isPlaying
+        val isBuffering = player.playbackState == Player.STATE_BUFFERING
+        val currentPos = player.currentPosition.coerceAtLeast(0L)
+        val effectiveDuration = resolveEffectiveDuration(player)
+
         if (timeline.isEmpty || itemCount == 0) {
             _playbackState.value = _playbackState.value.copy(
                 currentTrack = null,
@@ -253,6 +275,7 @@ class MusicViewModel(
                 repeatMode = player.repeatMode
             )
             _isFullPlayerVisible.value = false
+            stopProgressTracker()
             return
         }
 
@@ -267,18 +290,48 @@ class MusicViewModel(
             currentTrack = activeTrack,
             queue = queueTracks,
             currentQueueIndex = currentIdx,
-            durationMs = resolveEffectiveDuration(player),
-            currentPositionMs = player.currentPosition.coerceAtLeast(0L),
+            isPlaying = isCurrentlyPlaying,
+            isBuffering = isBuffering,
+            durationMs = effectiveDuration,
+            currentPositionMs = currentPos,
             hasNext = queueTracks.size > 1,
             hasPrevious = queueTracks.size > 1,
             shuffleModeEnabled = player.shuffleModeEnabled,
             repeatMode = player.repeatMode,
             queueSourceTitle = _playbackState.value.queueSourceTitle ?: activeTrack?.title
         )
+
+        if (isCurrentlyPlaying) {
+            startProgressTracker()
+        } else {
+            stopProgressTracker()
+        }
     }
 
     private fun setupPlayerListener(player: Player) {
         player.addListener(object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (events.containsAny(
+                        Player.EVENT_PLAY_WHEN_READY_CHANGED,
+                        Player.EVENT_PLAYBACK_STATE_CHANGED,
+                        Player.EVENT_IS_PLAYING_CHANGED,
+                        Player.EVENT_POSITION_DISCONTINUITY
+                    )
+                ) {
+                    val isPlaying = player.isPlaying
+                    _playbackState.value = _playbackState.value.copy(
+                        isPlaying = isPlaying,
+                        isBuffering = player.playbackState == Player.STATE_BUFFERING,
+                        durationMs = resolveEffectiveDuration(player),
+                        currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+                    )
+                    if (isPlaying) {
+                        startProgressTracker()
+                    } else {
+                        stopProgressTracker()
+                    }
+                }
+            }
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                 syncTimelineState(player)
             }
