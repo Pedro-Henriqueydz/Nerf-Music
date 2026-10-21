@@ -1,9 +1,5 @@
 package com.nerf.music.ui.screens
 
-import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,7 +19,6 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -40,7 +34,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.nerf.music.BuildConfig
 import com.nerf.music.R
 import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.SearchFilter
@@ -58,330 +51,222 @@ fun SearchScreen(
     val searchResult by viewModel.searchResult.collectAsState()
     val selectedTrack by viewModel.selectedTrack.collectAsState()
     val loadingTrackId by viewModel.loadingTrackId.collectAsState()
-    val userMessage by viewModel.userMessage.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
-    val isFullPlayerVisible by viewModel.isFullPlayerVisible.collectAsState()
-    val availableUpdate by viewModel.availableUpdate.collectAsState()
     val focusManager = LocalFocusManager.current
-    val context = LocalContext.current
 
-    // Exibe notificação rápida (Toast) em caso de mensagens ou erros do servidor
-    LaunchedEffect(userMessage) {
-        userMessage?.let { msg ->
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-            viewModel.clearUserMessage()
-        }
-    }
-
-    // Modal de Autoreparo (In-App Updater): exibido caso haja uma tag mais nova no GitHub Releases
-    availableUpdate?.let { update ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissUpdateDialog() },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.SystemUpdate,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "Nova versão disponível",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Uma nova versão do NERF Music (${update.tagName}) está pronta para instalação. Sua versão atual é v${BuildConfig.VERSION_NAME}.",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (!update.releaseNotes.isNullOrBlank()) {
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = update.releaseNotes,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 6,
-                            overflow = TextOverflow.Ellipsis
+                            text = stringResource(id = R.string.app_name),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Buscar",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.confirmAndDownloadUpdate(context) },
-                    shape = RoundedCornerShape(50)
-                ) {
-                    Text("Atualizar agora")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { viewModel.dismissUpdateDialog() }
-                ) {
-                    Text("Mais tarde")
-                }
-            },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = Color(0xFF1E1E1E)
-        )
-    }
-
-    Box(modifier = modifier.fillMaxSize()) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = MaterialTheme.colorScheme.background,
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = stringResource(id = R.string.app_name),
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Streaming Livre",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
-            },
-            bottomBar = {
-                if (playbackState.currentTrack != null) {
-                    MiniPlayerBar(
-                        state = playbackState,
-                        onTogglePlay = { viewModel.togglePlayPause() },
-                        onSkipNext = { viewModel.skipNext() },
-                        onExpandPlayer = {
-                            focusManager.clearFocus()
-                            viewModel.openFullPlayer()
-                        }
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Campo de Busca
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.onQueryChanged(it) },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(text = stringResource(id = R.string.search_hint)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = stringResource(id = R.string.search_button)
                     )
-                }
-            }
-        ) { innerPadding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp)
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onQueryChanged("") }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = stringResource(id = R.string.clear_search)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    focusManager.clearFocus()
+                    viewModel.performSearch()
+                }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Filtros de busca (Geral vs Músicas)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Campo de Busca
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { viewModel.onQueryChanged(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(text = stringResource(id = R.string.search_hint)) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = stringResource(id = R.string.search_button)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.onQueryChanged("") }) {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = stringResource(id = R.string.clear_search)
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
+                FilterChip(
+                    selected = selectedFilter == SearchFilter.ALL,
+                    onClick = {
                         focusManager.clearFocus()
-                        viewModel.performSearch()
-                    }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                        viewModel.onFilterSelected(SearchFilter.ALL)
+                    },
+                    label = { Text(stringResource(id = R.string.filter_all)) }
                 )
+                FilterChip(
+                    selected = selectedFilter == SearchFilter.SONGS,
+                    onClick = {
+                        focusManager.clearFocus()
+                        viewModel.onFilterSelected(SearchFilter.SONGS)
+                    },
+                    label = { Text(stringResource(id = R.string.filter_songs)) }
+                )
+            }
 
-                Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-                // Filtros de busca (Geral vs Músicas)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedFilter == SearchFilter.ALL,
-                        onClick = {
-                            focusManager.clearFocus()
-                            viewModel.onFilterSelected(SearchFilter.ALL)
-                        },
-                        label = { Text(stringResource(id = R.string.filter_all)) }
-                    )
-                    FilterChip(
-                        selected = selectedFilter == SearchFilter.SONGS,
-                        onClick = {
-                            focusManager.clearFocus()
-                            viewModel.onFilterSelected(SearchFilter.SONGS)
-                        },
-                        label = { Text(stringResource(id = R.string.filter_songs)) }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Estados da Tela: Carregamento, Erro ou Lista de Resultados
-                when {
-                    isLoading -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = stringResource(id = R.string.search_loading),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    }
-                    errorMessage != null && searchResult.isEmpty -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer
-                                ),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = errorMessage ?: "",
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        fontSize = 14.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    searchResult.isEmpty -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
+            // Estados da Tela: Carregamento, Erro ou Lista de Resultados
+            when {
+                isLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(10.dp))
                             Text(
-                                text = stringResource(id = R.string.search_empty_prompt),
+                                text = stringResource(id = R.string.search_loading),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 14.sp
                             )
                         }
                     }
-                    else -> {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                }
+                errorMessage != null && searchResult.isEmpty -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer
+                            ),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            // Seção de Artistas (Destaque Principal ou Lista)
-                            val allArtists = buildList {
-                                searchResult.topArtist?.let { add(it) }
-                                addAll(searchResult.artists.filter { it.name != searchResult.topArtist?.name })
-                            }
-
-                            if (allArtists.isNotEmpty()) {
-                                item {
-                                    SectionHeader(title = stringResource(id = R.string.section_artists))
-                                }
-                                item {
-                                    ArtistsSection(artists = allArtists)
-                                }
-                            }
-
-                            // Seção de Músicas
-                            if (searchResult.songs.isNotEmpty()) {
-                                item {
-                                    SectionHeader(
-                                        title = "${stringResource(id = R.string.section_songs)} (${searchResult.songs.size})"
-                                    )
-                                }
-                                items(searchResult.songs, key = { it.id }) { track ->
-                                    SongListItem(
-                                        track = track,
-                                        isSelected = selectedTrack?.id == track.id,
-                                        isLoading = loadingTrackId == track.id,
-                                        isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
-                                        onClick = {
-                                            focusManager.clearFocus()
-                                            viewModel.playTrack(track)
-                                        }
-                                    )
-                                }
-                            }
-
-                            item {
-                                Spacer(modifier = Modifier.height(80.dp))
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = errorMessage ?: "",
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    fontSize = 14.sp
+                                )
                             }
                         }
                     }
                 }
-            }
-        }
+                searchResult.isEmpty -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.search_empty_prompt),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Seção de Artistas (Destaque Principal ou Lista)
+                        val allArtists = buildList {
+                            searchResult.topArtist?.let { add(it) }
+                            addAll(searchResult.artists.filter { it.name != searchResult.topArtist?.name })
+                        }
 
-        // Tela Completa do Player com Fundo Dinâmico (Palette), Fila Animada e Rádio Dinâmica
-        AnimatedVisibility(
-            visible = isFullPlayerVisible && playbackState.currentTrack != null,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it })
-        ) {
-            FullPlayerSheet(
-                state = playbackState,
-                onDismiss = { viewModel.closeFullPlayer() },
-                onTogglePlay = { viewModel.togglePlayPause() },
-                onSkipPrevious = { viewModel.skipPrevious() },
-                onSkipNext = { viewModel.skipNext() },
-                onToggleShuffle = { viewModel.toggleShuffle() },
-                onToggleRepeat = { viewModel.toggleRepeat() },
-                onSeekTo = { positionMs -> viewModel.seekTo(positionMs) },
-                onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
-                onToggleSave = { trackId -> viewModel.toggleSaveToPlaylist(trackId) },
-                onToggleDownload = { trackId -> viewModel.toggleDownload(trackId) },
-                onSelectQueueChip = { chip -> viewModel.selectQueueFilterChip(chip) },
-                onPlayQueueItem = { index -> viewModel.playQueueItemAt(index) },
-                onMoveQueueItem = { fromIndex, toIndex -> viewModel.moveQueueItem(fromIndex, toIndex) },
-                onRemoveQueueItem = { index -> viewModel.removeQueueItem(index) }
-            )
+                        if (allArtists.isNotEmpty()) {
+                            item {
+                                SectionHeader(title = stringResource(id = R.string.section_artists))
+                            }
+                            item {
+                                ArtistsSection(artists = allArtists)
+                            }
+                        }
+
+                        // Seção de Músicas
+                        if (searchResult.songs.isNotEmpty()) {
+                            item {
+                                SectionHeader(
+                                    title = "${stringResource(id = R.string.section_songs)} (${searchResult.songs.size})"
+                                )
+                            }
+                            items(searchResult.songs, key = { it.id }) { track ->
+                                SongListItem(
+                                    track = track,
+                                    isSelected = selectedTrack?.id == track.id,
+                                    isLoading = loadingTrackId == track.id,
+                                    isPlaying = playbackState.currentTrack?.id == track.id && playbackState.isPlaying,
+                                    onClick = {
+                                        focusManager.clearFocus()
+                                        viewModel.playTrack(track)
+                                    }
+                                )
+                            }
+                        }
+
+                        item {
+                            Spacer(modifier = Modifier.height(100.dp))
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-package com.nerf.music.ui.viewmodel
+﻿package com.nerf.music.ui.viewmodel
 
 import android.content.ComponentName
 import android.content.Context
@@ -16,6 +16,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.SearchFilter
@@ -78,6 +79,19 @@ class MusicViewModel(
     private val _availableUpdate = MutableStateFlow<AppUpdateInfo?>(null)
     val availableUpdate: StateFlow<AppUpdateInfo?> = _availableUpdate.asStateFlow()
 
+    private val _homeSections = MutableStateFlow<List<HomeSection>>(emptyList())
+    val homeSections: StateFlow<List<HomeSection>> = _homeSections.asStateFlow()
+
+    private val _isLoadingHome = MutableStateFlow(false)
+    val isLoadingHome: StateFlow<Boolean> = _isLoadingHome.asStateFlow()
+
+    private val _homeError = MutableStateFlow<String?>(null)
+    val homeError: StateFlow<String?> = _homeError.asStateFlow()
+
+    // Histórico da sessão para o Speed Dial ("Ouvidas Recentemente")
+    private val _recentlyPlayed = MutableStateFlow<List<Track>>(emptyList())
+    val recentlyPlayed: StateFlow<List<Track>> = _recentlyPlayed.asStateFlow()
+
     // Cache de metadados das faixas conhecidas para reconstrução rápida a partir do Timeline
     private val trackMetadataMap = mutableMapOf<String, Track>()
 
@@ -92,6 +106,7 @@ class MusicViewModel(
         if (!hasCheckedForUpdates) {
             hasCheckedForUpdates = true
             checkForAppUpdates()
+            loadHomeFeed()
         }
 
         if (mediaController != null) return
@@ -107,6 +122,20 @@ class MusicViewModel(
             setupPlayerListener(controller)
             syncTimelineState(controller)
         }, MoreExecutors.directExecutor())
+    }
+
+    fun loadHomeFeed() {
+        viewModelScope.launch {
+            _isLoadingHome.value = true
+            _homeError.value = null
+            repository.getHomeFeed().onSuccess { sections ->
+                _homeSections.value = sections
+                _isLoadingHome.value = false
+            }.onFailure { error ->
+                _homeError.value = "Não foi possível carregar o feed inicial."
+                _isLoadingHome.value = false
+            }
+        }
     }
 
     fun checkForAppUpdates() {
@@ -394,6 +423,10 @@ class MusicViewModel(
 
         radioFetchJob?.cancel()
         seedVideoId = track.id
+
+        // Atualiza histórico do Speed Dial com no máximo 5 faixas
+        val updatedRecent = (listOf(track) + _recentlyPlayed.value.filterNot { it.id == track.id }).take(5)
+        _recentlyPlayed.value = updatedRecent
 
         val initialQueue = listOf(track)
         _loadingTrackId.value = track.id

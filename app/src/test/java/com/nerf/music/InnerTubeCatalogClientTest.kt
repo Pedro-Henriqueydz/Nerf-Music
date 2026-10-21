@@ -1,4 +1,4 @@
-package com.nerf.music
+﻿package com.nerf.music
 
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
@@ -535,5 +535,139 @@ class InnerTubeCatalogClientTest {
         assertEquals("want your love (slowed)", upNext.tracks[1].title)
         assertEquals("Altare e almogfx", upNext.tracks[1].artist)
         assertEquals("02:52", upNext.tracks[1].durationText)
+    }
+    @Test
+    fun testHomeFeedPayloadAndParsing() {
+        val payload = client.buildBrowsePayload("FEmusic_home").toString()
+        assertTrue("Payload deve conter browseId FEmusic_home", payload.contains("FEmusic_home"))
+
+        val homeResponseFixture = """
+        {
+          "contents": {
+            "singleColumnBrowseResultsRenderer": {
+              "tabs": [
+                {
+                  "tabRenderer": {
+                    "content": {
+                      "sectionListRenderer": {
+                        "contents": [
+                          {
+                            "musicCarouselShelfRenderer": {
+                              "header": {
+                                "musicCarouselShelfBasicHeaderRenderer": {
+                                  "title": { "runs": [{ "text": "Escolha a dedo" }] }
+                                }
+                              },
+                              "contents": [
+                                {
+                                  "musicResponsiveListItemRenderer": {
+                                    "flexColumns": [
+                                      {
+                                        "musicResponsiveListItemFlexColumnRenderer": {
+                                          "text": { "runs": [{ "text": "Cadeira Cativa (Ao Vivo)" }] }
+                                        }
+                                      },
+                                      {
+                                        "musicResponsiveListItemFlexColumnRenderer": {
+                                          "text": {
+                                            "runs": [
+                                              { "text": "Zé Neto & Cristiano" },
+                                              { "text": " • " },
+                                              { "text": "Tocou 126 mi vezes" }
+                                            ]
+                                          }
+                                        }
+                                      }
+                                    ],
+                                    "overlay": {
+                                      "musicItemThumbnailOverlayRenderer": {
+                                        "content": {
+                                          "musicPlayButtonRenderer": {
+                                            "playNavigationEndpoint": {
+                                              "watchEndpoint": { "videoId": "KTy17rny7vI" }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    "thumbnail": {
+                                      "musicThumbnailRenderer": {
+                                        "thumbnail": {
+                                          "thumbnails": [{ "url": "https://lh3.googleusercontent.com/cadeira.jpg" }]
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "musicCarouselShelfRenderer": {
+                              "header": {
+                                "musicCarouselShelfBasicHeaderRenderer": {
+                                  "title": { "runs": [{ "text": "Músicas em alta para você" }] }
+                                }
+                              },
+                              "contents": [
+                                {
+                                  "musicResponsiveListItemRenderer": {
+                                    "flexColumns": [
+                                      {
+                                        "musicResponsiveListItemFlexColumnRenderer": {
+                                          "text": { "runs": [{ "text": "Calma" }] }
+                                        }
+                                      },
+                                      {
+                                        "musicResponsiveListItemFlexColumnRenderer": {
+                                          "text": {
+                                            "runs": [
+                                              { "text": "Marília Mendonça" }
+                                            ]
+                                          }
+                                        }
+                                      }
+                                    ],
+                                    "overlay": {
+                                      "musicItemThumbnailOverlayRenderer": {
+                                        "content": {
+                                          "musicPlayButtonRenderer": {
+                                            "playNavigationEndpoint": {
+                                              "watchEndpoint": { "videoId": "t5TnLL1AhOY" }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """.trimIndent()
+
+        val sections = client.parseHomeFeedResponse(homeResponseFixture)
+        assertEquals(2, sections.size)
+        assertEquals("Escolha a dedo", sections[0].title)
+        assertEquals(1, sections[0].items.size)
+        assertEquals("Cadeira Cativa (Ao Vivo)", sections[0].items[0].title)
+        assertEquals("Zé Neto & Cristiano", sections[0].items[0].artist)
+        assertEquals("KTy17rny7vI", sections[0].items[0].id)
+        assertEquals("https://lh3.googleusercontent.com/cadeira.jpg", sections[0].items[0].thumbnailUrl)
+
+        assertEquals("Músicas em alta para você", sections[1].title)
+        assertEquals(1, sections[1].items.size)
+        assertEquals("Calma", sections[1].items[0].title)
+        assertEquals("Marília Mendonça", sections[1].items[0].artist)
+        assertEquals("t5TnLL1AhOY", sections[1].items[0].id)
     }
 }

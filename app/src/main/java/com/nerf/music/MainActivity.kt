@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import com.nerf.music.ui.screens.SearchScreen
+import com.nerf.music.ui.screens.MainScreen
 import com.nerf.music.ui.theme.NERFMusicTheme
 import com.nerf.music.ui.viewmodel.MusicViewModel
 
@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             NERFMusicTheme {
-                SearchScreen(viewModel = viewModel)
+                MainScreen(viewModel = viewModel)
             }
         }
     }

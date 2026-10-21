@@ -1,5 +1,6 @@
-package com.nerf.music.data.repository
+﻿package com.nerf.music.data.repository
 
+import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.UpNextResult
@@ -21,6 +22,11 @@ interface MusicRepository {
      * Obtém a fila de próximas músicas (Rádio Dinâmica / Mix) e os chips de filtro
      * via endpoint `/youtubei/v1/next`.
      */
+    /**
+     * Obtém o feed principal da Home com carrosséis organizados.
+     */
+    suspend fun getHomeFeed(): Result<List<HomeSection>>
+
     suspend fun getUpNextRadio(
         videoId: String,
         params: String? = null

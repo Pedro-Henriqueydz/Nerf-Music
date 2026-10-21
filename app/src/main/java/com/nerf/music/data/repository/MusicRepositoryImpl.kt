@@ -1,6 +1,7 @@
-package com.nerf.music.data.repository
+﻿package com.nerf.music.data.repository
 
 import com.nerf.music.data.model.Artist
+import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
@@ -26,6 +27,10 @@ class MusicRepositoryImpl(
         return catalogClient.search(query, filter).map { rawResult ->
             prioritizeSearchResults(rawResult, query)
         }
+    }
+
+    override suspend fun getHomeFeed(): Result<List<HomeSection>> {
+        return catalogClient.getHomeFeed()
     }
 
     override suspend fun getUpNextRadio(

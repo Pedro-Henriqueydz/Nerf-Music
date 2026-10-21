@@ -1,6 +1,7 @@
-package com.nerf.music.data.network
+﻿package com.nerf.music.data.network
 
 import com.nerf.music.data.model.Artist
+import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
@@ -41,6 +42,7 @@ class InnerTubeCatalogClient(
     companion object {
         private const val SEARCH_URL = "https://music.youtube.com/youtubei/v1/search"
         private const val NEXT_URL = "https://music.youtube.com/youtubei/v1/next"
+        private const val BROWSE_URL = "https://music.youtube.com/youtubei/v1/browse"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -192,6 +194,53 @@ class InnerTubeCatalogClient(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * Obtem o feed principal da Home via endpoint `/youtubei/v1/browse` com browseId "FEmusic_home".
+     */
+    suspend fun getHomeFeed(): Result<List<HomeSection>> = withContext(Dispatchers.IO) {
+        try {
+            val payload = buildBrowsePayload("FEmusic_home")
+            val request = Request.Builder()
+                .url(BROWSE_URL)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", USER_AGENT)
+                .header("Origin", "https://music.youtube.com")
+                .header("Referer", "https://music.youtube.com/")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(
+                    IOException("Servidor respondeu com codigo HTTP ${response.code}")
+                )
+            }
+
+            val body = response.body?.string()
+                ?: return@withContext Result.failure(IOException("Resposta vazia do servidor"))
+
+            val sections = parseHomeFeedResponse(body)
+            Result.success(sections)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    internal fun buildBrowsePayload(browseId: String): JSONObject {
+        val root = JSONObject()
+        val context = JSONObject()
+        val client = JSONObject()
+
+        client.put("clientName", "WEB_REMIX")
+        client.put("clientVersion", "1.20231204.01.00")
+        client.put("hl", "pt-BR")
+        client.put("gl", "BR")
+
+        context.put("client", client)
+        root.put("context", context)
+        root.put("browseId", browseId)
+        return root
     }
 
     internal fun buildNextPayload(videoId: String, params: String? = null): JSONObject {
@@ -925,4 +974,101 @@ class InnerTubeCatalogClient(
         val url = last?.optString("url") ?: return null
         return if (url.startsWith("//")) "https:$url" else url
     }
+
+    /**
+     * Faz o parse da resposta de /youtubei/v1/browse para o feed Home,
+     * extraindo as seções com carrosséis horizontais (musicCarouselShelfRenderer).
+     */
+    fun parseHomeFeedResponse(jsonString: String): List<HomeSection> {
+        val sections = mutableListOf<HomeSection>()
+        try {
+            val root = JSONObject(jsonString)
+            val sectionContents = root.optJSONObject("contents")
+                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+                ?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents") ?: return sections
+
+            for (i in 0 until sectionContents.length()) {
+                val sectionObj = sectionContents.optJSONObject(i) ?: continue
+                val carousel = sectionObj.optJSONObject("musicCarouselShelfRenderer") ?: continue
+
+                val header = carousel.optJSONObject("header")
+                    ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                val title = header?.optJSONObject("title")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                    ?.trim()
+                    ?: continue
+
+                val itemsArray = carousel.optJSONArray("contents") ?: continue
+                val sectionSongs = mutableListOf<Track>()
+                val dummyArtists = mutableListOf<Artist>()
+
+                for (j in 0 until itemsArray.length()) {
+                    val itemWrapper = itemsArray.optJSONObject(j) ?: continue
+                    val responsiveItem = itemWrapper.optJSONObject("musicResponsiveListItemRenderer")
+                    if (responsiveItem != null) {
+                        parseResponsiveListItem(responsiveItem, sectionSongs, dummyArtists)
+                    } else {
+                        val twoRowItem = itemWrapper.optJSONObject("musicTwoRowItemRenderer")
+                        if (twoRowItem != null) {
+                            val track = parseTwoRowItem(twoRowItem)
+                            if (track != null && sectionSongs.none { it.id == track.id }) {
+                                sectionSongs.add(track)
+                            }
+                        }
+                    }
+                }
+
+                if (sectionSongs.isNotEmpty()) {
+                    sections.add(HomeSection(title = title, items = sectionSongs))
+                }
+            }
+        } catch (e: Exception) {
+            // Retorna seções extraídas até o momento
+        }
+        return sections
+    }
+
+    private fun parseTwoRowItem(item: JSONObject): Track? {
+        val titleObj = item.optJSONObject("title")
+        val title = titleObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.trim() ?: return null
+        if (title.isEmpty()) return null
+
+        val navEndpoint = item.optJSONObject("navigationEndpoint")
+            ?: item.optJSONObject("thumbnailOverlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+
+        val videoId = navEndpoint?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
+        if (videoId.isEmpty()) return null
+
+        val subtitleRuns = item.optJSONObject("subtitle")?.optJSONArray("runs")
+        val subtitleSegments = if (subtitleRuns != null) extractSegmentsFromRuns(subtitleRuns) else emptyList()
+        val artist = subtitleSegments.firstOrNull() ?: "Desconhecido"
+
+        val thumbnails = item.optJSONObject("thumbnailRenderer")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+        val thumbnailUrl = getBestThumbnailUrl(thumbnails)
+
+        return Track(
+            id = videoId,
+            title = title,
+            artist = artist,
+            album = null,
+            thumbnailUrl = thumbnailUrl,
+            durationText = "--:--",
+            sourceIdentifier = "INNERTUBE_WEB_REMIX"
+        )
+    }
+
 }
