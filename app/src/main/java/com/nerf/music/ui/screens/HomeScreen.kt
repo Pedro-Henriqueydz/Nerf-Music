@@ -1,5 +1,6 @@
 package com.nerf.music.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +24,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import com.nerf.music.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -253,29 +256,16 @@ fun YtmTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // Logo estilo YouTube Music
+        // Logo NERF Music
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
+            Image(
+                painter = painterResource(id = R.drawable.ic_nerf_logo),
+                contentDescription = "NERF Music Logo",
                 modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(OrangePrimary),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .border(1.3.dp, YtmWhite, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = YtmWhite,
-                        modifier = Modifier.size(12.dp)
-                    )
-                }
-            }
+                    .height(26.dp)
+                    .width(42.dp),
+                contentScale = ContentScale.Fit
+            )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = "Music",
@@ -287,7 +277,7 @@ fun YtmTopBar(
             )
         }
 
-        // Ações à direita: Cast, Lupa de Busca e Perfil
+        // Ações à direita: Apenas Lupa de Pesquisa (sem conta/login)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -298,22 +288,6 @@ fun YtmTopBar(
                     contentDescription = "Pesquisar",
                     tint = YtmWhite,
                     modifier = Modifier.size(25.dp)
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .padding(start = 4.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(YtmGrey10)
-                    .border(1.dp, YtmWhite20Pct, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Person,
-                    contentDescription = "Perfil",
-                    tint = YtmWhite,
-                    modifier = Modifier.size(18.dp)
                 )
             }
         }
