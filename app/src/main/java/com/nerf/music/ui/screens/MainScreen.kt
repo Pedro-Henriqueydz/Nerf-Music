@@ -47,6 +47,8 @@ import androidx.navigation.compose.rememberNavController
 import com.nerf.music.BuildConfig
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
+import com.nerf.music.updater.UpdateNotificationHelper
+import com.nerf.music.updater.UpdateCheckWorker
 
 /**
  * Rotas principais da aplicação baseadas na arquitetura do YouTube Music (`pivot_bar` + Search).
@@ -126,9 +128,15 @@ fun MainScreen(
             contract = ActivityResultContracts.RequestPermission()
         ) { isGranted ->
             hasNotificationPermission = isGranted
+            if (isGranted) {
+                UpdateNotificationHelper.createNotificationChannel(context)
+                UpdateCheckWorker.schedule(context)
+            }
         }
 
         LaunchedEffect(Unit) {
+            UpdateNotificationHelper.createNotificationChannel(context)
+            UpdateCheckWorker.schedule(context)
             if (!hasNotificationPermission) {
                 permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }

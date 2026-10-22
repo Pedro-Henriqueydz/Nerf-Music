@@ -101,6 +101,9 @@ dependencies {
     // NewPipeExtractor for YouTube stream extraction and cipher resolution
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
 
+    // WorkManager for Background Periodic Update Checks
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
