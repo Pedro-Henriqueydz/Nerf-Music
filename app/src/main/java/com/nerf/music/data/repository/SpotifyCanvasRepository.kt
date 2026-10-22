@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -33,17 +32,22 @@ class SpotifyCanvasRepositoryImpl(
     private var cachedClientToken: String? = null
     private var clientTokenExpiresAt: Long = 0L
 
-    // Cache em memória: "$cleanTitle|$cleanArtist" -> canvas MP4 URL (ou null se não tiver canvas)
-    private val canvasCache = ConcurrentHashMap<String, String?>()
+    // Cache em memória (ConcurrentHashMap não aceita valores null)
+    private val canvasCache = ConcurrentHashMap<String, String>()
+    private val negativeCache = ConcurrentHashMap<String, Boolean>()
 
     override suspend fun getCanvasUrl(title: String, artist: String): Result<String?> = withContext(Dispatchers.IO) {
         val cleanTitle = cleanTrackTitle(title)
         val cleanArtist = cleanArtistName(artist)
         val cacheKey = "$cleanTitle|$cleanArtist".lowercase()
 
-        if (canvasCache.containsKey(cacheKey)) {
-            Log.d(TAG, "Canvas retornado do cache para $cleanTitle - $cleanArtist: ${canvasCache[cacheKey] != null}")
-            return@withContext Result.success(canvasCache[cacheKey])
+        canvasCache[cacheKey]?.let { cachedUrl ->
+            Log.d(TAG, "Canvas retornado do cache positivo para '$cleanTitle' - '$cleanArtist'")
+            return@withContext Result.success(cachedUrl)
+        }
+        if (negativeCache.containsKey(cacheKey)) {
+            Log.d(TAG, "Faixa '$cleanTitle' - '$cleanArtist' está no cache negativo (sem Canvas)")
+            return@withContext Result.success(null)
         }
 
         try {
@@ -51,29 +55,31 @@ class SpotifyCanvasRepositoryImpl(
 
             val (accessToken, clientToken) = ensureTokens()
             if (accessToken == null || clientToken == null) {
-                Log.w(TAG, "Falha ao obter tokens anônimos do Spotify Web Player")
-                canvasCache[cacheKey] = null
+                Log.w(TAG, "Falha temporária ao obter tokens do Spotify Web Player (access=${accessToken != null}, client=${clientToken != null})")
                 return@withContext Result.success(null)
             }
 
             // 1. Pesquisa o trackId na API interna Pathfinder do Spotify
-            val trackId = searchSpotifyTrackId(cleanTitle, cleanArtist, accessToken, clientToken)
-            if (trackId.isNullOrBlank()) {
-                Log.w(TAG, "Nenhum trackId do Spotify encontrado para '$cleanTitle' - '$cleanArtist'")
-                canvasCache[cacheKey] = null
-                return@withContext Result.success(null)
+            var trackId = searchSpotifyTrackId(cleanTitle, cleanArtist, accessToken, clientToken)
+            var canvasUrl = trackId?.let { fetchCanvasMp4(it) }
+
+            // 2. Fallback: se o título tiver sufixos entre parênteses como "(extended mix)" e não achou Canvas, tenta o título base
+            val strippedTitle = stripParentheses(cleanTitle)
+            if (canvasUrl == null && strippedTitle.isNotBlank() && !strippedTitle.equals(cleanTitle, ignoreCase = true)) {
+                Log.i(TAG, "Tentando busca secundária sem parênteses: '$strippedTitle' por '$cleanArtist'")
+                val fallbackTrackId = searchSpotifyTrackId(strippedTitle, cleanArtist, accessToken, clientToken)
+                if (!fallbackTrackId.isNullOrBlank() && fallbackTrackId != trackId) {
+                    trackId = fallbackTrackId
+                    canvasUrl = fetchCanvasMp4(fallbackTrackId)
+                }
             }
 
-            Log.i(TAG, "TrackId do Spotify localizado: $trackId. Buscando Canvas MP4...")
-
-            // 2. Consulta o resolver de Canvas pelo trackId
-            val canvasUrl = fetchCanvasMp4(trackId)
-            canvasCache[cacheKey] = canvasUrl
-
             if (canvasUrl != null) {
-                Log.i(TAG, "Canvas MP4 obtido com sucesso para '$cleanTitle': $canvasUrl")
+                canvasCache[cacheKey] = canvasUrl
+                Log.i(TAG, "Canvas MP4 obtido com sucesso para '$cleanTitle' (trackId=$trackId): $canvasUrl")
             } else {
-                Log.i(TAG, "Faixa '$cleanTitle' não possui Canvas associado no Spotify.")
+                negativeCache[cacheKey] = true
+                Log.i(TAG, "Faixa '$cleanTitle' (trackId=$trackId) não possui Canvas associado no Spotify.")
             }
 
             Result.success(canvasUrl)
@@ -117,7 +123,10 @@ class SpotifyCanvasRepositoryImpl(
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "fetchAnonymousAccessToken HTTP ${response.code}")
+                    return null
+                }
                 val html = response.body?.string() ?: return null
 
                 val pattern = Pattern.compile("""<script[^>]*id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""", Pattern.DOTALL)
@@ -134,7 +143,10 @@ class SpotifyCanvasRepositoryImpl(
                     val token = session.getString("accessToken")
                     val expiresAt = session.optLong("accessTokenExpirationTimestampMs", System.currentTimeMillis() + 3600_000L)
                     Pair(token, expiresAt)
-                } else null
+                } else {
+                    Log.w(TAG, "__NEXT_DATA__ não encontrado no embed HTML")
+                    null
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Erro ao buscar anonymous accessToken: ${e.message}")
@@ -163,16 +175,22 @@ class SpotifyCanvasRepositoryImpl(
                 })
             }
 
+            // Importante: converter para ByteArray sem MediaType para evitar que o OkHttp anexe '; charset=utf-8'
+            // (o servidor clienttoken.spotify.com rejeita charset=utf-8 com HTTP 400)
+            val bodyBytes = bodyJson.toString().toByteArray(Charsets.UTF_8)
             val request = Request.Builder()
                 .url("https://clienttoken.spotify.com/v1/clienttoken")
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .header("User-Agent", USER_AGENT)
-                .post(bodyJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .post(bodyBytes.toRequestBody(null))
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "fetchClientToken HTTP ${response.code}")
+                    return null
+                }
                 val bodyStr = response.body?.string() ?: return null
                 val json = JSONObject(bodyStr)
                 val grantedToken = json.getJSONObject("granted_token")
@@ -214,6 +232,7 @@ class SpotifyCanvasRepositoryImpl(
                 })
             }
 
+            val bodyBytes = gqlBody.toString().toByteArray(Charsets.UTF_8)
             val request = Request.Builder()
                 .url("https://api-partner.spotify.com/pathfinder/v2/query")
                 .header("Authorization", "Bearer $accessToken")
@@ -221,11 +240,14 @@ class SpotifyCanvasRepositoryImpl(
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .header("User-Agent", USER_AGENT)
-                .post(gqlBody.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .post(bodyBytes.toRequestBody(null))
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "searchSpotifyTrackId HTTP ${response.code}")
+                    return null
+                }
                 val bodyStr = response.body?.string() ?: return null
                 val json = JSONObject(bodyStr)
                 val items = json.optJSONObject("data")
@@ -280,21 +302,27 @@ class SpotifyCanvasRepositoryImpl(
 
     private fun cleanTrackTitle(title: String): String {
         return title
-            .replace(Regex("""\s*[\(\[](?:Official Video|Video Oficial|Audio Oficial|Oficial|Ao Vivo|Lyric Video|Clip Oficial|part\.[^\)\]]+|feat\.[^\)\]]+|ft\.[^\)\]]+)[\)\]]""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*[\(\[](?:Official Video|Video Oficial|Audio Oficial|Oficial|Ao Vivo|Lyric Video|Clip Oficial|Visualizer|part\.[^\)\]]+|feat\.[^\)\]]+|ft\.[^\)\]]+)[\)\]]""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\s*-\s*(?:Official Video|Video Oficial|Ao Vivo|Oficial).*""", RegexOption.IGNORE_CASE), "")
+            .trim()
+    }
+
+    private fun stripParentheses(title: String): String {
+        return title
+            .replace(Regex("""\s*[\(\[].*?[\)\]]"""), "")
             .trim()
     }
 
     private fun cleanArtistName(artist: String): String {
         return artist
-            .replace(Regex("""\s*-\s*Tópico""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s*-\s*Topic""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*-\s*(?:Tópico|Topic)""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+(?:e|&|,|x|vs\.?)\s+""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
     }
 
     companion object {
         private const val TAG = "SpotifyCanvasRepository"
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
