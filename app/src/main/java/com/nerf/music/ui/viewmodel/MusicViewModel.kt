@@ -33,6 +33,7 @@ import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.data.repository.UpdateRepository
 import com.nerf.music.data.repository.UpdateRepositoryImpl
 import com.nerf.music.updater.AppUpdateInfo
+import com.nerf.music.updater.UpdateNotificationHelper
 import com.nerf.music.data.model.TrackRelatedData
 import com.nerf.music.data.model.LyricsData
 import com.nerf.music.data.model.SyncedLyricsLine
@@ -288,9 +289,16 @@ class MusicViewModel(
 
     fun checkForAppUpdates() {
         viewModelScope.launch {
-            val update = updateRepository.checkForUpdate()
-            if (update != null) {
-                _availableUpdate.value = update
+            try {
+                val update = updateRepository.checkForUpdate()
+                if (update != null) {
+                    _availableUpdate.value = update
+                    applicationContext?.let { ctx ->
+                        UpdateNotificationHelper.showUpdateNotification(ctx, update)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("MusicViewModel", "Erro ao verificar atualizacoes: ${e.message}")
             }
         }
     }
@@ -326,6 +334,7 @@ class MusicViewModel(
     fun confirmAndDownloadUpdate(context: Context) {
         val updateInfo = _availableUpdate.value ?: return
         _availableUpdate.value = null
+        UpdateNotificationHelper.cancelUpdateNotification(context)
         updateRepository.downloadAndInstallApk(
             context = context,
             updateInfo = updateInfo,

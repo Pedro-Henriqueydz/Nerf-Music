@@ -1,5 +1,6 @@
 package com.nerf.music
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,8 @@ import androidx.activity.viewModels
 import com.nerf.music.ui.screens.MainScreen
 import com.nerf.music.ui.theme.NERFMusicTheme
 import com.nerf.music.ui.viewmodel.MusicViewModel
+import com.nerf.music.updater.UpdateCheckWorker
+import com.nerf.music.updater.UpdateNotificationHelper
 
 class MainActivity : ComponentActivity() {
 
@@ -17,13 +20,31 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Inicializa canal de notificação e agenda verificação em segundo plano via WorkManager
+        UpdateNotificationHelper.createNotificationChannel(this)
+        UpdateCheckWorker.schedule(this)
+
         // Inicializa a conexão com o MediaSessionService em segundo plano
         viewModel.initializePlayerController(this)
+
+        handleUpdateIntent(intent)
 
         setContent {
             NERFMusicTheme {
                 MainScreen(viewModel = viewModel)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleUpdateIntent(intent)
+    }
+
+    private fun handleUpdateIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(UpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false) == true) {
+            viewModel.checkForAppUpdates()
         }
     }
 
