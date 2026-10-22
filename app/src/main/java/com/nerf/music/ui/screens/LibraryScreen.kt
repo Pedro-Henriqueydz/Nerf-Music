@@ -55,6 +55,15 @@ fun LibraryScreen(
                 color = YtmTextSecondary,
                 textAlign = TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Nerf Music v${com.nerf.music.BuildConfig.VERSION_NAME}",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 12.sp,
+                color = OrangePrimary,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
