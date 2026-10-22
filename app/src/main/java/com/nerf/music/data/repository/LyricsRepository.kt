@@ -167,7 +167,7 @@ class LyricsRepositoryImpl(
     }
 
     private fun parseLrc(lrcText: String): List<SyncedLyricsLine> {
-        val list = mutableListOf<SyncedLyricsLine>()
+        val rawList = mutableListOf<SyncedLyricsLine>()
         lrcText.lines().forEach { line ->
             val trimmed = line.trim()
             val matcher = lrcPattern.matcher(trimmed)
@@ -183,11 +183,78 @@ class LyricsRepositoryImpl(
                 val totalMs = (min * 60 * 1000L) + (sec * 1000L) + ms
                 val text = matcher.group(4)?.trim().orEmpty()
                 if (text.isNotBlank()) {
-                    list.add(SyncedLyricsLine(timeMs = totalMs, text = text))
+                    rawList.add(SyncedLyricsLine(timeMs = totalMs, text = text))
                 }
             }
         }
-        return list.sortedBy { it.timeMs }
+        val sorted = rawList.sortedBy { it.timeMs }
+        return paginateSyncedLines(sorted)
+    }
+
+    private fun paginateSyncedLines(lines: List<SyncedLyricsLine>): List<SyncedLyricsLine> {
+        if (lines.isEmpty()) return emptyList()
+        val result = mutableListOf<SyncedLyricsLine>()
+
+        for (i in lines.indices) {
+            val current = lines[i]
+            val nextTime = lines.getOrNull(i + 1)?.timeMs
+            val rawDuration = if (nextTime != null && nextTime > current.timeMs) {
+                (nextTime - current.timeMs).coerceIn(2000L, 8000L)
+            } else {
+                4000L
+            }
+
+            val chunks = splitIntoChunks(current.text, maxChars = 40)
+            if (chunks.size <= 1) {
+                result.add(current)
+            } else {
+                val totalChars = current.text.length.coerceAtLeast(1)
+                var accumulatedMs = 0L
+                for (chunk in chunks) {
+                    val chunkFraction = chunk.length.toDouble() / totalChars.toDouble()
+                    val chunkDuration = (rawDuration * chunkFraction).toLong().coerceAtLeast(1000L)
+                    result.add(
+                        SyncedLyricsLine(
+                            timeMs = current.timeMs + accumulatedMs,
+                            text = chunk
+                        )
+                    )
+                    accumulatedMs += chunkDuration
+                }
+            }
+        }
+        return result.sortedBy { it.timeMs }
+    }
+
+    private fun splitIntoChunks(text: String, maxChars: Int = 40): List<String> {
+        val trimmed = text.trim()
+        if (trimmed.length <= maxChars) return listOf(trimmed)
+        val words = trimmed.split(Regex("\\s+"))
+        if (words.size <= 1) return listOf(trimmed)
+
+        val chunks = mutableListOf<String>()
+        val currentWords = mutableListOf<String>()
+        var currentLen = 0
+
+        for (word in words) {
+            val wordLen = word.length
+            if (currentWords.isEmpty()) {
+                currentWords.add(word)
+                currentLen = wordLen
+            } else if (currentLen + 1 + wordLen <= maxChars) {
+                currentWords.add(word)
+                currentLen += 1 + wordLen
+            } else {
+                chunks.add(currentWords.joinToString(" "))
+                currentWords.clear()
+                currentWords.add(word)
+                currentLen = wordLen
+            }
+        }
+        if (currentWords.isNotEmpty()) {
+            chunks.add(currentWords.joinToString(" "))
+        }
+        return chunks
     }
 
     private fun cleanTrackTitle(title: String): String {

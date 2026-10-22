@@ -1,5 +1,7 @@
 package com.nerf.music.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -764,20 +766,26 @@ fun FullPlayerSheet(
                             .fillMaxWidth()
                             .padding(bottom = 8.dp)
                     ) {
-                        Text(
-                            text = lyricsLine.orEmpty(),
-                            fontFamily = YouTubeSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            lineHeight = 24.sp,
-                            color = Color.White,
-                            textAlign = TextAlign.Start,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .basicMarquee()
-                        )
+                        AnimatedContent(
+                            targetState = lyricsLine.orEmpty(),
+                            transitionSpec = {
+                                fadeIn(animationSpec = tween(250)) togetherWith fadeOut(animationSpec = tween(180))
+                            },
+                            label = "LyricsChunkTransition"
+                        ) { chunkText ->
+                            Text(
+                                text = chunkText,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                lineHeight = 24.sp,
+                                color = Color.White,
+                                textAlign = TextAlign.Start,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
 
                     Column(
