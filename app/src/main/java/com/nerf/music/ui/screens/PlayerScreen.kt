@@ -1,5 +1,15 @@
 package com.nerf.music.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.ui.PlayerView
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.MediaItem
+import com.nerf.music.ui.theme.OrangePrimary
+import com.nerf.music.ui.theme.YouTubeSansFontFamily
+import kotlin.math.roundToInt
 import android.graphics.drawable.BitmapDrawable
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -279,6 +289,8 @@ fun MiniPlayerBar(
 @Composable
 fun FullPlayerSheet(
     state: PlaybackState,
+    canvasVideoUrl: String? = null,
+    lyricsLine: String? = null,
     onDismiss: () -> Unit,
     onTogglePlay: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -379,17 +391,88 @@ fun FullPlayerSheet(
         )
     )
 
+    var canvasPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+
+    DisposableEffect(canvasVideoUrl) {
+        if (!canvasVideoUrl.isNullOrBlank()) {
+            val player = ExoPlayer.Builder(context).build().apply {
+                volume = 0f
+                repeatMode = Player.REPEAT_MODE_ALL
+                val mediaItem = MediaItem.fromUri(canvasVideoUrl)
+                setMediaItem(mediaItem)
+                prepare()
+                playWhenReady = true
+            }
+            canvasPlayer = player
+            onDispose {
+                player.release()
+                canvasPlayer = null
+            }
+        } else {
+            onDispose {
+                canvasPlayer?.release()
+                canvasPlayer = null
+            }
+        }
+    }
+
+    LaunchedEffect(state.isPlaying) {
+        canvasPlayer?.let { cp ->
+            if (state.isPlaying) cp.play() else cp.pause()
+        }
+    }
+
+    val isCanvasActive = !canvasVideoUrl.isNullOrBlank()
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF0F0F0F)
     ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(backgroundBrush)
-                .statusBarsPadding()
-                .navigationBarsPadding()
+        Box(
+            modifier = Modifier.fillMaxSize()
         ) {
+            if (isCanvasActive && canvasPlayer != null) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            useController = false
+                            player = canvasPlayer
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.5f),
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.6f),
+                                    Color.Black.copy(alpha = 0.95f)
+                                )
+                            )
+                        )
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(backgroundBrush)
+                )
+            }
+
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+            ) {
             val totalHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
             val collapsedPeekHeightDp = 64.dp
             val collapsedPeekPx = with(density) { collapsedPeekHeightDp.toPx() }
@@ -550,87 +633,189 @@ fun FullPlayerSheet(
 
                 Spacer(modifier = Modifier.height((16f * (1f - halfExpansionFraction * 0.75f)).dp))
 
-                // Imagem da Capa (Artwork) — diminui suavemente quando a fila está em HALF_EXPANDED
-                Box(
-                    modifier = Modifier
-                        .size(animatedArtworkSize)
-                        .shadow(
-                            elevation = (22f * (1f - halfExpansionFraction * 0.5f)).dp,
-                            shape = RoundedCornerShape(18.dp),
-                            clip = false
-                        )
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xFF262626)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!artworkUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = artworkUrl,
-                            contentDescription = track.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = Color.Gray,
-                            modifier = Modifier.size(72.dp)
-                        )
-                    }
-                }
+                if (isCanvasActive) {
+                    // MODO CANVAS (SPOTIFY): Vídeo preenche o fundo, miniatura compacta da capa e letra sincronizada acima do título
+                    Spacer(modifier = Modifier.weight(1f))
 
-                Spacer(modifier = Modifier.height((18f * (1f - halfExpansionFraction * 0.65f)).dp))
-
-                // Título da Música com Chevron (`>`) à direita e Nome do Artista clicável
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = if (halfExpansionFraction > 0.5f) Alignment.CenterHorizontally else Alignment.Start
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = if (halfExpansionFraction > 0.5f) Arrangement.Center else Arrangement.Start
+                    AnimatedVisibility(
+                        visible = !lyricsLine.isNullOrBlank(),
+                        enter = fadeIn(animationSpec = tween(300)),
+                        exit = fadeOut(animationSpec = tween(200)),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                     ) {
                         Text(
-                            text = track.title,
-                            fontSize = (22f - (4f * halfExpansionFraction)).sp,
+                            text = lyricsLine.orEmpty(),
+                            fontFamily = YouTubeSansFontFamily,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .basicMarquee()
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
+                            fontSize = 21.sp,
+                            lineHeight = 28.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = track.artist,
-                        fontSize = (15f - (2f * halfExpansionFraction)).sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable {
-                                Toast.makeText(
-                                    context,
-                                    "Abrir perfil do artista: ${track.artist}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF262626)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!artworkUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = artworkUrl,
+                                    contentDescription = track.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(28.dp)
+                                )
                             }
-                            .padding(vertical = 2.dp, horizontal = 2.dp)
-                    )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                modifier = Modifier.basicMarquee()
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = track.artist,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(onClick = { onToggleFavorite(track.id) }) {
+                            Icon(
+                                imageVector = if (state.favoriteTrackIds.contains(track.id)) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Favoritar",
+                                tint = if (state.favoriteTrackIds.contains(track.id)) OrangePrimary else Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+                } else {
+                    // MODO CAPA PADRÃO: Imagem de capa grande, letra sincronizada entre capa e título
+                    Box(
+                        modifier = Modifier
+                            .size(animatedArtworkSize)
+                            .shadow(
+                                elevation = (22f * (1f - halfExpansionFraction * 0.5f)).dp,
+                                shape = RoundedCornerShape(18.dp),
+                                clip = false
+                            )
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFF262626)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!artworkUrl.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = artworkUrl,
+                                contentDescription = track.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(72.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height((14f * (1f - halfExpansionFraction * 0.65f)).dp))
+
+                    AnimatedVisibility(
+                        visible = !lyricsLine.isNullOrBlank() && halfExpansionFraction < 0.45f,
+                        enter = fadeIn(animationSpec = tween(300)),
+                        exit = fadeOut(animationSpec = tween(200)),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    ) {
+                        Text(
+                            text = lyricsLine.orEmpty(),
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            lineHeight = 22.sp,
+                            color = OrangePrimary,
+                            textAlign = TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = if (halfExpansionFraction > 0.5f) Alignment.CenterHorizontally else Alignment.Start
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = if (halfExpansionFraction > 0.5f) Arrangement.Center else Arrangement.Start
+                        ) {
+                            Text(
+                                text = track.title,
+                                fontSize = (22f - (4f * halfExpansionFraction)).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .basicMarquee()
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = track.artist,
+                            fontSize = (15f - (2f * halfExpansionFraction)).sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable {
+                                    Toast.makeText(
+                                        context,
+                                        "Abrir perfil do artista: ${track.artist}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                .padding(vertical = 2.dp, horizontal = 2.dp)
+                        )
+                    }
                 }
 
                 // Ações do Full Player (Favoritar, Salvar, Download) — visíveis no Estado 0
@@ -922,6 +1107,7 @@ fun FullPlayerSheet(
             }
         }
     }
+}
 }
 
 /**

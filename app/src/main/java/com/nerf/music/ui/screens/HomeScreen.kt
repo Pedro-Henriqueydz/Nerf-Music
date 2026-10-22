@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
@@ -46,6 +47,7 @@ import com.nerf.music.ui.viewmodel.MusicViewModel
 fun HomeScreen(
     viewModel: MusicViewModel,
     onOpenAlbum: (browseId: String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val homeChips by viewModel.homeChips.collectAsState()
@@ -79,7 +81,7 @@ fun HomeScreen(
 
         Column(modifier = Modifier.fillMaxSize()) {
             // Top Navbar oficial estilo YouTube Music (sem lupa no topo, pesquisa na navbar inferior)
-            YtmTopBar()
+            YtmTopBar(onOpenSettings = onOpenSettings)
 
             when {
                 isLoading && homeSections.isEmpty() -> {
@@ -252,6 +254,7 @@ fun HomeScreen(
  */
 @Composable
 fun YtmTopBar(
+    onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -282,6 +285,17 @@ fun YtmTopBar(
                 letterSpacing = (-0.5).sp,
                 color = YtmWhite
             )
+        }
+
+        if (onOpenSettings != null) {
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Configurações",
+                    tint = YtmWhite,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
         }
     }
 }
