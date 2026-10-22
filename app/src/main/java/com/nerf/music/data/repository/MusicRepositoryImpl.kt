@@ -9,6 +9,7 @@ import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
 import com.nerf.music.data.model.UpNextResult
+import com.nerf.music.data.model.TrackRelatedData
 import com.nerf.music.data.network.InnerTubeCatalogClient
 import java.util.regex.Pattern
 
@@ -54,6 +55,10 @@ class MusicRepositoryImpl(
 
     override suspend fun getArtist(browseId: String): Result<ArtistDetail> {
         return catalogClient.getArtist(browseId)
+    }
+
+    override suspend fun getTrackRelated(relatedBrowseId: String): Result<TrackRelatedData> {
+        return catalogClient.getTrackRelated(relatedBrowseId)
     }
 
     override suspend fun getUpNextRadio(

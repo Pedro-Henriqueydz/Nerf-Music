@@ -33,6 +33,7 @@ import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.data.repository.UpdateRepository
 import com.nerf.music.data.repository.UpdateRepositoryImpl
 import com.nerf.music.updater.AppUpdateInfo
+import com.nerf.music.data.model.TrackRelatedData
 import com.nerf.music.data.model.LyricsData
 import com.nerf.music.data.model.SyncedLyricsLine
 import com.nerf.music.data.repository.LyricsRepository
@@ -85,6 +86,14 @@ class MusicViewModel(
     // Letras da faixa atual
     private val _currentLyrics = MutableStateFlow<LyricsData?>(null)
     val currentLyrics: StateFlow<LyricsData?> = _currentLyrics.asStateFlow()
+
+    private val _trackRelatedData = MutableStateFlow<TrackRelatedData?>(null)
+    val trackRelatedData: StateFlow<TrackRelatedData?> = _trackRelatedData.asStateFlow()
+
+    private val _isLoadingRelated = MutableStateFlow(false)
+    val isLoadingRelated: StateFlow<Boolean> = _isLoadingRelated.asStateFlow()
+
+    private var relatedFetchJob: kotlinx.coroutines.Job? = null
 
     // Frase atual da letra sincronizada com a reprodução
     private val _currentLyricsLine = MutableStateFlow<String?>(null)
@@ -692,8 +701,12 @@ class MusicViewModel(
                         queueSourceTitle = track.title,
                         queueFilterChips = upNext.chips,
                         selectedQueueChipParams = selectedParams,
-                        isLoadingQueueRadio = false
+                        isLoadingQueueRadio = false,
+                        relatedBrowseId = upNext.relatedBrowseId
                     )
+                    if (upNext.relatedBrowseId != null) {
+                        loadTrackRelated(upNext.relatedBrowseId)
+                    }
                 }.onFailure { error ->
                     Log.w("MusicViewModel", "Falha ao abrir playlist ${track.id}: ${error.message}")
                     _loadingTrackId.value = null
@@ -731,8 +744,12 @@ class MusicViewModel(
                     queueSourceTitle = track.title,
                     queueFilterChips = upNext.chips,
                     selectedQueueChipParams = selectedParams,
-                    isLoadingQueueRadio = false
+                    isLoadingQueueRadio = false,
+                    relatedBrowseId = upNext.relatedBrowseId
                 )
+                if (upNext.relatedBrowseId != null) {
+                    loadTrackRelated(upNext.relatedBrowseId)
+                }
             }.onFailure { error ->
                 Log.w("MusicViewModel", "Falha ao carregar rádio dinâmica para ${track.id}: ${error.message}")
                 val fallbackSongs = _searchResult.value.songs
@@ -1080,6 +1097,36 @@ class MusicViewModel(
     fun clearSearchHistory() {
         userHistoryRepository?.clearSearchHistory()
         _searchHistory.value = emptyList()
+    }
+
+    fun loadTrackRelated(relatedBrowseId: String) {
+        relatedFetchJob?.cancel()
+        relatedFetchJob = viewModelScope.launch {
+            _isLoadingRelated.value = true
+            _trackRelatedData.value = null
+            repository.getTrackRelated(relatedBrowseId).onSuccess { data ->
+                _trackRelatedData.value = data
+                data.sections.forEach { section ->
+                    section.items.forEach { trackMetadataMap[it.id] = it }
+                }
+                _isLoadingRelated.value = false
+            }.onFailure { error ->
+                Log.w("MusicViewModel", "Erro ao buscar conteudo relacionado: " + error.message)
+                _isLoadingRelated.value = false
+            }
+        }
+    }
+
+    suspend fun resolveArtistBrowseId(artistName: String): String? {
+        if (artistName.isBlank() || artistName.equals("Desconhecido", ignoreCase = true) || artistName.equals("Artista Desconhecido", ignoreCase = true)) {
+            return null
+        }
+        return try {
+            val res = repository.search(artistName, SearchFilter.ALL).getOrNull()
+            res?.topArtist?.id ?: res?.artists?.firstOrNull()?.id
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun loadArtist(browseId: String) {

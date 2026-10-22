@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -105,6 +106,9 @@ fun MainScreen(
     val isLyricsAboveTitleEnabled by viewModel.isLyricsAboveTitleEnabled.collectAsState()
     val currentLyricsLine by viewModel.currentLyricsLine.collectAsState()
     val currentLyrics by viewModel.currentLyrics.collectAsState()
+    val trackRelatedData by viewModel.trackRelatedData.collectAsState()
+    val isLoadingRelated by viewModel.isLoadingRelated.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     val context = LocalContext.current
 
@@ -439,7 +443,32 @@ fun MainScreen(
                 onSelectQueueChip = { chip -> viewModel.selectQueueFilterChip(chip) },
                 onPlayQueueItem = { index -> viewModel.playQueueItemAt(index) },
                 onMoveQueueItem = { fromIndex, toIndex -> viewModel.moveQueueItem(fromIndex, toIndex) },
-                onRemoveQueueItem = { index -> viewModel.removeQueueItem(index) }
+                onRemoveQueueItem = { index -> viewModel.removeQueueItem(index) },
+                onOpenArtist = { artistIdentifier ->
+                    viewModel.closeFullPlayer()
+                    if (artistIdentifier.startsWith("UC") || artistIdentifier.startsWith("FE")) {
+                        navController.navigate("artist/$artistIdentifier") {
+                            launchSingleTop = true
+                        }
+                    } else {
+                        coroutineScope.launch {
+                            val resolved = viewModel.resolveArtistBrowseId(artistIdentifier)
+                            val target = resolved ?: artistIdentifier
+                            navController.navigate("artist/$target") {
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                },
+                relatedData = trackRelatedData,
+                isLoadingRelated = isLoadingRelated,
+                onPlayRelatedTrack = { relTrack -> viewModel.playTrack(relTrack) },
+                onOpenAlbum = { albumId ->
+                    viewModel.closeFullPlayer()
+                    navController.navigate("album/$albumId") {
+                        launchSingleTop = true
+                    }
+                }
             )
         }
     }

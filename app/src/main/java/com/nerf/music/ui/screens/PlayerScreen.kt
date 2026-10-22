@@ -97,6 +97,18 @@ import com.nerf.music.R
 import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.Track
+import com.nerf.music.data.model.TrackRelatedData
+import com.nerf.music.data.model.RelatedSection
+import com.nerf.music.data.model.HomeSectionStyle
+import com.nerf.music.ui.theme.YtmBlack
+import com.nerf.music.ui.theme.YtmGrey11
+import com.nerf.music.ui.theme.YtmGrey10
+import com.nerf.music.ui.theme.YtmWhite
+import com.nerf.music.ui.theme.YtmTextSecondary
+import com.nerf.music.ui.theme.YtmIconInactive
+import com.nerf.music.ui.theme.OrangeSecondary
+import androidx.compose.material.icons.automirrored.filled.Subject
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -307,7 +319,12 @@ fun FullPlayerSheet(
     onSelectQueueChip: (QueueFilterChip) -> Unit,
     onPlayQueueItem: (Int) -> Unit,
     onMoveQueueItem: (Int, Int) -> Unit,
-    onRemoveQueueItem: (Int) -> Unit
+    onRemoveQueueItem: (Int) -> Unit,
+    onOpenArtist: (String) -> Unit = {},
+    relatedData: TrackRelatedData? = null,
+    isLoadingRelated: Boolean = false,
+    onPlayRelatedTrack: (Track) -> Unit = {},
+    onOpenAlbum: (String) -> Unit = {}
 ) {
     val track = state.currentTrack ?: return
     val context = LocalContext.current
@@ -357,10 +374,13 @@ fun FullPlayerSheet(
 
     // 2. Estado de Expansão da Fila (0 = Oculto, 1 = Meio Expandido, 2 = Totalmente Expandido)
     var queueState by remember { mutableStateOf(QueueExpansionState.COLLAPSED) }
+    var showRelatedSheet by remember { mutableStateOf(false) }
 
     // Tratamento do botão Voltar do Android: se a fila estiver aberta, recolhe a fila; senão, fecha o Player
     BackHandler {
-        when (queueState) {
+        if (showRelatedSheet) {
+            showRelatedSheet = false
+        } else when (queueState) {
             QueueExpansionState.EXPANDED -> queueState = QueueExpansionState.HALF_EXPANDED
             QueueExpansionState.HALF_EXPANDED -> queueState = QueueExpansionState.COLLAPSED
             QueueExpansionState.COLLAPSED -> onDismiss()
@@ -476,6 +496,27 @@ fun FullPlayerSheet(
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
+                    .pointerInput(queueState, showRelatedSheet) {
+                        if (queueState == QueueExpansionState.COLLAPSED && !showRelatedSheet) {
+                            var totalDragY = 0f
+                            detectVerticalDragGestures(
+                                onDragStart = { totalDragY = 0f },
+                                onDragEnd = {
+                                    if (totalDragY > 100f) {
+                                        onDismiss()
+                                    } else if (totalDragY < -100f) {
+                                        queueState = QueueExpansionState.HALF_EXPANDED
+                                    }
+                                    totalDragY = 0f
+                                },
+                                onDragCancel = { totalDragY = 0f },
+                                onVerticalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    totalDragY += dragAmount
+                                }
+                            )
+                        }
+                    }
             ) {
             val totalHeightPx = constraints.maxHeight.toFloat().coerceAtLeast(1f)
             val collapsedPeekHeightDp = 64.dp
@@ -747,22 +788,27 @@ fun FullPlayerSheet(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = if (halfExpansionFraction > 0.5f) Arrangement.Center else Arrangement.Start
                             ) {
-                                Text(
-                                    text = track.title,
-                                    fontSize = (if (isCanvasActive) 20f else (22f - (4f * halfExpansionFraction))).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    maxLines = 1,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .weight(1f, fill = false)
-                                        .basicMarquee()
-                                )
-                                if (!isCanvasActive) {
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable { showRelatedSheet = true }
+                                        .padding(vertical = 2.dp, horizontal = 2.dp)
+                                ) {
+                                    Text(
+                                        text = track.title,
+                                        fontSize = (if (isCanvasActive) 20f else (22f - (4f * halfExpansionFraction))).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        modifier = Modifier.basicMarquee()
+                                    )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Icon(
                                         imageVector = Icons.Default.ChevronRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        contentDescription = "Relacionados",
+                                        tint = Color.White.copy(alpha = 0.7f),
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -780,11 +826,12 @@ fun FullPlayerSheet(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
                                     .clickable {
-                                        Toast.makeText(
-                                            context,
-                                            "Abrir perfil do artista: ${track.artist}",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        val bId = track.artistBrowseId
+                                        if (!bId.isNullOrBlank()) {
+                                            onOpenArtist(bId)
+                                        } else {
+                                            onOpenArtist(track.artist)
+                                        }
                                     }
                                     .padding(vertical = 2.dp, horizontal = 2.dp)
                             )
@@ -1096,6 +1143,38 @@ fun FullPlayerSheet(
                     }
                 }
             }
+
+            if (showRelatedSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showRelatedSheet = false },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = YtmBlack,
+                    contentColor = YtmWhite,
+                    dragHandle = {
+                        BottomSheetDefaults.DragHandle(
+                            color = YtmWhite.copy(alpha = 0.35f)
+                        )
+                    }
+                ) {
+                    PlayerRelatedSheetContent(
+                        relatedData = relatedData,
+                        isLoading = isLoadingRelated,
+                        currentPlayingId = track.id,
+                        onPlayTrack = { relTrack ->
+                            onPlayRelatedTrack(relTrack)
+                            showRelatedSheet = false
+                        },
+                        onOpenArtist = { artistId ->
+                            onOpenArtist(artistId)
+                            showRelatedSheet = false
+                        },
+                        onOpenAlbum = { albumId ->
+                            onOpenAlbum(albumId)
+                            showRelatedSheet = false
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -1151,6 +1230,13 @@ fun PlayerActionRow(
             },
             isActive = isDownloaded,
             onClick = onToggleDownload
+        )
+
+        RoundedActionPillButton(
+            icon = Icons.AutoMirrored.Filled.Subject,
+            label = stringResource(id = R.string.action_lyrics),
+            isActive = false,
+            onClick = { /* Sem funcionalidade por enquanto */ }
         )
     }
 }
@@ -1575,6 +1661,155 @@ private fun QueueTrackRow(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Conteúdo do BottomSheet de "Relacionados" (Related) idêntico ao YouTube Music:
+ * - "Talvez você também goste de" (carrossel em grade com músicas parecidas).
+ * - "Playlists recomendadas" (carrossel de cards).
+ * - "Artistas parecidos" (cards de artistas).
+ * - "Sobre o artista" (biografia).
+ */
+@Composable
+fun PlayerRelatedSheetContent(
+    relatedData: TrackRelatedData?,
+    isLoading: Boolean,
+    currentPlayingId: String,
+    onPlayTrack: (Track) -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.85f)
+            .navigationBarsPadding()
+    ) {
+        Text(
+            text = "Relacionados",
+            fontFamily = YouTubeSansFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            color = YtmWhite,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+
+        HorizontalDivider(color = Color(0xFF262626), thickness = 1.dp)
+
+        if (isLoading && relatedData == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = YtmWhite,
+                    strokeWidth = 2.5.dp,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+        } else if (relatedData == null || relatedData.sections.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Nenhuma recomendação disponível no momento.",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontSize = 14.sp,
+                    color = YtmTextSecondary
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                items(relatedData.sections) { section ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = section.title,
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = YtmWhite,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                        )
+
+                        if (section.style == HomeSectionStyle.QUICK_PICKS_GRID) {
+                            YtmQuickPicksGridCarousel(
+                                tracks = section.items,
+                                currentPlayingId = currentPlayingId,
+                                onTrackClick = onPlayTrack
+                            )
+                        } else {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                items(section.items, key = { it.id }) { item ->
+                                    HomeSongCard(
+                                        track = item,
+                                        isPlaying = item.id == currentPlayingId,
+                                        onClick = {
+                                            val bId = item.browseId ?: item.id
+                                            if (bId.startsWith("UC")) {
+                                                onOpenArtist(bId)
+                                            } else if (item.isAlbumOrPlaylist || bId.startsWith("MPREb_") || bId.startsWith("VLPL")) {
+                                                onOpenAlbum(bId)
+                                            } else {
+                                                onPlayTrack(item)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!relatedData.aboutArtistDescription.isNullOrBlank()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 14.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF1E1E1E))
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = relatedData.aboutArtistHeader ?: "Sobre o artista",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = YtmWhite
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = relatedData.aboutArtistDescription,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp,
+                                color = YtmTextSecondary
+                            )
+                        }
+                    }
+                }
             }
         }
     }

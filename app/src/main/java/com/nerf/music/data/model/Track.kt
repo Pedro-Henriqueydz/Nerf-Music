@@ -17,7 +17,8 @@ data class Track(
     val durationSeconds: Long = 0,
     val sourceIdentifier: String = "INNERTUBE_WEB_REMIX",
     val playlistId: String? = null,
-    val browseId: String? = null
+    val browseId: String? = null,
+    val artistBrowseId: String? = null
 ) {
     /**
      * Retorna se este item é um Álbum ou Playlist navegável.
