@@ -516,8 +516,10 @@ fun FullPlayerSheet(
                 0f
             }
 
-            // Tamanho dinâmico da capa: grande no Estado 0, compacta no Estado 1
-            val targetArtworkSizeDp = (240f - (115f * halfExpansionFraction)).dp
+            // Tamanho dinâmico da capa (estilo Spotify): largura total com margens de 24dp
+            val screenWidthDp = with(density) { constraints.maxWidth.toDp() }
+            val maxArtworkSizeDp = (screenWidthDp - 48.dp).coerceIn(310.dp, 335.dp)
+            val targetArtworkSizeDp = maxArtworkSizeDp - (165.dp * halfExpansionFraction)
             val animatedArtworkSize by animateDpAsState(
                 targetValue = targetArtworkSizeDp,
                 label = "ArtworkDynamicSize"
@@ -588,7 +590,7 @@ fun FullPlayerSheet(
                     .fillMaxWidth()
                     .alpha((1f - fullExpansionFraction * 1.25f).coerceIn(0f, 1f))
                     .padding(horizontal = 24.dp)
-                    .padding(bottom = collapsedPeekHeightDp + 12.dp),
+                    .padding(bottom = collapsedPeekHeightDp + 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Cabeçalho Superior
@@ -632,7 +634,7 @@ fun FullPlayerSheet(
                     Spacer(modifier = Modifier.size(48.dp))
                 }
 
-                Spacer(modifier = Modifier.height((10f * (1f - halfExpansionFraction * 0.75f)).dp))
+                Spacer(modifier = Modifier.height((16f * (1f - halfExpansionFraction * 0.75f)).dp))
 
                 if (isCanvasActive) {
                     // MODO CANVAS (SPOTIFY): Vídeo preenche o fundo, miniatura compacta da capa e letra sincronizada acima do título
@@ -748,7 +750,7 @@ fun FullPlayerSheet(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height((10f * (1f - halfExpansionFraction * 0.65f)).dp))
+                    Spacer(modifier = Modifier.height((20f * (1f - halfExpansionFraction * 0.65f)).dp))
 
                     AnimatedVisibility(
                         visible = !lyricsLine.isNullOrBlank() && halfExpansionFraction < 0.45f,
@@ -756,7 +758,7 @@ fun FullPlayerSheet(
                         exit = fadeOut(animationSpec = tween(200)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 6.dp)
+                            .padding(bottom = 8.dp)
                     ) {
                         Text(
                             text = lyricsLine.orEmpty(),
@@ -825,7 +827,7 @@ fun FullPlayerSheet(
 
                 // Ações do Full Player (Favoritar, Salvar, Download) — visíveis no Estado 0 em modo capa
                 if (!isCanvasActive && halfExpansionFraction < 0.45f) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
                     PlayerActionRow(
                         isFavorite = state.favoriteTrackIds.contains(track.id),
                         isSaved = state.savedTrackIds.contains(track.id),
@@ -836,7 +838,7 @@ fun FullPlayerSheet(
                         modifier = Modifier.alpha((1f - halfExpansionFraction * 2.2f).coerceIn(0f, 1f))
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     // Barra de Progresso Interativa Fina e Elegante (Slider) + Tempos MM:SS
                     Column(
@@ -922,7 +924,7 @@ fun FullPlayerSheet(
                     }
                 }
 
-                Spacer(modifier = Modifier.height((10f * (1f - halfExpansionFraction * 0.5f)).dp))
+                Spacer(modifier = Modifier.height((18f * (1f - halfExpansionFraction * 0.5f)).dp))
 
                 // Controles de Mídia: Aleatório, Anterior, Play/Pause (maior), Próxima, Repetição
                 val mainPlayButtonSize = (70f - (16f * halfExpansionFraction)).dp
