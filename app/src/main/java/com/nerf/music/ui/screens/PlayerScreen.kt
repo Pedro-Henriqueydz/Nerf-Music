@@ -591,7 +591,7 @@ fun FullPlayerSheet(
             // =========================================================================
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .then(if (isCanvasActive) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
                     .alpha((1f - fullExpansionFraction * 1.25f).coerceIn(0f, 1f))
                     .padding(horizontal = 24.dp)
                     .padding(bottom = collapsedPeekHeightDp + 16.dp),
@@ -756,10 +756,9 @@ fun FullPlayerSheet(
                                 .padding(vertical = 2.dp, horizontal = 2.dp)
                         )
                     }
-                }
 
-                // Ações do Full Player (Favoritar, Salvar, Download) — visíveis no Estado 0 em modo capa
-                if (!isCanvasActive && halfExpansionFraction < 0.45f) {
+                // Ações do Full Player (Favoritar, Salvar, Download) e Barra de Progresso — visíveis no Estado 0
+                if (halfExpansionFraction < 0.45f) {
                     Spacer(modifier = Modifier.height(14.dp))
                     PlayerActionRow(
                         isFavorite = state.favoriteTrackIds.contains(track.id),
@@ -973,6 +972,7 @@ fun FullPlayerSheet(
                         )
                     }
                 }
+            }
 
             // =========================================================================
             // CAMADA 2: FILA DE REPRODUÇÃO ("A SEGUIR" / UP NEXT) COM 3 ESTADOS POR GESTO
