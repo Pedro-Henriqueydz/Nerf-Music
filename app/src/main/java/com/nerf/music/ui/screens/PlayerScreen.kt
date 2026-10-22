@@ -26,6 +26,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -1194,8 +1197,11 @@ fun PlayerActionRow(
     onToggleDownload: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val scrollState = rememberScrollState()
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.Start),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1233,8 +1239,8 @@ fun PlayerActionRow(
         )
 
         RoundedActionPillButton(
-            icon = Icons.AutoMirrored.Filled.Subject,
-            label = stringResource(id = R.string.action_lyrics),
+            icon = Icons.Default.Subtitles,
+            label = "Letra",
             isActive = false,
             onClick = { /* Sem funcionalidade por enquanto */ }
         )
@@ -1263,13 +1269,15 @@ private fun RoundedActionPillButton(
         }
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier
+                .defaultMinSize(minHeight = 36.dp)
+                .padding(horizontal = 14.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                tint = if (isActive) MaterialTheme.colorScheme.primary else Color.White,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
@@ -1277,7 +1285,7 @@ private fun RoundedActionPillButton(
                 text = label,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                color = if (isActive) MaterialTheme.colorScheme.primary else Color.White
             )
         }
     }

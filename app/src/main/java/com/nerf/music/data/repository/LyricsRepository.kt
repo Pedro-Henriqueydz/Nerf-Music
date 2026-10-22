@@ -47,12 +47,41 @@ class LyricsRepositoryImpl(
             val cleanArtist = cleanArtistName(artist)
             Log.i(TAG, "Iniciando busca de letras para: title='$cleanTitle', artist='$cleanArtist', duration=$durationSeconds")
 
-            // 1. Tenta consulta direta no lrclib.net (/api/get)
+            val primaryArtist = extractPrimaryArtist(artist)
+            Log.i(TAG, "Artista primario extraido: '$primaryArtist' (original: '$cleanArtist')")
+
+            // 1. Tenta consulta direta no lrclib.net (/api/get) com o artista completo
             var lyricsData = fetchExactLrclib(cleanTitle, cleanArtist, durationSeconds, trackId)
 
-            // 2. Se não encontrar, tenta busca geral (/api/search?q=...)
+            // 2. Se não encontrar e o artista primário for diferente, tenta consulta exata com o artista primário
+            if (lyricsData == null && primaryArtist.isNotBlank() && !primaryArtist.equals(cleanArtist, ignoreCase = true)) {
+                Log.d(TAG, "Tentando fetchExactLrclib com artista primario: '$cleanTitle' - '$primaryArtist'")
+                lyricsData = fetchExactLrclib(cleanTitle, primaryArtist, durationSeconds, trackId)
+            }
+
+            // 3. Busca geral com Título + Artista Primário (evita erro 503 e encontra colaborações)
             if (lyricsData == null) {
+                val queryPrimary = if (primaryArtist.isNotBlank()) "$cleanTitle $primaryArtist" else cleanTitle
+                lyricsData = searchLrclib(queryPrimary, trackId)
+            }
+
+            // 4. Se ainda não encontrou e o artista original tem mais detalhes, tenta busca com o artista completo
+            if (lyricsData == null && !cleanArtist.equals(primaryArtist, ignoreCase = true)) {
                 lyricsData = searchLrclib("$cleanTitle $cleanArtist", trackId)
+            }
+
+            // 5. Fallback sem sufixos entre parênteses (ex: 'Spaceship (edit)' -> 'Spaceship')
+            val strippedTitle = stripParentheses(cleanTitle)
+            if (lyricsData == null && strippedTitle.isNotBlank() && !strippedTitle.equals(cleanTitle, ignoreCase = true)) {
+                val fallbackQuery = if (primaryArtist.isNotBlank()) "$strippedTitle $primaryArtist" else strippedTitle
+                Log.d(TAG, "Tentando busca secundaria sem parenteses: '$fallbackQuery'")
+                lyricsData = searchLrclib(fallbackQuery, trackId)
+            }
+
+            // 6. Último recurso: busca apenas pelo título da faixa se tiver tamanho significativo
+            if (lyricsData == null && cleanTitle.length >= 3) {
+                Log.d(TAG, "Tentando busca apenas pelo titulo: '$cleanTitle'")
+                lyricsData = searchLrclib(cleanTitle, trackId)
             }
             Log.i(TAG, "Resultado da busca de letras: isSynced=${lyricsData?.isSynced}, linhas=${lyricsData?.syncedLines?.size}")
 
@@ -264,11 +293,24 @@ class LyricsRepositoryImpl(
             .trim()
     }
 
+    private fun stripParentheses(title: String): String {
+        return title
+            .replace(Regex("""\s*[\(\[].*?[\)\]]"""), "")
+            .trim()
+    }
+
     private fun cleanArtistName(artist: String): String {
         return artist
             .split("•")[0]
-            .replace(Regex("""\s*-\s*Tópico""", RegexOption.IGNORE_CASE), "")
-            .replace(Regex("""\s*-\s*Topic""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s*-\s*(?:Tópico|Topic)""", RegexOption.IGNORE_CASE), "")
+            .trim()
+    }
+
+    private fun extractPrimaryArtist(artist: String): String {
+        val base = cleanArtistName(artist)
+        return base
+            .split(Regex("""\s+(?:e|&|,|x|vs\.?|and|feat\.?|ft\.?|/)\s+""", RegexOption.IGNORE_CASE))[0]
+            .split(",")[0]
             .trim()
     }
 
