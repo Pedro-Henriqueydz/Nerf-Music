@@ -707,57 +707,91 @@ fun FullPlayerSheet(
                         }
                     }
 
-                    Column(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = if (halfExpansionFraction > 0.5f) Alignment.CenterHorizontally else Alignment.Start
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = if (halfExpansionFraction > 0.5f) Arrangement.Center else Arrangement.Start
-                        ) {
-                            Text(
-                                text = track.title,
-                                fontSize = (22f - (4f * halfExpansionFraction)).sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
+                        if (isCanvasActive && halfExpansionFraction < 0.45f) {
+                            Box(
                                 modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .basicMarquee()
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp)
-                            )
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF262626)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!artworkUrl.isNullOrEmpty()) {
+                                    AsyncImage(
+                                        model = artworkUrl,
+                                        contentDescription = track.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = track.artist,
-                            fontSize = (15f - (2f * halfExpansionFraction)).sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable {
-                                    Toast.makeText(
-                                        context,
-                                        "Abrir perfil do artista: ${track.artist}",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = if (halfExpansionFraction > 0.5f) Alignment.CenterHorizontally else Alignment.Start
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = if (halfExpansionFraction > 0.5f) Arrangement.Center else Arrangement.Start
+                            ) {
+                                Text(
+                                    text = track.title,
+                                    fontSize = (if (isCanvasActive) 20f else (22f - (4f * halfExpansionFraction))).sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .basicMarquee()
+                                )
+                                if (!isCanvasActive) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp)
+                                    )
                                 }
-                                .padding(vertical = 2.dp, horizontal = 2.dp)
-                        )
+                            }
+
+                            Spacer(modifier = Modifier.height(3.dp))
+
+                            Text(
+                                text = track.artist,
+                                fontSize = (15f - (2f * halfExpansionFraction)).sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White.copy(alpha = 0.72f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        Toast.makeText(
+                                            context,
+                                            "Abrir perfil do artista: ${track.artist}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    .padding(vertical = 2.dp, horizontal = 2.dp)
+                            )
+                        }
                     }
 
-                // Ações do Full Player (Favoritar, Salvar, Download) e Barra de Progresso — visíveis no Estado 0
+                // Ações do Full Player (Favoritar, Salvar, Download) e Barra de Progresso estilo Spotify — visíveis no Estado 0
                 if (halfExpansionFraction < 0.45f) {
                     Spacer(modifier = Modifier.height(14.dp))
                     PlayerActionRow(
@@ -770,9 +804,9 @@ fun FullPlayerSheet(
                         modifier = Modifier.alpha((1f - halfExpansionFraction * 2.2f).coerceIn(0f, 1f))
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Barra de Progresso Interativa Fina e Elegante (Slider) + Tempos MM:SS
+                    // Barra de Progresso Interativa estilo Spotify (trilha branca + thumb circular branco) + Tempos MM:SS
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -796,9 +830,10 @@ fun FullPlayerSheet(
                             thumb = {
                                 Box(
                                     modifier = Modifier
-                                        .size(if (isDraggingSlider) 14.dp else 10.dp)
+                                        .size(if (isDraggingSlider) 15.dp else 11.dp)
+                                        .shadow(elevation = 3.dp, shape = CircleShape, clip = false)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
+                                        .background(Color.White)
                                 )
                             },
                             track = { sliderState ->
@@ -806,22 +841,22 @@ fun FullPlayerSheet(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(3.dp)
+                                        .height(3.5.dp)
                                         .clip(RoundedCornerShape(50))
-                                        .background(Color(0xFF424242))
+                                        .background(Color.White.copy(alpha = 0.28f))
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth(fraction)
                                             .fillMaxHeight()
                                             .clip(RoundedCornerShape(50))
-                                            .background(MaterialTheme.colorScheme.primary)
+                                            .background(Color.White)
                                     )
                                 }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(24.dp)
+                                .height(20.dp)
                         )
 
                         Spacer(modifier = Modifier.height(2.dp))
@@ -829,14 +864,14 @@ fun FullPlayerSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 4.dp),
+                                .padding(horizontal = 2.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
                                 text = formatDurationMs(displayedPositionMs),
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                fontWeight = FontWeight.Normal,
+                                color = Color.White.copy(alpha = 0.72f)
                             )
                             val totalTimeText = if (effectiveDurationMs > 0L) {
                                 formatDurationMs(effectiveDurationMs)
@@ -848,8 +883,8 @@ fun FullPlayerSheet(
                             Text(
                                 text = totalTimeText,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Normal,
+                                color = Color.White.copy(alpha = 0.72f),
                                 textAlign = TextAlign.End
                             )
                         }
