@@ -827,36 +827,53 @@ fun FullPlayerSheet(
                             },
                             enabled = effectiveDurationMs > 0L,
                             interactionSource = sliderInteractionSource,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color.White,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.28f)
+                            ),
                             thumb = {
                                 Box(
-                                    modifier = Modifier
-                                        .size(if (isDraggingSlider) 15.dp else 11.dp)
-                                        .shadow(elevation = 3.dp, shape = CircleShape, clip = false)
-                                        .clip(CircleShape)
-                                        .background(Color.White)
-                                )
+                                    modifier = Modifier.size(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(if (isDraggingSlider) 13.dp else 9.dp)
+                                            .shadow(elevation = 2.dp, shape = CircleShape, clip = false)
+                                            .clip(CircleShape)
+                                            .background(Color.White)
+                                    )
+                                }
                             },
                             track = { sliderState ->
                                 val fraction = sliderState.value.coerceIn(0f, 1f)
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(3.5.dp)
-                                        .clip(RoundedCornerShape(50))
-                                        .background(Color.White.copy(alpha = 0.28f))
+                                        .height(24.dp),
+                                    contentAlignment = Alignment.CenterStart
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxWidth(fraction)
-                                            .fillMaxHeight()
+                                            .fillMaxWidth()
+                                            .height(3.5.dp)
                                             .clip(RoundedCornerShape(50))
-                                            .background(Color.White)
-                                    )
+                                            .background(Color.White.copy(alpha = 0.28f))
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(fraction)
+                                                .fillMaxHeight()
+                                                .clip(RoundedCornerShape(50))
+                                                .background(Color.White)
+                                        )
+                                    }
                                 }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(20.dp)
+                                .height(24.dp)
                         )
 
                         Spacer(modifier = Modifier.height(2.dp))
