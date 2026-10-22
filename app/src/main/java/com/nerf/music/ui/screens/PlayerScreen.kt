@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.MediaItem
 import com.nerf.music.ui.theme.OrangePrimary
@@ -439,6 +440,7 @@ fun FullPlayerSheet(
                         PlayerView(ctx).apply {
                             useController = false
                             player = canvasPlayer
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                             layoutParams = android.view.ViewGroup.LayoutParams(
                                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                                 android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -639,94 +641,10 @@ fun FullPlayerSheet(
                 Spacer(modifier = Modifier.height((16f * (1f - halfExpansionFraction * 0.75f)).dp))
 
                 if (isCanvasActive) {
-                    // MODO CANVAS (SPOTIFY): Vídeo preenche o fundo, miniatura compacta da capa e letra sincronizada acima do título
+                    // MODO CANVAS (SPOTIFY): Vídeo 9:16 preenche todo o fundo, área central flexível
                     Spacer(modifier = Modifier.weight(1f))
-
-                    AnimatedVisibility(
-                        visible = !lyricsLine.isNullOrBlank(),
-                        enter = fadeIn(animationSpec = tween(300)),
-                        exit = fadeOut(animationSpec = tween(200)),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-                    ) {
-                        Text(
-                            text = lyricsLine.orEmpty(),
-                            fontFamily = YouTubeSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            lineHeight = 26.sp,
-                            color = Color.White,
-                            textAlign = TextAlign.Start,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .basicMarquee()
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF262626)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (!artworkUrl.isNullOrEmpty()) {
-                                AsyncImage(
-                                    model = artworkUrl,
-                                    contentDescription = track.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.MusicNote,
-                                    contentDescription = null,
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = track.title,
-                                fontFamily = YouTubeSansFontFamily,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                maxLines = 1,
-                                modifier = Modifier.basicMarquee()
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = track.artist,
-                                fontFamily = YouTubeSansFontFamily,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = Color.White.copy(alpha = 0.7f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        IconButton(onClick = { onToggleFavorite(track.id) }) {
-                            Icon(
-                                imageVector = if (state.favoriteTrackIds.contains(track.id)) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                contentDescription = "Favoritar",
-                                tint = if (state.favoriteTrackIds.contains(track.id)) OrangePrimary else Color.White,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
                 } else {
-                    // MODO CAPA PADRÃO: Imagem de capa grande, letra sincronizada entre capa e título
+                    // MODO CAPA PADRÃO: Imagem de capa grande dinâmica com Palette
                     Box(
                         modifier = Modifier
                             .size(animatedArtworkSize)
@@ -757,6 +675,7 @@ fun FullPlayerSheet(
                     }
 
                     Spacer(modifier = Modifier.height((20f * (1f - halfExpansionFraction * 0.65f)).dp))
+                }
 
                     AnimatedVisibility(
                         visible = !lyricsLine.isNullOrBlank() && halfExpansionFraction < 0.45f,
@@ -1054,7 +973,6 @@ fun FullPlayerSheet(
                         )
                     }
                 }
-            }
 
             // =========================================================================
             // CAMADA 2: FILA DE REPRODUÇÃO ("A SEGUIR" / UP NEXT) COM 3 ESTADOS POR GESTO

@@ -47,12 +47,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import com.nerf.music.data.repository.SpotifyCanvasRepository
+import com.nerf.music.data.repository.SpotifyCanvasRepositoryImpl
 import kotlinx.coroutines.launch
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
     private val updateRepository: UpdateRepository = UpdateRepositoryImpl(),
-    private val lyricsRepository: LyricsRepository = LyricsRepositoryImpl()
+    private val lyricsRepository: LyricsRepository = LyricsRepositoryImpl(),
+    private val spotifyCanvasRepository: SpotifyCanvasRepository = SpotifyCanvasRepositoryImpl()
 ) : ViewModel() {
 
     companion object {
@@ -1141,7 +1144,35 @@ class MusicViewModel(
     fun loadCanvasVideo(track: Track) {
         canvasFetchJob?.cancel()
         _canvasVideoUrl.value = null
-        // Desativado temporariamente para estabilização de layout e lyrics
+
+        val settings = userSettingsRepository
+        val isEnabled = settings?.isCanvasEnabled?.value ?: _isCanvasEnabled.value
+        if (!isEnabled) {
+            _isLoadingCanvasVideo.value = false
+            return
+        }
+
+        val isWifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        val context = applicationContext
+        if (isWifiOnly && context != null && !NetworkUtils.isConnectedToWifi(context)) {
+            Log.i("MusicViewModel", "Canvas ignorado: Wi-Fi Only ativado e não conectado ao Wi-Fi.")
+            _isLoadingCanvasVideo.value = false
+            return
+        }
+
+        canvasFetchJob = viewModelScope.launch {
+            _isLoadingCanvasVideo.value = true
+            try {
+                val res = spotifyCanvasRepository.getCanvasUrl(track.title, track.artist)
+                val canvasUrl = res.getOrNull()
+                _canvasVideoUrl.value = canvasUrl
+            } catch (e: Exception) {
+                Log.e("MusicViewModel", "Erro ao carregar Canvas para ${track.title}: ${e.message}", e)
+                _canvasVideoUrl.value = null
+            } finally {
+                _isLoadingCanvasVideo.value = false
+            }
+        }
     }
 
     fun loadLyrics(track: Track) {
