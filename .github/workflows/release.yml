@@ -25,14 +25,14 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Build Debug APK
+      - name: Build Release APK
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Rename generated APK
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk nerf-music-${{ github.ref_name }}.apk
+          cp app/build/outputs/apk/release/app-release.apk nerf-music-${{ github.ref_name }}.apk
 
       - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v1
