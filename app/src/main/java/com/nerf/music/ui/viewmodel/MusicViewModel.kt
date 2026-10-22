@@ -325,10 +325,13 @@ class MusicViewModel(
     }
 
     private fun getDefaultChangeLog(): String {
-        return "• Perfil de Artista completo com Top músicas, Álbuns, Singles, Vídeos widescreen, seção da biblioteca e artistas parecidos\n" +
-               "• Nova barra inferior com 4 abas (Início, Explorar, Pesquisar e Biblioteca) e topo limpo\n" +
-               "• Busca moderna com abertura automática do teclado, buscas recentes, histórico com auto-completar e pesquisa por voz\n" +
-               "• Melhorias na reprodução em segundo plano e sincronização do player"
+        return "• Spotify Canvas Oficial: reprodução de vídeos verticais em loop integrados diretamente ao fundo do player\n" +
+               "• Letras Sincronizadas em Tempo Real (LRCLIB): exibição dinâmica linha por linha acima do título da música\n" +
+               "• Gestos Verticais no Player: deslize para baixo para minimizar e deslize para cima para abrir a fila de reprodução\n" +
+               "• Navegação & Recomendações: toque no nome do artista para abrir seu perfil e no título para ver músicas e artistas relacionados\n" +
+               "• Novo visual estilo Spotify: barra de progresso branca com thumb circular centralizado e linha de ações rolável\n" +
+               "• Notificações de Atualizações em Segundo Plano: verificação periódica automática via WorkManager mesmo fora do app\n" +
+               "• Configurações completas: controle de Canvas (ativar/desativar, modo somente Wi-Fi) e ativação de letras sincronizadas"
     }
 
     fun confirmAndDownloadUpdate(context: Context) {
