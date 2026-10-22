@@ -99,6 +99,7 @@ fun MainScreen(
     val isFullPlayerVisible by viewModel.isFullPlayerVisible.collectAsState()
     val userMessage by viewModel.userMessage.collectAsState()
     val availableUpdate by viewModel.availableUpdate.collectAsState()
+    val postUpdateChangelog by viewModel.postUpdateChangelog.collectAsState()
 
     val context = LocalContext.current
 
@@ -131,6 +132,70 @@ fun MainScreen(
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             viewModel.clearUserMessage()
         }
+    }
+
+    // Modal de Novidades (Change Log pós-atualização)
+    postUpdateChangelog?.let { changelog ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissChangelogDialog() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdate,
+                    contentDescription = null,
+                    tint = OrangePrimary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Novidades da Atualização",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "O NERF Music foi atualizado com sucesso para a versão v${BuildConfig.VERSION_NAME}! Confira o que mudou:",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontSize = 14.sp,
+                        color = YtmWhite
+                    )
+                    Surface(
+                        color = YtmGrey11,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = changelog,
+                            fontFamily = YouTubeSansFontFamily,
+                            fontSize = 12.5.sp,
+                            color = YtmTextSecondary,
+                            lineHeight = 18.sp,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissChangelogDialog() },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = YtmWhite,
+                        contentColor = YtmBlack
+                    )
+                ) {
+                    Text(
+                        text = "Entendi",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = YtmPivotBarBg
+        )
     }
 
     // Modal de Autoreparo (In-App Updater)

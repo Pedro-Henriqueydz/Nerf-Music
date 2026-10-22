@@ -25,6 +25,8 @@ interface UserHistoryRepository {
     fun removeSearchQuery(query: String)
     fun clearSearchHistory()
     fun clearHistory()
+    fun getLastSeenVersion(): String?
+    fun setLastSeenVersion(version: String)
 }
 
 /**
@@ -44,6 +46,7 @@ class UserHistoryRepositoryImpl(
         private const val KEY_ARTIST_COUNTS = "artist_play_counts"
         private const val KEY_LAST_SEED_VIDEO_ID = "last_seed_video_id"
         private const val KEY_CACHED_HOME = "cached_home_feed"
+        private const val KEY_LAST_SEEN_VERSION = "last_seen_app_version"
         private const val MAX_RECENT_TRACKS = 40
         private const val MAX_SEARCH_QUERIES = 25
     }
@@ -179,6 +182,14 @@ class UserHistoryRepositoryImpl(
     override fun clearHistory() {
         artistCounts.clear()
         prefs.edit().clear().apply()
+    }
+
+    override fun getLastSeenVersion(): String? {
+        return prefs.getString(KEY_LAST_SEEN_VERSION, null)
+    }
+
+    override fun setLastSeenVersion(version: String) {
+        prefs.edit().putString(KEY_LAST_SEEN_VERSION, version).apply()
     }
 
     private fun loadArtistCounts() {

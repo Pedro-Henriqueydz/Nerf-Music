@@ -1,4 +1,4 @@
-﻿package com.nerf.music.ui.viewmodel
+package com.nerf.music.ui.viewmodel
 
 import android.content.ComponentName
 import android.content.Context
@@ -85,6 +85,10 @@ class MusicViewModel(
     private val _availableUpdate = MutableStateFlow<AppUpdateInfo?>(null)
     val availableUpdate: StateFlow<AppUpdateInfo?> = _availableUpdate.asStateFlow()
 
+    // Exibe o Change Log da versão após atualização bem-sucedida do app
+    private val _postUpdateChangelog = MutableStateFlow<String?>(null)
+    val postUpdateChangelog: StateFlow<String?> = _postUpdateChangelog.asStateFlow()
+
     private val _homeChips = MutableStateFlow<List<HomeChip>>(emptyList())
     val homeChips: StateFlow<List<HomeChip>> = _homeChips.asStateFlow()
 
@@ -152,6 +156,7 @@ class MusicViewModel(
                 _homeSections.value = cachedHome
             }
             _searchHistory.value = historyRepo.getSearchHistory()
+            checkPostUpdateChangelog(historyRepo)
         }
 
         if (!hasCheckedForUpdates) {
@@ -231,6 +236,30 @@ class MusicViewModel(
 
     fun dismissUpdateDialog() {
         _availableUpdate.value = null
+    }
+
+    fun dismissChangelogDialog() {
+        _postUpdateChangelog.value = null
+    }
+
+    private fun checkPostUpdateChangelog(historyRepo: UserHistoryRepository) {
+        val currentVersion = com.nerf.music.BuildConfig.VERSION_NAME
+        val lastSeenVersion = historyRepo.getLastSeenVersion()
+        if (lastSeenVersion == null) {
+            // Primeira instalação do app com essa funcionalidade: salva a versão atual sem forçar modal
+            historyRepo.setLastSeenVersion(currentVersion)
+        } else if (lastSeenVersion != currentVersion) {
+            // O app foi atualizado! Atualiza a versão salva e carrega as novidades para exibir o Change Log imediatamente
+            historyRepo.setLastSeenVersion(currentVersion)
+            _postUpdateChangelog.value = getDefaultChangeLog()
+        }
+    }
+
+    private fun getDefaultChangeLog(): String {
+        return "• Perfil de Artista completo com Top músicas, Álbuns, Singles, Vídeos widescreen, seção da biblioteca e artistas parecidos\n" +
+               "• Nova barra inferior com 4 abas (Início, Explorar, Pesquisar e Biblioteca) e topo limpo\n" +
+               "• Busca moderna com abertura automática do teclado, buscas recentes, histórico com auto-completar e pesquisa por voz\n" +
+               "• Melhorias na reprodução em segundo plano e sincronização do player"
     }
 
     fun confirmAndDownloadUpdate(context: Context) {
