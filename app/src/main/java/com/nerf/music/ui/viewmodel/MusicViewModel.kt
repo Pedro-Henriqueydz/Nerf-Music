@@ -33,6 +33,14 @@ import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.data.repository.UpdateRepository
 import com.nerf.music.data.repository.UpdateRepositoryImpl
 import com.nerf.music.updater.AppUpdateInfo
+import com.nerf.music.data.model.LyricsData
+import com.nerf.music.data.model.SyncedLyricsLine
+import com.nerf.music.data.repository.LyricsRepository
+import com.nerf.music.data.repository.LyricsRepositoryImpl
+import com.nerf.music.data.repository.UserSettingsRepository
+import com.nerf.music.data.repository.UserSettingsRepositoryImpl
+import com.nerf.music.player.NewPipeStreamResolver
+import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +51,8 @@ import kotlinx.coroutines.launch
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
-    private val updateRepository: UpdateRepository = UpdateRepositoryImpl()
+    private val updateRepository: UpdateRepository = UpdateRepositoryImpl(),
+    private val lyricsRepository: LyricsRepository = LyricsRepositoryImpl()
 ) : ViewModel() {
 
     companion object {
@@ -52,6 +61,35 @@ class MusicViewModel(
         private const val EXTRA_THUMBNAIL_URL = "extra_thumbnail_url"
     }
 
+    private var userSettingsRepository: UserSettingsRepository? = null
+
+    private val _isCanvasEnabled = MutableStateFlow(true)
+    val isCanvasEnabled: StateFlow<Boolean> = _isCanvasEnabled.asStateFlow()
+
+    private val _isCanvasWifiOnly = MutableStateFlow(true)
+    val isCanvasWifiOnly: StateFlow<Boolean> = _isCanvasWifiOnly.asStateFlow()
+
+    private val _isLyricsAboveTitleEnabled = MutableStateFlow(true)
+    val isLyricsAboveTitleEnabled: StateFlow<Boolean> = _isLyricsAboveTitleEnabled.asStateFlow()
+
+    // URL do vídeo para o background do Player (Canvas)
+    private val _canvasVideoUrl = MutableStateFlow<String?>(null)
+    val canvasVideoUrl: StateFlow<String?> = _canvasVideoUrl.asStateFlow()
+
+    private val _isLoadingCanvasVideo = MutableStateFlow(false)
+    val isLoadingCanvasVideo: StateFlow<Boolean> = _isLoadingCanvasVideo.asStateFlow()
+
+    // Letras da faixa atual
+    private val _currentLyrics = MutableStateFlow<LyricsData?>(null)
+    val currentLyrics: StateFlow<LyricsData?> = _currentLyrics.asStateFlow()
+
+    // Frase atual da letra sincronizada com a reprodução
+    private val _currentLyricsLine = MutableStateFlow<String?>(null)
+    val currentLyricsLine: StateFlow<String?> = _currentLyricsLine.asStateFlow()
+
+    private var canvasFetchJob: Job? = null
+    private var lyricsFetchJob: Job? = null
+    private val streamResolver = NewPipeStreamResolver()
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -142,8 +180,19 @@ class MusicViewModel(
     private var seedVideoId: String? = null
     private var hasCheckedForUpdates = false
     private var userHistoryRepository: UserHistoryRepository? = null
+    private var applicationContext: Context? = null
 
     fun initializePlayerController(context: Context) {
+        if (applicationContext == null) {
+            applicationContext = context.applicationContext
+        }
+        if (userSettingsRepository == null) {
+            val settingsRepo = UserSettingsRepositoryImpl(context.applicationContext)
+            userSettingsRepository = settingsRepo
+            _isCanvasEnabled.value = settingsRepo.isCanvasEnabled.value
+            _isCanvasWifiOnly.value = settingsRepo.isCanvasWifiOnly.value
+            _isLyricsAboveTitleEnabled.value = settingsRepo.isLyricsAboveTitleEnabled.value
+        }
         if (userHistoryRepository == null) {
             val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
             userHistoryRepository = historyRepo
@@ -361,6 +410,10 @@ class MusicViewModel(
         }
         val currentIdx = player.currentMediaItemIndex.coerceIn(0, queueTracks.lastIndex)
         val activeTrack = queueTracks.getOrNull(currentIdx)
+        if (activeTrack != null && _selectedTrack.value?.id != activeTrack.id) {
+            loadLyrics(activeTrack)
+            loadCanvasVideo(activeTrack)
+        }
         _selectedTrack.value = activeTrack
 
         _playbackState.value = _playbackState.value.copy(
@@ -589,6 +642,9 @@ class MusicViewModel(
 
         val initialQueue = listOf(track)
         _loadingTrackId.value = track.id
+        loadLyrics(track)
+        loadCanvasVideo(track)
+
         _playbackState.value = _playbackState.value.copy(
             currentTrack = track,
             queue = initialQueue,
@@ -1037,9 +1093,107 @@ class MusicViewModel(
         }
     }
 
+    fun setCanvasEnabled(enabled: Boolean) {
+        _isCanvasEnabled.value = enabled
+        userSettingsRepository?.setCanvasEnabled(enabled)
+        val track = _playbackState.value.currentTrack
+        if (!enabled) {
+            _canvasVideoUrl.value = null
+        } else if (track != null) {
+            loadCanvasVideo(track)
+        }
+    }
+
+    fun setCanvasWifiOnly(wifiOnly: Boolean) {
+        _isCanvasWifiOnly.value = wifiOnly
+        userSettingsRepository?.setCanvasWifiOnly(wifiOnly)
+        val track = _playbackState.value.currentTrack
+        if (track != null) {
+            loadCanvasVideo(track)
+        }
+    }
+
+    fun setLyricsAboveTitleEnabled(enabled: Boolean) {
+        _isLyricsAboveTitleEnabled.value = enabled
+        userSettingsRepository?.setLyricsAboveTitleEnabled(enabled)
+    }
+
+    fun showChangeLogManually() {
+        _postUpdateChangelog.value = getDefaultChangeLog()
+    }
+
+    fun checkForAppUpdates(manual: Boolean) {
+        viewModelScope.launch {
+            val update = updateRepository.checkForUpdate()
+            if (update != null) {
+                _availableUpdate.value = update
+            } else if (manual) {
+                _userMessage.value = "Você já está na versão mais recente (v${com.nerf.music.BuildConfig.VERSION_NAME})"
+            }
+        }
+    }
+
+    fun loadCanvasVideo(track: Track) {
+        canvasFetchJob?.cancel()
+        _canvasVideoUrl.value = null
+
+        if (!_isCanvasEnabled.value) {
+            Log.i("MusicViewModel", "loadCanvasVideo ignorado: Canvas desativado nas configuracoes")
+            return
+        }
+
+        // Verifica restrição de Wi-Fi
+        val appContext = applicationContext
+        if (_isCanvasWifiOnly.value && appContext != null && !NetworkUtils.isConnectedToWifi(appContext)) {
+            Log.i("MusicViewModel", "loadCanvasVideo ignorado: Modo Wi-Fi ativo mas nao conectado ao Wi-Fi")
+            return
+        }
+
+        Log.i("MusicViewModel", "Disparando loadCanvasVideo para videoId=${track.id}")
+        canvasFetchJob = viewModelScope.launch {
+            _isLoadingCanvasVideo.value = true
+            val videoUrlResult = streamResolver.resolveVideoStreamUrl(track.id)
+            val url = videoUrlResult.getOrNull()
+            Log.i("MusicViewModel", "Resultado de loadCanvasVideo para ${track.id}: url_encontrada=${!url.isNullOrBlank()}")
+            _canvasVideoUrl.value = url
+            _isLoadingCanvasVideo.value = false
+        }
+    }
+
+    fun loadLyrics(track: Track) {
+        lyricsFetchJob?.cancel()
+        _currentLyrics.value = null
+        _currentLyricsLine.value = null
+
+        lyricsFetchJob = viewModelScope.launch {
+            val res = lyricsRepository.getLyrics(
+                trackId = track.id,
+                title = track.title,
+                artist = track.artist,
+                durationSeconds = track.durationSeconds.toInt()
+            )
+            val data = res.getOrNull()
+            _currentLyrics.value = data
+            updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+        }
+    }
+
+    private fun updateCurrentLyricsLine(positionMs: Long) {
+        val lyrics = _currentLyrics.value ?: return
+        if (!lyrics.isSynced || lyrics.syncedLines.isEmpty()) {
+            _currentLyricsLine.value = null
+            return
+        }
+        val lines = lyrics.syncedLines
+        val activeLine = lines.lastOrNull { positionMs >= it.timeMs }
+        _currentLyricsLine.value = activeLine?.text
+    }
+
     override fun onCleared() {
         stopProgressTracker()
         radioFetchJob?.cancel()
+        canvasFetchJob?.cancel()
+        lyricsFetchJob?.cancel()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
     }

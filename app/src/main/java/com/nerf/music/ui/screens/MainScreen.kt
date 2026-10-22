@@ -100,6 +100,11 @@ fun MainScreen(
     val userMessage by viewModel.userMessage.collectAsState()
     val availableUpdate by viewModel.availableUpdate.collectAsState()
     val postUpdateChangelog by viewModel.postUpdateChangelog.collectAsState()
+    val canvasVideoUrl by viewModel.canvasVideoUrl.collectAsState()
+    val isCanvasEnabled by viewModel.isCanvasEnabled.collectAsState()
+    val isLyricsAboveTitleEnabled by viewModel.isLyricsAboveTitleEnabled.collectAsState()
+    val currentLyricsLine by viewModel.currentLyricsLine.collectAsState()
+    val currentLyrics by viewModel.currentLyrics.collectAsState()
 
     val context = LocalContext.current
 
@@ -329,7 +334,18 @@ fun MainScreen(
                             navController.navigate("album/$browseId") {
                                 launchSingleTop = true
                             }
+                        },
+                        onOpenSettings = {
+                            navController.navigate("settings") {
+                                launchSingleTop = true
+                            }
                         }
+                    )
+                }
+                composable("settings") {
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
                 composable(Screen.Explore.route) {
@@ -408,6 +424,8 @@ fun MainScreen(
         ) {
             FullPlayerSheet(
                 state = playbackState,
+                canvasVideoUrl = if (isCanvasEnabled) canvasVideoUrl else null,
+                lyricsLine = if (isLyricsAboveTitleEnabled) currentLyricsLine else null,
                 onDismiss = { viewModel.closeFullPlayer() },
                 onTogglePlay = { viewModel.togglePlayPause() },
                 onSkipPrevious = { viewModel.skipPrevious() },
