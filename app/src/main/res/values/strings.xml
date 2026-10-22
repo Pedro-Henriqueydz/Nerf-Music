@@ -31,4 +31,5 @@
     <string name="section_songs">Músicas</string>
     <string name="selected_track_label">Faixa Selecionada</string>
     <string name="clear_search">Limpar busca</string>
+    <string name="action_lyrics">Letra</string>
 </resources>

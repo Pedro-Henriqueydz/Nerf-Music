@@ -7,6 +7,7 @@ import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.UpNextResult
+import com.nerf.music.data.model.TrackRelatedData
 
 /**
  * Interface do repositório para acesso ao catálogo musical e à rádio dinâmica.
@@ -57,6 +58,8 @@ interface MusicRepository {
      * Obtém a fila de próximas músicas (Rádio Dinâmica / Mix) e os chips de filtro
      * via endpoint `/youtubei/v1/next`.
      */
+    suspend fun getTrackRelated(relatedBrowseId: String): Result<TrackRelatedData>
+
     suspend fun getUpNextRadio(
         videoId: String,
         params: String? = null

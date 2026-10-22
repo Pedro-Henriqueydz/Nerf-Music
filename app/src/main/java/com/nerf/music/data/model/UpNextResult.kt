@@ -17,5 +17,7 @@ data class QueueFilterChip(
 data class UpNextResult(
     val tracks: List<Track> = emptyList(),
     val chips: List<QueueFilterChip> = emptyList(),
-    val queueSourceTitle: String? = null
+    val queueSourceTitle: String? = null,
+    val relatedBrowseId: String? = null,
+    val lyricsBrowseId: String? = null
 )

@@ -22,5 +22,6 @@ data class PlaybackState(
     val favoriteTrackIds: Set<String> = emptySet(),
     val savedTrackIds: Set<String> = emptySet(),
     val downloadedTrackIds: Set<String> = emptySet(),
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val relatedBrowseId: String? = null
 )
