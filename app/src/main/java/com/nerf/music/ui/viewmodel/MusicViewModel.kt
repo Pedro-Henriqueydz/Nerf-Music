@@ -449,12 +449,14 @@ class MusicViewModel(
                     )
                 ) {
                     val isPlaying = player.isPlaying
+                    val pos = player.currentPosition.coerceAtLeast(0L)
                     _playbackState.value = _playbackState.value.copy(
                         isPlaying = isPlaying,
                         isBuffering = player.playbackState == Player.STATE_BUFFERING,
                         durationMs = resolveEffectiveDuration(player),
-                        currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+                        currentPositionMs = pos
                     )
+                    updateCurrentLyricsLine(pos)
                     if (isPlaying) {
                         startProgressTracker()
                     } else {
@@ -534,10 +536,12 @@ class MusicViewModel(
             while (isActive) {
                 mediaController?.let { controller ->
                     if (controller.isPlaying) {
+                        val pos = controller.currentPosition.coerceAtLeast(0L)
                         _playbackState.value = _playbackState.value.copy(
-                            currentPositionMs = controller.currentPosition.coerceAtLeast(0L),
+                            currentPositionMs = pos,
                             durationMs = resolveEffectiveDuration(controller)
                         )
+                        updateCurrentLyricsLine(pos)
                     }
                 }
                 delay(250)
@@ -943,6 +947,7 @@ class MusicViewModel(
         val targetPos = positionMs.coerceAtLeast(0L)
         _playbackState.value = _playbackState.value.copy(currentPositionMs = targetPos)
         mediaController?.seekTo(targetPos)
+        updateCurrentLyricsLine(targetPos)
     }
 
     fun toggleFavorite(trackId: String) {
@@ -1136,28 +1141,7 @@ class MusicViewModel(
     fun loadCanvasVideo(track: Track) {
         canvasFetchJob?.cancel()
         _canvasVideoUrl.value = null
-
-        if (!_isCanvasEnabled.value) {
-            Log.i("MusicViewModel", "loadCanvasVideo ignorado: Canvas desativado nas configuracoes")
-            return
-        }
-
-        // Verifica restrição de Wi-Fi
-        val appContext = applicationContext
-        if (_isCanvasWifiOnly.value && appContext != null && !NetworkUtils.isConnectedToWifi(appContext)) {
-            Log.i("MusicViewModel", "loadCanvasVideo ignorado: Modo Wi-Fi ativo mas nao conectado ao Wi-Fi")
-            return
-        }
-
-        Log.i("MusicViewModel", "Disparando loadCanvasVideo para videoId=${track.id}")
-        canvasFetchJob = viewModelScope.launch {
-            _isLoadingCanvasVideo.value = true
-            val videoUrlResult = streamResolver.resolveVideoStreamUrl(track.id)
-            val url = videoUrlResult.getOrNull()
-            Log.i("MusicViewModel", "Resultado de loadCanvasVideo para ${track.id}: url_encontrada=${!url.isNullOrBlank()}")
-            _canvasVideoUrl.value = url
-            _isLoadingCanvasVideo.value = false
-        }
+        // Desativado temporariamente para estabilização de layout e lyrics
     }
 
     fun loadLyrics(track: Track) {
