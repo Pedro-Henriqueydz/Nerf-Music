@@ -650,11 +650,15 @@ fun FullPlayerSheet(
                             text = lyricsLine.orEmpty(),
                             fontFamily = YouTubeSansFontFamily,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 21.sp,
-                            lineHeight = 28.sp,
+                            fontSize = 20.sp,
+                            lineHeight = 26.sp,
                             color = Color.White,
                             textAlign = TextAlign.Start,
-                            modifier = Modifier.fillMaxWidth()
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .basicMarquee()
                         )
                     }
 
@@ -768,9 +772,11 @@ fun FullPlayerSheet(
                             lineHeight = 24.sp,
                             color = Color.White,
                             textAlign = TextAlign.Start,
-                            maxLines = 2,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .basicMarquee()
                         )
                     }
 
