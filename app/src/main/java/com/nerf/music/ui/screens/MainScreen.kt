@@ -471,7 +471,7 @@ fun MainScreen(
                 initialOffsetY = { it },
                 animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f)
             ),
-            exit = fadeOut(animationSpec = tween(durationMillis = 150))
+            exit = androidx.compose.animation.ExitTransition.None
         ) {
             FullPlayerSheet(
                 state = playbackState,
