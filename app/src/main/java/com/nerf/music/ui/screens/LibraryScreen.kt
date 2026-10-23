@@ -98,8 +98,11 @@ fun LibraryScreen(
             .fillMaxSize()
             .background(YtmBlack)
     ) {
-        // 1. TopBar Oficial da Biblioteca
-        if (!isSearchActive) {
+        val isInsideSubView = showLikedTracksView || showDownloadedTracksView || selectedUserPlaylist != null
+
+        // 1. TopBar Oficial da Biblioteca (visível apenas na raiz da biblioteca)
+        if (!isInsideSubView) {
+            if (!isSearchActive) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -192,6 +195,7 @@ fun LibraryScreen(
                     }
                 }
             }
+        }
         }
 
         // Sub-telas de navegação direta (Músicas Curtidas / Downloads / Playlist do Usuário)
