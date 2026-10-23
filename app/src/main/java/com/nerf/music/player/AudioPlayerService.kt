@@ -11,6 +11,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -69,7 +70,7 @@ class AudioPlayerService : MediaSessionService() {
         // ResolvingDataSource permite que a playlist inteira fique no currentTimeline do ExoPlayer
         // resolvendo a URL real do googlevideo sob demanda quando cada faixa começa a carregar.
         val resolvingDataSourceFactory = ResolvingDataSource.Factory(
-            httpDataSourceFactory,
+            DefaultDataSource.Factory(this, httpDataSourceFactory),
             ResolvingDataSource.Resolver { dataSpec: DataSpec ->
                 val uri = dataSpec.uri
                 if (uri.scheme == NERF_URI_SCHEME) {

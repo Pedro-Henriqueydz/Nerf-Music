@@ -1,4 +1,4 @@
-package com.nerf.music.ui.screens
+﻿package com.nerf.music.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -86,6 +86,7 @@ fun LibraryScreen(
     var newPlaylistTitle by remember { mutableStateOf("") }
     var newPlaylistVisibility by remember { mutableStateOf("Pública") }
     var isCollaborative by remember { mutableStateOf(false) }
+    var showVisibilitySheet by remember { mutableStateOf(false) }
 
     // Sub-telas de navegação direta
     var selectedUserPlaylist by remember { mutableStateOf<UserPlaylist?>(null) }
@@ -638,16 +639,14 @@ fun LibraryScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    // Campo Privacidade
+                    // Campo Visibilidade (conforme print oficial)
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = Color.Transparent,
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                newPlaylistVisibility = if (newPlaylistVisibility == "Pública") "Privada" else "Pública"
-                            }
+                            .clickable { showVisibilitySheet = true }
                     ) {
                         Row(
                             modifier = Modifier
@@ -658,7 +657,7 @@ fun LibraryScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "Privacidade",
+                                    text = "Visibilidade",
                                     fontFamily = YouTubeSansFontFamily,
                                     fontSize = 12.sp,
                                     color = YtmTextSecondary
@@ -739,6 +738,14 @@ fun LibraryScreen(
                     Text(text = "Cancelar", color = YtmWhite, fontSize = 14.sp)
                 }
             }
+        )
+    }
+
+    if (showVisibilitySheet) {
+        SetVisibilitySheet(
+            currentVisibility = newPlaylistVisibility,
+            onSelectVisibility = { newPlaylistVisibility = it },
+            onDismiss = { showVisibilitySheet = false }
         )
     }
 }
@@ -832,7 +839,47 @@ fun PlaylistCollageCover(
                     }
                 }
             }
-            tracks.isNotEmpty() -> {
+            tracks.size == 3 -> {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    AsyncImage(
+                        model = tracks[0].thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        AsyncImage(
+                            model = tracks[1].thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxWidth()
+                        )
+                        AsyncImage(
+                            model = tracks[2].thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxWidth()
+                        )
+                    }
+                }
+            }
+            tracks.size == 2 -> {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    AsyncImage(
+                        model = tracks[0].thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                    AsyncImage(
+                        model = tracks[1].thumbnailUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                }
+            }
+            tracks.size == 1 -> {
                 AsyncImage(
                     model = tracks[0].thumbnailUrl,
                     contentDescription = null,

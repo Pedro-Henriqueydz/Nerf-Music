@@ -1,4 +1,4 @@
-package com.nerf.music.data.repository
+﻿package com.nerf.music.data.repository
 
 import android.content.Context
 import android.util.Log
@@ -18,6 +18,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.util.UUID
 
 interface LibraryRepository {
@@ -155,37 +160,127 @@ class LibraryRepositoryImpl(
             // 1. Resolve URL de áudio JIT via NewPipe
             val streamUrl = streamResolver.resolveStreamUrl(track.id).getOrThrow()
 
-            // 2. Faz stream e gravação para arquivo local
-            val destFile = File(downloadsDir, "${track.id}.opus")
-            val request = Request.Builder()
-                .url(streamUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-                .build()
+            // 2. Determina o tamanho total do áudio (Content-Length / Content-Range)
+            val streamUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            var totalBytes = -1L
 
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(java.io.IOException("Falha HTTP ao baixar áudio: ${response.code}"))
-            }
+            try {
+                val headReq = Request.Builder()
+                    .url(streamUrl)
+                    .head()
+                    .header("User-Agent", streamUserAgent)
+                    .build()
+                httpClient.newCall(headReq).execute().use { resp ->
+                    totalBytes = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                }
+            } catch (_: Exception) {}
 
-            val body = response.body ?: return@withContext Result.failure(java.io.IOException("Corpo de resposta nulo"))
-            val totalBytes = body.contentLength()
-            var downloadedBytes = 0L
-
-            body.byteStream().use { input ->
-                FileOutputStream(destFile).use { output ->
-                    val buffer = ByteArray(8 * 1024)
-                    var bytesRead: Int
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
-                        if (totalBytes > 0) {
-                            val progress = downloadedBytes.toFloat() / totalBytes.toFloat()
-                            onProgress(progress)
+            if (totalBytes <= 0) {
+                try {
+                    val probeReq = Request.Builder()
+                        .url(streamUrl)
+                        .header("User-Agent", streamUserAgent)
+                        .header("Range", "bytes=0-0")
+                        .build()
+                    httpClient.newCall(probeReq).execute().use { resp ->
+                        val cr = resp.header("Content-Range")
+                        if (cr != null && cr.contains("/")) {
+                            totalBytes = cr.substringAfter("/").trim().toLongOrNull() ?: -1L
                         }
                     }
-                    output.flush()
+                } catch (_: Exception) {}
+            }
+
+            val destFile = File(downloadsDir, "${track.id}.opus")
+            val tempFile = File(downloadsDir, "${track.id}.tmp")
+            if (tempFile.exists()) tempFile.delete()
+
+            if (totalBytes > 0) {
+                val raf = RandomAccessFile(tempFile, "rw")
+                raf.setLength(totalBytes)
+
+                val chunkSize = 1024 * 1024L // Chunks de 1MB para bypass total do throttling do YouTube
+                val chunks = mutableListOf<Pair<Long, Long>>()
+                var startPos = 0L
+                while (startPos < totalBytes) {
+                    val endPos = minOf(startPos + chunkSize - 1, totalBytes - 1)
+                    chunks.add(Pair(startPos, endPos))
+                    startPos = endPos + 1
+                }
+
+                val downloadedBytes = AtomicLong(0L)
+                var lastProgressTime = 0L
+
+                try {
+                    coroutineScope {
+                        val dispatcher = Dispatchers.IO.limitedParallelism(3)
+                        val jobs = chunks.map { (chunkStart, chunkEnd) ->
+                            async(dispatcher) {
+                                val chunkReq = Request.Builder()
+                                    .url(streamUrl)
+                                    .header("User-Agent", streamUserAgent)
+                                    .header("Range", "bytes=$chunkStart-$chunkEnd")
+                                    .build()
+
+                                httpClient.newCall(chunkReq).execute().use { chunkResp ->
+                                    if (!chunkResp.isSuccessful && chunkResp.code != 206) {
+                                        throw java.io.IOException("Falha HTTP ${chunkResp.code} no chunk $chunkStart-$chunkEnd")
+                                    }
+                                    val body = chunkResp.body ?: throw java.io.IOException("Corpo de resposta nulo")
+                                    val input = body.byteStream()
+                                    val buf = ByteArray(64 * 1024)
+                                    var currentPos = chunkStart
+                                    var bytesRead: Int
+                                    while (input.read(buf).also { bytesRead = it } != -1) {
+                                        synchronized(raf) {
+                                            raf.seek(currentPos)
+                                            raf.write(buf, 0, bytesRead)
+                                        }
+                                        currentPos += bytesRead
+                                        val total = downloadedBytes.addAndGet(bytesRead.toLong())
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastProgressTime >= 80) {
+                                            lastProgressTime = now
+                                            onProgress((total.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        jobs.awaitAll()
+                    }
+                } finally {
+                    try { raf.close() } catch (_: Exception) {}
+                }
+            } else {
+                // Fallback caso Content-Length/Range não esteja disponível
+                val request = Request.Builder()
+                    .url(streamUrl)
+                    .header("User-Agent", streamUserAgent)
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                val body = response.body ?: throw java.io.IOException("Corpo nulo")
+                val streamLength = body.contentLength()
+                var readBytes = 0L
+                body.byteStream().use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            readBytes += bytesRead
+                            if (streamLength > 0) {
+                                onProgress((readBytes.toFloat() / streamLength.toFloat()).coerceIn(0f, 1f))
+                            }
+                        }
+                        output.flush()
+                    }
                 }
             }
+
+            onProgress(1f)
+            if (destFile.exists()) destFile.delete()
+            tempFile.renameTo(destFile)
 
             val downloadedTrack = DownloadedTrack(
                 track = track,

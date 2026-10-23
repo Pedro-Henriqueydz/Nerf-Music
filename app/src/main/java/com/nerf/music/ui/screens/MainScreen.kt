@@ -1,4 +1,4 @@
-package com.nerf.music.ui.screens
+﻿package com.nerf.music.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Home
@@ -112,6 +113,14 @@ fun MainScreen(
     val trackRelatedData by viewModel.trackRelatedData.collectAsState()
     val isLoadingRelated by viewModel.isLoadingRelated.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+
+    val userPlaylists by viewModel.userPlaylists.collectAsState()
+    val likedTracks by viewModel.likedTracks.collectAsState()
+    var showSaveToPlaylistSheet by remember { mutableStateOf(false) }
+    var showCreatePlaylistFromPlayer by remember { mutableStateOf(false) }
+    var newPlaylistFromPlayerTitle by remember { mutableStateOf("") }
+    var newPlaylistFromPlayerVisibility by remember { mutableStateOf("Pública") }
+    var showVisibilitySheetFromPlayer by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
@@ -465,7 +474,7 @@ fun MainScreen(
                 onToggleRepeat = { viewModel.toggleRepeat() },
                 onSeekTo = { positionMs -> viewModel.seekTo(positionMs) },
                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
-                onToggleSave = { trackId -> viewModel.toggleSaveToPlaylist(trackId) },
+                onToggleSave = { _ -> showSaveToPlaylistSheet = true },
                 onToggleDownload = { trackId -> viewModel.toggleDownload(trackId) },
                 downloadProgress = playbackState.currentTrack?.let { downloadProgressMap[it.id] },
                 onSelectQueueChip = { chip -> viewModel.selectQueueFilterChip(chip) },
@@ -499,6 +508,153 @@ fun MainScreen(
                 }
             )
         }
+    }
+
+    if (showSaveToPlaylistSheet && playbackState.currentTrack != null) {
+        val currentTrack = playbackState.currentTrack!!
+        SaveToPlaylistSheet(
+            track = currentTrack,
+            userPlaylists = userPlaylists,
+            isLiked = likedTracks.any { it.id == currentTrack.id },
+            likedCount = likedTracks.size,
+            onDismiss = { showSaveToPlaylistSheet = false },
+            onToggleLiked = { viewModel.toggleFavorite(currentTrack.id) },
+            onTogglePlaylist = { pl, shouldAdd ->
+                if (shouldAdd) {
+                    viewModel.addTrackToPlaylist(pl.id, currentTrack)
+                } else {
+                    viewModel.removeTrackFromPlaylist(pl.id, currentTrack.id)
+                }
+            },
+            onCreateNewPlaylist = {
+                showCreatePlaylistFromPlayer = true
+            }
+        )
+    }
+
+    if (showCreatePlaylistFromPlayer) {
+        AlertDialog(
+            onDismissRequest = {
+                showCreatePlaylistFromPlayer = false
+                newPlaylistFromPlayerTitle = ""
+            },
+            containerColor = Color(0xFF282828),
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Nova playlist",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = YtmWhite
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newPlaylistFromPlayerTitle,
+                        onValueChange = { newPlaylistFromPlayerTitle = it },
+                        placeholder = {
+                            Text(text = "Título", color = YtmTextSecondary)
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = YtmWhite,
+                            unfocusedTextColor = YtmWhite,
+                            focusedBorderColor = YtmWhite,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Transparent,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showVisibilitySheetFromPlayer = true }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Visibilidade",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = YtmTextSecondary
+                                )
+                                Text(
+                                    text = newPlaylistFromPlayerVisibility,
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    color = YtmWhite
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                tint = YtmWhite
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                val isEnabled = newPlaylistFromPlayerTitle.isNotBlank()
+                Button(
+                    onClick = {
+                        if (isEnabled) {
+                            val created = viewModel.createPlaylist(newPlaylistFromPlayerTitle.trim())
+                            if (created != null && playbackState.currentTrack != null) {
+                                viewModel.addTrackToPlaylist(created.id, playbackState.currentTrack!!)
+                            }
+                            showCreatePlaylistFromPlayer = false
+                            newPlaylistFromPlayerTitle = ""
+                        }
+                    },
+                    enabled = isEnabled,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isEnabled) YtmWhite else Color(0xFF3A3A3A),
+                        contentColor = if (isEnabled) YtmBlack else YtmTextSecondary
+                    ),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp)
+                ) {
+                    Text(text = "Criar", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showCreatePlaylistFromPlayer = false
+                    newPlaylistFromPlayerTitle = ""
+                }) {
+                    Text(text = "Cancelar", color = YtmWhite, fontSize = 14.sp)
+                }
+            }
+        )
+    }
+
+    if (showVisibilitySheetFromPlayer) {
+        SetVisibilitySheet(
+            currentVisibility = newPlaylistFromPlayerVisibility,
+            onSelectVisibility = { newPlaylistFromPlayerVisibility = it },
+            onDismiss = { showVisibilitySheetFromPlayer = false }
+        )
     }
 }
 
