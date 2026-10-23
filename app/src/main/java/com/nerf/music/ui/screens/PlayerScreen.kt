@@ -5,6 +5,10 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -71,6 +75,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -97,6 +104,21 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.nerf.music.R
+import android.content.Context
+import android.media.AudioManager
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.VolumeDown
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Chat
+import com.nerf.music.data.model.LyricsData
 import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.Track
@@ -309,6 +331,7 @@ fun FullPlayerSheet(
     state: PlaybackState,
     canvasVideoUrl: String? = null,
     lyricsLine: String? = null,
+    lyrics: LyricsData? = null,
     onDismiss: () -> Unit,
     onTogglePlay: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -378,11 +401,14 @@ fun FullPlayerSheet(
     // 2. Estado de Expansão da Fila (0 = Oculto, 1 = Meio Expandido, 2 = Totalmente Expandido)
     var queueState by remember { mutableStateOf(QueueExpansionState.COLLAPSED) }
     var showRelatedSheet by remember { mutableStateOf(false) }
+    var isFullscreenLyricsActive by remember { mutableStateOf(false) }
 
-    // Tratamento do botão Voltar do Android: se a fila estiver aberta, recolhe a fila; senão, fecha o Player
+    // Tratamento do botão Voltar do Android: se letras em tela cheia estiverem ativas, fecha letras; se a fila estiver aberta, recolhe a fila; senão, fecha o Player
     BackHandler {
         if (showRelatedSheet) {
             showRelatedSheet = false
+        } else if (isFullscreenLyricsActive) {
+            isFullscreenLyricsActive = false
         } else when (queueState) {
             QueueExpansionState.EXPANDED -> queueState = QueueExpansionState.HALF_EXPANDED
             QueueExpansionState.HALF_EXPANDED -> queueState = QueueExpansionState.COLLAPSED
@@ -638,9 +664,42 @@ fun FullPlayerSheet(
             }
 
             // =========================================================================
-            // CAMADA 1: CONTEÚDO PRINCIPAL DO FULL PLAYER (Adapta-se ao Meio Expandido)
+            // CAMADA 1: CONTEÚDO PRINCIPAL DO FULL PLAYER (Alterna entre Player Padrão e Letras Apple Music)
             // =========================================================================
-            Column(
+            AnimatedContent(
+                targetState = isFullscreenLyricsActive,
+                transitionSpec = {
+                    if (targetState) {
+                        (fadeIn(animationSpec = tween(320)) + slideInVertically(animationSpec = tween(320)) { it / 8 })
+                            .togetherWith(fadeOut(animationSpec = tween(220)) + scaleOut(targetScale = 0.92f, animationSpec = tween(220)))
+                    } else {
+                        (fadeIn(animationSpec = tween(320)) + scaleIn(initialScale = 0.92f, animationSpec = tween(320)))
+                            .togetherWith(fadeOut(animationSpec = tween(200)) + slideOutVertically(animationSpec = tween(220)) { it / 8 })
+                    }
+                },
+                label = "PlayerLyricsModeTransition"
+            ) { inLyricsMode ->
+                if (inLyricsMode) {
+                    AppleMusicLyricsView(
+                        track = track,
+                        artworkUrl = artworkUrl,
+                        lyrics = lyrics,
+                        currentPositionMs = state.currentPositionMs,
+                        durationMs = effectiveDurationMs,
+                        isPlaying = state.isPlaying,
+                        isBuffering = state.isBuffering,
+                        favoriteTrackIds = state.favoriteTrackIds,
+                        onTogglePlay = onTogglePlay,
+                        onSkipPrevious = onSkipPrevious,
+                        onSkipNext = onSkipNext,
+                        onSeekTo = onSeekTo,
+                        onToggleFavorite = onToggleFavorite,
+                        onCloseLyrics = { isFullscreenLyricsActive = false },
+                        onOpenRelated = { showRelatedSheet = true },
+                        onOpenQueue = { queueState = QueueExpansionState.HALF_EXPANDED }
+                    )
+                } else {
+                    Column(
                 modifier = Modifier
                     .then(if (isCanvasActive) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
                     .alpha((1f - fullExpansionFraction * 1.25f).coerceIn(0f, 1f))
@@ -734,6 +793,8 @@ fun FullPlayerSheet(
                         exit = fadeOut(animationSpec = tween(200)),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { isFullscreenLyricsActive = true }
                             .padding(bottom = 8.dp)
                     ) {
                         AnimatedContent(
@@ -753,7 +814,10 @@ fun FullPlayerSheet(
                                 textAlign = TextAlign.Start,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { isFullscreenLyricsActive = true }
                             )
                         }
                     }
@@ -855,9 +919,11 @@ fun FullPlayerSheet(
                         isFavorite = state.favoriteTrackIds.contains(track.id),
                         isSaved = state.savedTrackIds.contains(track.id),
                         isDownloaded = state.downloadedTrackIds.contains(track.id),
+                        isLyricsActive = isFullscreenLyricsActive,
                         onToggleFavorite = { onToggleFavorite(track.id) },
                         onToggleSave = { onToggleSave(track.id) },
                         onToggleDownload = { onToggleDownload(track.id) },
+                        onToggleLyrics = { isFullscreenLyricsActive = !isFullscreenLyricsActive },
                         modifier = Modifier.alpha((1f - halfExpansionFraction * 2.2f).coerceIn(0f, 1f))
                     )
 
@@ -1082,6 +1148,8 @@ fun FullPlayerSheet(
                     }
                 }
             }
+                }
+            }
 
             // =========================================================================
             // CAMADA 2: FILA DE REPRODUÇÃO ("A SEGUIR" / UP NEXT) COM 3 ESTADOS POR GESTO
@@ -1089,10 +1157,11 @@ fun FullPlayerSheet(
             val isSheetExpandedOrDragging = halfExpansionFraction > 0.03f || queueState != QueueExpansionState.COLLAPSED
             val queueSourceText = state.queueSourceTitle?.takeIf { it.isNotBlank() } ?: track.title
 
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .offset { IntOffset(0, currentSheetY.roundToInt()) },
+            if (!isFullscreenLyricsActive) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset { IntOffset(0, currentSheetY.roundToInt()) },
                 shape = RoundedCornerShape(
                     topStart = (22f * (1f - fullExpansionFraction)).dp,
                     topEnd = (22f * (1f - fullExpansionFraction)).dp
@@ -1153,6 +1222,7 @@ fun FullPlayerSheet(
                     }
                 }
             }
+            }
 
             if (showRelatedSheet) {
                 ModalBottomSheet(
@@ -1202,6 +1272,8 @@ fun PlayerActionRow(
     onToggleFavorite: () -> Unit,
     onToggleSave: () -> Unit,
     onToggleDownload: () -> Unit,
+    isLyricsActive: Boolean = false,
+    onToggleLyrics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -1248,8 +1320,8 @@ fun PlayerActionRow(
         RoundedActionPillButton(
             icon = Icons.Default.Subtitles,
             label = "Letra",
-            isActive = false,
-            onClick = { /* Sem funcionalidade por enquanto */ }
+            isActive = isLyricsActive,
+            onClick = onToggleLyrics
         )
     }
 }
@@ -1825,6 +1897,524 @@ fun PlayerRelatedSheetContent(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun rememberSystemVolume(context: Context): Pair<Float, (Float) -> Unit> {
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
+    var currentVolumeFraction by remember {
+        mutableFloatStateOf((audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume).coerceIn(0f, 1f))
+    }
+
+    DisposableEffect(context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent?.action == "android.media.VOLUME_CHANGED_ACTION") {
+                    val vol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    currentVolumeFraction = (vol.toFloat() / maxVolume).coerceIn(0f, 1f)
+                }
+            }
+        }
+        val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+        context.registerReceiver(receiver, filter)
+        onDispose {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (_: Exception) {}
+        }
+    }
+
+    val setVolume: (Float) -> Unit = { fraction ->
+        val target = (fraction * maxVolume).toInt().coerceIn(0, maxVolume)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+        currentVolumeFraction = fraction.coerceIn(0f, 1f)
+    }
+
+    return Pair(currentVolumeFraction, setVolume)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppleMusicLyricsView(
+    track: Track,
+    artworkUrl: String?,
+    lyrics: LyricsData?,
+    currentPositionMs: Long,
+    durationMs: Long,
+    isPlaying: Boolean,
+    isBuffering: Boolean,
+    favoriteTrackIds: Set<String>,
+    onTogglePlay: () -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
+    onSeekTo: (Long) -> Unit,
+    onToggleFavorite: (String) -> Unit,
+    onCloseLyrics: () -> Unit,
+    onOpenRelated: () -> Unit,
+    onOpenQueue: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val (systemVolume, setSystemVolume) = rememberSystemVolume(context)
+
+    val listState = rememberLazyListState()
+    val activeIndex = remember(lyrics, currentPositionMs) {
+        lyrics?.syncedLines?.indexOfLast { currentPositionMs >= it.timeMs } ?: -1
+    }
+
+    // Auto-scroll suave acompanhando o verso ativo (centralizado verticalmente)
+    LaunchedEffect(activeIndex) {
+        if (activeIndex >= 0) {
+            listState.animateScrollToItem(
+                index = activeIndex,
+                scrollOffset = -220
+            )
+        }
+    }
+
+    var isDraggingSlider by remember { mutableStateOf(false) }
+    var dragPositionFraction by remember { mutableFloatStateOf(0f) }
+    val effectiveDurationMs = durationMs.coerceAtLeast(0L)
+    val currentFraction = if (effectiveDurationMs > 0L) {
+        (currentPositionMs.toFloat() / effectiveDurationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val displayedFraction = if (isDraggingSlider) dragPositionFraction else currentFraction
+    val displayedPositionMs = if (isDraggingSlider && effectiveDurationMs > 0L) {
+        (dragPositionFraction * effectiveDurationMs).toLong()
+    } else {
+        currentPositionMs
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(top = 34.dp)
+    ) {
+        // 1. Barra Superior Compacta (Mini Capa + Título + Artista + Estrela + Opções)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF262626)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!artworkUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = artworkUrl,
+                        contentDescription = track.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = Color.Gray,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = track.title,
+                    fontFamily = YouTubeSansFontFamily,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee()
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = track.artist,
+                    fontFamily = YouTubeSansFontFamily,
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            val isFavorite = favoriteTrackIds.contains(track.id)
+            IconButton(onClick = { onToggleFavorite(track.id) }) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Favoritar",
+                    tint = if (isFavorite) Color.White else Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            IconButton(onClick = onOpenRelated) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "Opções",
+                    tint = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+
+        // 2. Área Central de Letras (Scrollable com destaque suave)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0.0f to Color.Transparent,
+                            0.07f to Color.Black,
+                            0.90f to Color.Black,
+                            1.0f to Color.Transparent
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+        ) {
+            val hasSyncedLyrics = lyrics != null && lyrics.isSynced && lyrics.syncedLines.isNotEmpty()
+            val hasPlainLyrics = lyrics != null && !lyrics.plainLyrics.isNullOrBlank()
+
+            if (hasSyncedLyrics) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 40.dp, bottom = 120.dp, start = 24.dp, end = 24.dp)
+                ) {
+                    itemsIndexed(lyrics!!.syncedLines) { index, line ->
+                        val isCurrent = index == activeIndex
+                        val animatedAlpha by animateFloatAsState(
+                            targetValue = if (isCurrent) 1f else 0.35f,
+                            animationSpec = tween(durationMillis = 350),
+                            label = "LyricAlpha_$index"
+                        )
+                        val animatedScale by animateFloatAsState(
+                            targetValue = if (isCurrent) 1.04f else 1f,
+                            animationSpec = spring(stiffness = Spring.StiffnessLow),
+                            label = "LyricScale_$index"
+                        )
+
+                        Text(
+                            text = line.text,
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (isCurrent) 28.sp else 22.sp,
+                            lineHeight = if (isCurrent) 38.sp else 32.sp,
+                            color = Color.White.copy(alpha = animatedAlpha),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    scaleX = animatedScale
+                                    scaleY = animatedScale
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                                }
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    onSeekTo(line.timeMs)
+                                }
+                                .padding(vertical = 12.dp)
+                        )
+                    }
+                }
+            } else if (hasPlainLyrics) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 40.dp, bottom = 120.dp, start = 24.dp, end = 24.dp)
+                ) {
+                    item {
+                        Text(
+                            text = lyrics!!.plainLyrics.orEmpty(),
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 20.sp,
+                            lineHeight = 32.sp,
+                            color = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Letra não disponível para esta música",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontSize = 16.sp,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+                }
+            }
+        }
+
+        // 3. Barra de Progresso Estilo Apple Music (com tempo decorrido e restante -M:SS)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+        ) {
+            Slider(
+                value = displayedFraction,
+                onValueChange = { newFraction ->
+                    isDraggingSlider = true
+                    dragPositionFraction = newFraction.coerceIn(0f, 1f)
+                },
+                onValueChangeFinished = {
+                    if (effectiveDurationMs > 0L) {
+                        val targetMs = (dragPositionFraction * effectiveDurationMs).toLong()
+                        onSeekTo(targetMs)
+                    }
+                    isDraggingSlider = false
+                },
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                ),
+                thumb = {
+                    Box(
+                        modifier = Modifier.size(20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (isDraggingSlider) 12.dp else 8.dp)
+                                .shadow(2.dp, CircleShape)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                        )
+                    }
+                },
+                track = { sliderState ->
+                    val fraction = sliderState.value.coerceIn(0f, 1f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(20.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.White.copy(alpha = 0.25f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.White)
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(20.dp)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = formatDurationMs(displayedPositionMs),
+                    fontSize = 11.sp,
+                    fontFamily = YouTubeSansFontFamily,
+                    color = Color.White.copy(alpha = 0.65f)
+                )
+                val remainingMs = (effectiveDurationMs - displayedPositionMs).coerceAtLeast(0L)
+                Text(
+                    text = "-${formatDurationMs(remainingMs)}",
+                    fontSize = 11.sp,
+                    fontFamily = YouTubeSansFontFamily,
+                    color = Color.White.copy(alpha = 0.65f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 4. Controles de Reprodução Grandes (Anterior, Play/Pause, Próxima)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onSkipPrevious,
+                modifier = Modifier.size(54.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipPrevious,
+                    contentDescription = "Anterior",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+
+            Surface(
+                onClick = onTogglePlay,
+                modifier = Modifier.size(64.dp),
+                shape = CircleShape,
+                color = Color.White,
+                shadowElevation = 8.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (isBuffering) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 3.dp,
+                            color = Color.Black
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pausar" else "Reproduzir",
+                            tint = Color.Black,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = onSkipNext,
+                modifier = Modifier.size(54.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SkipNext,
+                    contentDescription = "Próxima",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 5. Slider de Volume do Sistema
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.VolumeDown,
+                contentDescription = "Volume Baixo",
+                tint = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp)
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Slider(
+                value = systemVolume,
+                onValueChange = setSystemVolume,
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.22f)
+                ),
+                thumb = {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .shadow(2.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                    )
+                },
+                modifier = Modifier.weight(1f)
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Icon(
+                imageVector = Icons.Default.VolumeUp,
+                contentDescription = "Volume Alto",
+                tint = Color.White.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 6. Barra de Ações Inferior (Botão Letras Ativo + Cast + Fila)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Botão de Letras Ativo (estilo Apple Music pill ativo)
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.22f))
+                    .clickable { onCloseLyrics() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Chat,
+                    contentDescription = "Fechar Letras",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            IconButton(onClick = {}) {
+                Icon(
+                    imageVector = Icons.Default.Cast,
+                    contentDescription = "Transmitir",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            IconButton(onClick = onOpenQueue) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = "Fila",
+                    tint = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier.size(26.dp)
+                )
             }
         }
     }
