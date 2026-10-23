@@ -1,4 +1,4 @@
-package com.nerf.music.ui.viewmodel
+﻿package com.nerf.music.ui.viewmodel
 
 import android.content.ComponentName
 import android.content.Context
@@ -255,6 +255,8 @@ class MusicViewModel(
             viewModelScope.launch {
                 libRepo.playlistsFlow.collect { list ->
                     _userPlaylists.value = list
+                    val ids = list.flatMap { it.tracks }.map { it.id }.toSet()
+                    _playbackState.value = _playbackState.value.copy(savedTrackIds = ids)
                 }
             }
             viewModelScope.launch {
