@@ -77,6 +77,13 @@ class AudioPlayerService : MediaSessionService() {
                         ?: uri.host?.takeIf { it.isNotBlank() }
                         ?: throw IOException("VideoId ausente na URI: $uri")
 
+                    // 1. Verifica se a faixa já foi baixada offline no disco
+                    val offlineFile = java.io.File(filesDir, "offline_audio/$videoId.opus")
+                    if (offlineFile.exists() && offlineFile.length() > 0) {
+                        Log.i(TAG, "Reproduzindo faixa offline local: ${offlineFile.absolutePath}")
+                        return@Resolver dataSpec.buildUpon().setUri(Uri.fromFile(offlineFile)).build()
+                    }
+
                     val now = System.currentTimeMillis()
                     val cached = streamUrlCache[videoId]
                     val resolvedUrl = if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) {
