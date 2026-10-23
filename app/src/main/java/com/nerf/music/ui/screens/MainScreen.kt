@@ -310,7 +310,11 @@ fun MainScreen(
             containerColor = YtmBlack,
             bottomBar = {
                 val isDetailRoute = currentRoute.startsWith("album") || currentRoute.startsWith("artist")
-                Column(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (isDetailRoute) Modifier.navigationBarsPadding() else Modifier)
+                ) {
                     // Mini Player persistente: visível em todas as telas (incluindo Álbum)
                     if (playbackState.currentTrack != null) {
                         MiniPlayerBar(
