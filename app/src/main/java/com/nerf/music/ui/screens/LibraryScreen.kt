@@ -1152,6 +1152,11 @@ fun UserPlaylistDetailView(
     var showAddSongSheet by remember { mutableStateOf(false) }
     var searchSongQuery by remember { mutableStateOf("") }
     val searchResult by viewModel.searchResult.collectAsState()
+    val downloadedTracks by viewModel.downloadedTracks.collectAsState()
+    var showPlaylistOptionsSheet by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var isPlaylistFilterActive by remember { mutableStateOf(false) }
+    var playlistFilterQuery by remember { mutableStateOf("") }
 
     Box(
         modifier = Modifier
@@ -1178,32 +1183,59 @@ fun UserPlaylistDetailView(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { showAddSongSheet = true }) {
+                    IconButton(onClick = { isPlaylistFilterActive = !isPlaylistFilterActive }) {
                         Icon(
                             imageVector = Icons.Default.Search,
-                            contentDescription = "Buscar e adicionar",
-                            tint = YtmWhite
+                            contentDescription = "Pesquisar na playlist",
+                            tint = if (isPlaylistFilterActive) OrangePrimary else YtmWhite
                         )
                     }
 
-                    IconButton(onClick = { showEditTitleDialog = true }) {
+                    IconButton(onClick = { showPlaylistOptionsSheet = true }) {
                         Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Editar playlist",
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Opções da playlist",
                             tint = YtmWhite
                         )
                     }
+                }
+            }
 
-                    IconButton(onClick = {
-                        viewModel.deletePlaylist(playlist.id)
-                        onBack()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = "Excluir playlist",
-                            tint = ErrorColor
-                        )
-                    }
+            AnimatedVisibility(visible = isPlaylistFilterActive) {
+                OutlinedTextField(
+                    value = playlistFilterQuery,
+                    onValueChange = { playlistFilterQuery = it },
+                    placeholder = { Text("Pesquisar na playlist...", color = YtmTextSecondary, fontSize = 14.sp) },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = YtmTextSecondary, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = {
+                        if (playlistFilterQuery.isNotEmpty()) {
+                            IconButton(onClick = { playlistFilterQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Limpar", tint = YtmWhite, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = YtmWhite,
+                        unfocusedTextColor = YtmWhite,
+                        focusedBorderColor = YtmWhite,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                        focusedContainerColor = Color(0xFF1E1E1E),
+                        unfocusedContainerColor = Color(0xFF1E1E1E)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+
+            val displayedTracks = if (playlistFilterQuery.isBlank()) {
+                playlist.tracks
+            } else {
+                playlist.tracks.filter {
+                    it.title.contains(playlistFilterQuery, ignoreCase = true) ||
+                    it.artist.contains(playlistFilterQuery, ignoreCase = true)
                 }
             }
 
@@ -1324,6 +1356,24 @@ fun UserPlaylistDetailView(
                                     )
                                 }
                             }
+
+                            // Botão 3 pontinhos oficial
+                            Surface(
+                                shape = CircleShape,
+                                color = YtmGrey10,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clickable { showPlaylistOptionsSheet = true }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Mais opções",
+                                        tint = YtmWhite,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
                         }
 
                         // Botões de Reprodução à direita (Shuffle + Grande Play Branco)
@@ -1406,7 +1456,7 @@ fun UserPlaylistDetailView(
                 }
 
                 // 5. Faixas da Playlist
-                itemsIndexed(playlist.tracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
+                itemsIndexed(displayedTracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1439,14 +1489,25 @@ fun UserPlaylistDetailView(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "${track.artist} • ${track.durationText}",
-                                fontFamily = YouTubeSansFontFamily,
-                                fontSize = 12.sp,
-                                color = YtmTextSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (downloadedTracks.any { it.track.id == track.id }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = "Baixada",
+                                        tint = YtmWhite.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+                                Text(
+                                    text = "${track.artist} • ${track.durationText}",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = YtmTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
 
                         IconButton(onClick = {
@@ -1656,6 +1717,72 @@ fun UserPlaylistDetailView(
             }
         }
     }
+
+    if (showPlaylistOptionsSheet) {
+        PlaylistOptionsBottomSheet(
+            playlist = playlist,
+            onDismiss = { showPlaylistOptionsSheet = false },
+            onPlayNext = { viewModel.addTracksToPlayNext(playlist.tracks) },
+            onShufflePlay = { viewModel.playUserPlaylist(playlist, isShuffle = true) },
+            onSortManual = { /* ordem mantida */ },
+            onFindInPlaylist = { isPlaylistFilterActive = true },
+            onStartMix = {
+                if (playlist.tracks.isNotEmpty()) {
+                    viewModel.playTrack(playlist.tracks.first())
+                }
+            },
+            onAddToQueue = { viewModel.addTracksToQueue(playlist.tracks) },
+            onSaveToPlaylist = { showAddSongSheet = true },
+            onDeletePlaylist = { showDeleteConfirmDialog = true },
+            onPinToSpeedDial = { /* feedback */ },
+            onHelpAndFeedback = { /* feedback */ }
+        )
+    }
+
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            containerColor = Color(0xFF282828),
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Excluir playlist?",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = YtmWhite
+                )
+            },
+            text = {
+                Text(
+                    text = "Tem certeza de que deseja excluir '${playlist.title}'? Essa ação não pode ser desfeita.",
+                    fontFamily = YouTubeSansFontFamily,
+                    color = YtmTextSecondary,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deletePlaylist(playlist.id)
+                        showDeleteConfirmDialog = false
+                        onBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ErrorColor,
+                        contentColor = YtmWhite
+                    ),
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(text = "Excluir", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text(text = "Cancelar", color = YtmWhite)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1802,14 +1929,25 @@ fun TrackListDetailView(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = "${track.artist} • ${track.durationText}",
-                                fontFamily = YouTubeSansFontFamily,
-                                fontSize = 12.sp,
-                                color = YtmTextSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isDownloads) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = "Baixada",
+                                        tint = YtmWhite.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+                                Text(
+                                    text = "${track.artist} • ${track.durationText}",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = YtmTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }

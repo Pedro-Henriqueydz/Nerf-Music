@@ -1250,6 +1250,23 @@ class MusicViewModel(
             _userMessage.value = "Download da playlist concluído!"
         }
     }
+
+    fun addTracksToQueue(tracks: List<Track>) {
+        val controller = mediaController ?: return
+        if (tracks.isEmpty()) return
+        val mediaItems = tracks.map { trackToMediaItem(it) }
+        controller.addMediaItems(mediaItems)
+        _userMessage.value = "${tracks.size} músicas adicionadas à fila"
+    }
+
+    fun addTracksToPlayNext(tracks: List<Track>) {
+        val controller = mediaController ?: return
+        if (tracks.isEmpty()) return
+        val nextIndex = (controller.currentMediaItemIndex + 1).coerceAtLeast(0)
+        val mediaItems = tracks.map { trackToMediaItem(it) }
+        controller.addMediaItems(nextIndex, mediaItems)
+        _userMessage.value = "${tracks.size} músicas adicionadas para tocar a seguir"
+    }
         fun clearUserMessage() {
         _userMessage.value = null
     }
