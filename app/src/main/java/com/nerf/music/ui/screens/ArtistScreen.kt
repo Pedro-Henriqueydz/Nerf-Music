@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.GraphicEq
+import com.nerf.music.ui.components.AnimatedEqualizerBars
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -566,11 +567,13 @@ private fun ArtistTopSongRow(
             contentAlignment = Alignment.CenterStart
         ) {
             if (isPlaying) {
-                Icon(
-                    imageVector = Icons.Default.GraphicEq,
-                    contentDescription = "Tocando",
-                    tint = OrangeSecondary,
-                    modifier = Modifier.size(18.dp)
+                AnimatedEqualizerBars(
+                    isPlaying = true,
+                    barColor = OrangeSecondary,
+                    barCount = 3,
+                    barWidth = 2.5.dp,
+                    barSpacing = 1.5.dp,
+                    maxHeight = 15.dp
                 )
             } else {
                 Text(
@@ -697,12 +700,23 @@ private fun ArtistVideoCard(
                     .background(Color(0xCC000000)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.GraphicEq else Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = YtmWhite,
-                    modifier = Modifier.size(16.dp)
-                )
+                if (isPlaying) {
+                    AnimatedEqualizerBars(
+                        isPlaying = true,
+                        barColor = YtmWhite,
+                        barCount = 3,
+                        barWidth = 2.5.dp,
+                        barSpacing = 1.5.dp,
+                        maxHeight = 14.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = YtmWhite,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 

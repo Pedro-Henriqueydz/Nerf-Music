@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
+import com.nerf.music.ui.components.AnimatedEqualizerBars
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -455,11 +456,13 @@ private fun AlbumTrackRow(
             contentAlignment = Alignment.CenterStart
         ) {
             if (isPlaying) {
-                Icon(
-                    imageVector = Icons.Default.GraphicEq,
-                    contentDescription = "Tocando",
-                    tint = OrangeSecondary,
-                    modifier = Modifier.size(18.dp)
+                AnimatedEqualizerBars(
+                    isPlaying = true,
+                    barColor = OrangeSecondary,
+                    barCount = 3,
+                    barWidth = 2.5.dp,
+                    barSpacing = 1.5.dp,
+                    maxHeight = 15.dp
                 )
             } else {
                 Text(
