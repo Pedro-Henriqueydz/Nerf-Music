@@ -348,6 +348,7 @@ fun FullPlayerSheet(
     onToggleFavorite: (String) -> Unit,
     onToggleSave: (String) -> Unit,
     onToggleDownload: (String) -> Unit,
+    downloadProgress: Float? = null,
     onSelectQueueChip: (QueueFilterChip) -> Unit,
     onPlayQueueItem: (Int) -> Unit,
     onMoveQueueItem: (Int, Int) -> Unit,
@@ -970,6 +971,7 @@ fun FullPlayerSheet(
                         onToggleFavorite = { onToggleFavorite(track.id) },
                         onToggleSave = { onToggleSave(track.id) },
                         onToggleDownload = { onToggleDownload(track.id) },
+                        downloadProgress = downloadProgress,
                         onToggleLyrics = { isFullscreenLyricsActive = !isFullscreenLyricsActive },
                         modifier = Modifier.alpha((1f - halfExpansionFraction * 2.2f).coerceIn(0f, 1f))
                     )
@@ -1319,6 +1321,7 @@ fun PlayerActionRow(
     onToggleFavorite: () -> Unit,
     onToggleSave: () -> Unit,
     onToggleDownload: () -> Unit,
+    downloadProgress: Float? = null,
     isLyricsActive: Boolean = false,
     onToggleLyrics: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -1355,12 +1358,13 @@ fun PlayerActionRow(
 
         RoundedActionPillButton(
             icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
-            label = if (isDownloaded) {
-                stringResource(id = R.string.action_downloaded)
-            } else {
-                stringResource(id = R.string.action_download)
+            label = when {
+                downloadProgress != null -> if (downloadProgress > 0f) "${(downloadProgress * 100).toInt()}%" else "Baixando..."
+                isDownloaded -> stringResource(id = R.string.action_downloaded)
+                else -> stringResource(id = R.string.action_download)
             },
-            isActive = isDownloaded,
+            isActive = isDownloaded || downloadProgress != null,
+            progress = downloadProgress,
             onClick = onToggleDownload
         )
 
@@ -1378,6 +1382,7 @@ private fun RoundedActionPillButton(
     icon: ImageVector,
     label: String,
     isActive: Boolean,
+    progress: Float? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -1400,12 +1405,38 @@ private fun RoundedActionPillButton(
                 .padding(horizontal = 14.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (isActive) MaterialTheme.colorScheme.primary else Color.White,
-                modifier = Modifier.size(18.dp)
-            )
+            if (progress != null) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(18.dp)) {
+                    if (progress > 0f) {
+                        CircularProgressIndicator(
+                            progress = { progress },
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = Color.White.copy(alpha = 0.2f),
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = if (isActive) MaterialTheme.colorScheme.primary else Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
