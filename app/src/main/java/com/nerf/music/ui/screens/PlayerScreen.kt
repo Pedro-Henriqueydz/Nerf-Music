@@ -48,6 +48,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
@@ -141,6 +147,12 @@ import com.nerf.music.ui.theme.YtmWhite
 import com.nerf.music.ui.theme.YtmTextSecondary
 import com.nerf.music.ui.theme.YtmIconInactive
 import com.nerf.music.ui.theme.OrangeSecondary
+import com.nerf.music.ui.components.AnimatedEqualizerBars
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import kotlinx.coroutines.Dispatchers
@@ -343,6 +355,7 @@ fun FullPlayerSheet(
     onDismiss: () -> Unit,
     onTogglePlay: () -> Unit,
     onSkipPrevious: () -> Unit,
+    onForceSkipPrevious: () -> Unit = onSkipPrevious,
     onSkipNext: () -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
@@ -489,8 +502,24 @@ fun FullPlayerSheet(
         }
     }
 
+    val playerDismissOffsetY = remember { Animatable(0f) }
+    var dismissDistancePx by remember { mutableFloatStateOf(1f) }
+    val dismissProgress = (playerDismissOffsetY.value / dismissDistancePx).coerceIn(0f, 1f)
+    val dismissCornerRadius = (dismissProgress * 14f).dp
+
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationY = playerDismissOffsetY.value
+                shape = RoundedCornerShape(
+                    topStart = dismissCornerRadius,
+                    topEnd = dismissCornerRadius,
+                    bottomStart = dismissCornerRadius,
+                    bottomEnd = dismissCornerRadius
+                )
+                clip = playerDismissOffsetY.value > 2f
+            },
         color = Color(0xFF0F0F0F)
     ) {
         Box(
@@ -593,6 +622,12 @@ fun FullPlayerSheet(
                 val miniHeaderHeightDp = 64.dp
                 val miniHeaderHeightPx = with(density) { miniHeaderHeightDp.toPx() }
 
+                // Distância total exata de descida do Full Player até ancorar no Mini Player
+                val calculatedDismissDistancePx = with(density) { (totalHeightPx - 76.dp.toPx()).coerceAtLeast(1f) }
+                LaunchedEffect(calculatedDismissDistancePx) {
+                    dismissDistancePx = calculatedDismissDistancePx
+                }
+
                 // Âncoras verticais (coordenada Y do topo da folha da Fila)
                 val anchorCollapsedY = (totalHeightPx - collapsedPeekPx).coerceAtLeast(0f)
                 val anchorHalfExpandedY = totalHeightPx * 0.50f
@@ -632,11 +667,35 @@ fun FullPlayerSheet(
                     0f
                 }
 
-                // Tamanho dinâmico da capa 1:1 sem lag (120Hz fluido)
+                // Tamanho dinâmico da capa 1:1 estilo YouTube Music:
+                // - Com a fila recolhida: base de ~300dp
+                // - Ao abrir a fila: encolhe para 135dp
+                // - Ao arrastar para baixo para fechar o player: a capa encolhe em direção a 48dp
                 val screenWidthDp = with(density) { constraints.maxWidth.toDp() }
+                val screenWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                val artworkOffsetX = remember { Animatable(0f) }
                 val maxArtworkSizeDp = (screenWidthDp - 48.dp).coerceIn(290.dp, 330.dp)
                 val minArtworkSizeDp = 135.dp
-                val currentArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
+                val baseArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
+                val currentArtworkSizeDp = if (dismissProgress > 0f) {
+                    baseArtworkSizeDp - ((baseArtworkSizeDp - 46.dp) * dismissProgress)
+                } else {
+                    baseArtworkSizeDp
+                }
+                val artworkCornerRadiusDp = (16f - (8f * dismissProgress)).dp
+                // Deslocamento horizontal da capa para pousar alinhada à esquerda do miniplayer (padding inicial 12dp)
+                val targetArtworkTranslateXPx = with(density) {
+                    val fullCenterXPx = constraints.maxWidth / 2f
+                    val miniCenterXPx = 12.dp.toPx() + 23.dp.toPx()
+                    miniCenterXPx - fullCenterXPx
+                }
+                val artworkDismissTranslateXPx = targetArtworkTranslateXPx * dismissProgress
+
+                // Controles e botões do player desvanecem suavemente no primeiro terço da descida
+                val controlsAlpha = (1f - dismissProgress * 3.0f).coerceIn(0f, 1f)
+                val headerAlpha = (1f - dismissProgress * 3.0f).coerceIn(0f, 1f)
+                val queueDrawerAlpha = (1f - dismissProgress * 3.5f).coerceIn(0f, 1f)
+                val miniPlayerRevealAlpha = ((dismissProgress - 0.40f) / 0.60f).coerceIn(0f, 1f)
 
                 // Função para finalizar o gesto de arraste da folha da Fila e ancorar em um dos 3 estados
                 fun snapQueueSheet(velocityY: Float) {
@@ -692,6 +751,62 @@ fun FullPlayerSheet(
                     coroutineScope.launch {
                         val newY = (sheetOffsetY.value + deltaY).coerceIn(anchorExpandedY, anchorCollapsedY)
                         sheetOffsetY.snapTo(newY)
+                    }
+                }
+
+                val queueLazyListState = rememberLazyListState()
+
+                val queueNestedScrollConnection = remember(anchorExpandedY, anchorHalfExpandedY, anchorCollapsedY) {
+                    object : NestedScrollConnection {
+                        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                            val deltaY = available.y
+                            // Se estiver rolando para baixo e a lista já estiver no topo, a folha da fila desce
+                            val isAtTop = queueLazyListState.firstVisibleItemIndex == 0 &&
+                                    queueLazyListState.firstVisibleItemScrollOffset == 0
+                            if (deltaY > 0f && isAtTop) {
+                                val currentY = sheetOffsetY.value
+                                if (currentY < anchorCollapsedY) {
+                                    val newY = (currentY + deltaY).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                    val consumed = newY - currentY
+                                    coroutineScope.launch { sheetOffsetY.snapTo(newY) }
+                                    return Offset(0f, consumed)
+                                }
+                            }
+                            return Offset.Zero
+                        }
+
+                        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                            val deltaY = available.y
+                            // Se a lista terminou de rolar e sobrou arrasto para cima ou para baixo
+                            if (deltaY != 0f) {
+                                val currentY = sheetOffsetY.value
+                                val newY = (currentY + deltaY).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                val consumedDelta = newY - currentY
+                                if (abs(consumedDelta) > 0.5f) {
+                                    coroutineScope.launch { sheetOffsetY.snapTo(newY) }
+                                    return Offset(0f, consumedDelta)
+                                }
+                            }
+                            return Offset.Zero
+                        }
+
+                        override suspend fun onPreFling(available: Velocity): Velocity {
+                            val isAtTop = queueLazyListState.firstVisibleItemIndex == 0 &&
+                                    queueLazyListState.firstVisibleItemScrollOffset == 0
+                            if (available.y > 0f && isAtTop && sheetOffsetY.value < anchorCollapsedY) {
+                                snapQueueSheet(available.y)
+                                return available
+                            }
+                            return Velocity.Zero
+                        }
+
+                        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                            if (available.y != 0f) {
+                                snapQueueSheet(available.y)
+                                return available
+                            }
+                            return Velocity.Zero
+                        }
                     }
                 }
 
@@ -833,65 +948,170 @@ fun FullPlayerSheet(
                                 }
                                 .padding(horizontal = 24.dp)
                                 .padding(bottom = collapsedPeekHeightDp + 16.dp)
-                                .pointerInput(queueState, showRelatedSheet) {
-                                    if (queueState == QueueExpansionState.COLLAPSED && !showRelatedSheet) {
-                                        var totalDragY = 0f
-                                        detectVerticalDragGestures(
-                                            onDragStart = { totalDragY = 0f },
-                                            onDragEnd = {
-                                                if (totalDragY > 120f) {
-                                                    onDismiss()
-                                                } else if (totalDragY < -50f) {
-                                                    snapQueueSheet(-1000f)
+                                .pointerInput(queueState, showRelatedSheet, track.id) {
+                                    if (showRelatedSheet) return@pointerInput
+
+                                    var totalDragX = 0f
+                                    var totalDragY = 0f
+                                    var isHorizontalGesture = false
+                                    var isVerticalGesture = false
+
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                            isHorizontalGesture = false
+                                            isVerticalGesture = false
+                                        },
+                                        onDragEnd = {
+                                            if (isHorizontalGesture) {
+                                                val swipeThreshold = 65.dp.toPx()
+                                                if (totalDragX < -swipeThreshold) {
+                                                    // Arrastou para a esquerda -> Próxima música
+                                                    coroutineScope.launch {
+                                                        artworkOffsetX.animateTo(-screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
+                                                        onSkipNext()
+                                                        artworkOffsetX.snapTo(screenWidthPx * 0.75f)
+                                                        artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                    }
+                                                } else if (totalDragX > swipeThreshold) {
+                                                    // Arrastou para a direita -> Música anterior direta (sem resetar!)
+                                                    coroutineScope.launch {
+                                                        artworkOffsetX.animateTo(screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
+                                                        onForceSkipPrevious()
+                                                        artworkOffsetX.snapTo(-screenWidthPx * 0.75f)
+                                                        artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                    }
                                                 } else {
                                                     coroutineScope.launch {
-                                                        sheetOffsetY.animateTo(
-                                                            anchorCollapsedY,
-                                                            animationSpec = spring(
-                                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                stiffness = 380f
-                                                            )
-                                                        )
+                                                        artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
                                                     }
                                                 }
-                                                totalDragY = 0f
-                                            },
-                                            onDragCancel = {
-                                                totalDragY = 0f
-                                                coroutineScope.launch {
-                                                    sheetOffsetY.animateTo(
-                                                        anchorCollapsedY,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                                            stiffness = 380f
-                                                        )
-                                                    )
+                                            } else if (isVerticalGesture) {
+                                                if (queueState == QueueExpansionState.COLLAPSED) {
+                                                    // No estado 0:
+                                                    // - Se arrastou para baixo: recolhe para Mini Player
+                                                    // - Se arrastou para cima: sobe a fila para HALF_EXPANDED
+                                                    if (playerDismissOffsetY.value > dismissDistancePx * 0.35f || totalDragY > 350f) {
+                                                        coroutineScope.launch {
+                                                            playerDismissOffsetY.animateTo(
+                                                                targetValue = dismissDistancePx,
+                                                                animationSpec = tween(180, easing = FastOutLinearInEasing)
+                                                            )
+                                                            onDismiss()
+                                                        }
+                                                    } else if (playerDismissOffsetY.value > 0f) {
+                                                        coroutineScope.launch {
+                                                            playerDismissOffsetY.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 400f))
+                                                        }
+                                                    } else if (totalDragY < -40f || sheetOffsetY.value < anchorCollapsedY - 50f) {
+                                                        snapQueueSheet(-1000f)
+                                                    } else {
+                                                        coroutineScope.launch {
+                                                            sheetOffsetY.animateTo(anchorCollapsedY, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                        }
+                                                    }
+                                                } else if (queueState == QueueExpansionState.HALF_EXPANDED) {
+                                                    // No estado 1 (metade ocupada pela fila):
+                                                    // Toque na área livre superior:
+                                                    // - Se arrastar para baixo: recolhe a fila para COLLAPSED
+                                                    // - Se arrastar forte para cima: expande a fila para EXPANDED
+                                                    snapQueueSheet(if (totalDragY > 40f) 1000f else if (totalDragY < -40f) -1000f else 0f)
                                                 }
-                                            },
-                                            onVerticalDrag = { change, dragAmount ->
-                                                change.consume()
-                                                totalDragY += dragAmount
-                                                if (dragAmount < 0 || sheetOffsetY.value < anchorCollapsedY) {
+                                            }
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                        },
+                                        onDragCancel = {
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                            coroutineScope.launch {
+                                                artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                if (playerDismissOffsetY.value > 0f) {
+                                                    playerDismissOffsetY.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 400f))
+                                                }
+                                                val targetY = when (queueState) {
+                                                    QueueExpansionState.COLLAPSED -> anchorCollapsedY
+                                                    QueueExpansionState.HALF_EXPANDED -> anchorHalfExpandedY
+                                                    QueueExpansionState.EXPANDED -> anchorExpandedY
+                                                }
+                                                sheetOffsetY.animateTo(targetY, spring(Spring.DampingRatioNoBouncy, 380f))
+                                            }
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            totalDragX += dragAmount.x
+                                            totalDragY += dragAmount.y
+
+                                            if (!isHorizontalGesture && !isVerticalGesture) {
+                                                if (abs(totalDragX) > 18f && abs(totalDragX) > abs(totalDragY)) {
+                                                    isHorizontalGesture = true
+                                                } else if (abs(totalDragY) > 18f && abs(totalDragY) > abs(totalDragX)) {
+                                                    isVerticalGesture = true
+                                                }
+                                            }
+
+                                            if (isHorizontalGesture) {
+                                                coroutineScope.launch {
+                                                    artworkOffsetX.snapTo(artworkOffsetX.value + dragAmount.x)
+                                                }
+                                            } else if (isVerticalGesture) {
+                                                if (queueState == QueueExpansionState.COLLAPSED) {
+                                                    if (dragAmount.y > 0f && sheetOffsetY.value >= anchorCollapsedY) {
+                                                        // Puxando para baixo com fila fechada -> Desce o Full Player
+                                                        coroutineScope.launch {
+                                                            val nextDismissY = (playerDismissOffsetY.value + dragAmount.y).coerceAtLeast(0f)
+                                                            playerDismissOffsetY.snapTo(nextDismissY)
+                                                        }
+                                                    } else if (playerDismissOffsetY.value > 0f) {
+                                                        // Se já estiver descendo o Full Player
+                                                        coroutineScope.launch {
+                                                            val nextDismissY = (playerDismissOffsetY.value + dragAmount.y).coerceAtLeast(0f)
+                                                            playerDismissOffsetY.snapTo(nextDismissY)
+                                                        }
+                                                    } else {
+                                                        // Puxando para cima -> Sobe a fila suavemente
+                                                        coroutineScope.launch {
+                                                            val newY = (sheetOffsetY.value + dragAmount.y).coerceIn(anchorHalfExpandedY, anchorCollapsedY)
+                                                            sheetOffsetY.snapTo(newY)
+                                                        }
+                                                    }
+                                                } else if (queueState == QueueExpansionState.HALF_EXPANDED) {
+                                                    // Na área superior com fila na metade: arrastar move a fila de volta
                                                     coroutineScope.launch {
-                                                        val newY = (sheetOffsetY.value + dragAmount).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                                        val newY = (sheetOffsetY.value + dragAmount.y).coerceIn(anchorExpandedY, anchorCollapsedY)
                                                         sheetOffsetY.snapTo(newY)
                                                     }
                                                 }
                                             }
-                                        )
-                                    }
+                                        }
+                                    )
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // Cabeçalho Superior estilo YouTube Music
-                            Row(
+                            // Cabeçalho Superior estilo YouTube Music perfeitamente centralizado
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .height(52.dp)
+                                    .padding(top = 2.dp)
+                                    .alpha(headerAlpha)
                             ) {
-                                IconButton(onClick = onDismiss) {
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            playerDismissOffsetY.animateTo(
+                                                targetValue = dismissDistancePx,
+                                                animationSpec = tween(180, easing = FastOutLinearInEasing)
+                                            )
+                                            onDismiss()
+                                            playerDismissOffsetY.snapTo(0f)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.CenterStart)
+                                        .size(44.dp)
+                                ) {
                                     Icon(
                                         imageVector = Icons.Default.KeyboardArrowDown,
                                         contentDescription = stringResource(id = R.string.collapse_player),
@@ -900,11 +1120,12 @@ fun FullPlayerSheet(
                                     )
                                 }
 
-                                // Segmented Pill: [ Música | Canva ]
+                                // Segmented Pill: [ Música | Canva ] matematicamente centralizado
                                 Surface(
                                     shape = RoundedCornerShape(50),
                                     color = Color(0xFF262626),
-                                    border = BorderStroke(0.5.dp, Color(0xFF383838))
+                                    border = BorderStroke(0.5.dp, Color(0xFF383838)),
+                                    modifier = Modifier.align(Alignment.Center)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(2.dp),
@@ -916,14 +1137,14 @@ fun FullPlayerSheet(
                                             modifier = Modifier.clickable { isCanvaSelected = false }
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.MusicNote,
                                                     contentDescription = null,
                                                     tint = if (!isCanvasActive) Color.White else Color.White.copy(alpha = 0.55f),
-                                                    modifier = Modifier.size(15.dp)
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
@@ -942,14 +1163,14 @@ fun FullPlayerSheet(
                                             }
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.PlayArrow,
                                                     contentDescription = null,
                                                     tint = if (isCanvasActive) Color.White else Color.White.copy(alpha = if (hasCanva) 0.55f else 0.25f),
-                                                    modifier = Modifier.size(15.dp)
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
@@ -963,21 +1184,30 @@ fun FullPlayerSheet(
                                     }
                                 }
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(onClick = { /* Cast */ }) {
+                                Row(
+                                    modifier = Modifier.align(Alignment.CenterEnd),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = { /* Cast */ },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.Default.Cast,
                                             contentDescription = "Transmitir",
                                             tint = Color.White.copy(alpha = 0.90f),
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
-                                    IconButton(onClick = { showRelatedSheet = true }) {
+                                    IconButton(
+                                        onClick = { showRelatedSheet = true },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.Default.MoreVert,
                                             contentDescription = "Mais opções",
                                             tint = Color.White.copy(alpha = 0.90f),
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
                                 }
@@ -990,13 +1220,18 @@ fun FullPlayerSheet(
                             } else {
                                 Box(
                                     modifier = Modifier
+                                        .graphicsLayer {
+                                            translationX = artworkOffsetX.value + artworkDismissTranslateXPx
+                                            rotationZ = if (dismissProgress > 0f) 0f else (artworkOffsetX.value / screenWidthPx) * 7f
+                                            alpha = if (dismissProgress > 0f) 1f else (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
+                                        }
                                         .size(currentArtworkSizeDp)
                                         .shadow(
-                                            elevation = (18f * (1f - halfExpansionFraction * 0.5f)).dp,
-                                            shape = RoundedCornerShape(16.dp),
+                                            elevation = ((18f * (1f - halfExpansionFraction * 0.5f)) * (1f - dismissProgress)).dp,
+                                            shape = RoundedCornerShape(artworkCornerRadiusDp),
                                             clip = false
                                         )
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .clip(RoundedCornerShape(artworkCornerRadiusDp))
                                         .background(Color(0xFF262626)),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -1026,6 +1261,7 @@ fun FullPlayerSheet(
                                 exit = fadeOut(animationSpec = tween(200)),
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .alpha(controlsAlpha)
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable { isFullscreenLyricsActive = true }
                                     .padding(bottom = 8.dp)
@@ -1056,7 +1292,9 @@ fun FullPlayerSheet(
                             }
 
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .alpha(controlsAlpha),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 if (isCanvasActive && halfExpansionFraction < 0.35f) {
@@ -1067,20 +1305,28 @@ fun FullPlayerSheet(
                                             .background(Color(0xFF262626)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (!artworkUrl.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = artworkUrl,
-                                                contentDescription = track.title,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.MusicNote,
-                                                contentDescription = null,
-                                                tint = Color.Gray,
-                                                modifier = Modifier.size(26.dp)
-                                            )
+                                        AnimatedContent(
+                                            targetState = artworkUrl,
+                                            transitionSpec = {
+                                                fadeIn(animationSpec = tween(250)) togetherWith fadeOut(animationSpec = tween(200), targetAlpha = 0.25f)
+                                            },
+                                            label = "CanvasMiniCoverTransition"
+                                        ) { currentArt ->
+                                            if (!currentArt.isNullOrEmpty()) {
+                                                AsyncImage(
+                                                    model = currentArt,
+                                                    contentDescription = track.title,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = Color.Gray,
+                                                    modifier = Modifier.size(26.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
@@ -1103,14 +1349,23 @@ fun FullPlayerSheet(
                                                 .clickable { showRelatedSheet = true }
                                                 .padding(vertical = 2.dp)
                                         ) {
-                                            Text(
-                                                text = track.title,
-                                                fontSize = (if (isCanvasActive) 20f else (22f - (4f * halfExpansionFraction))).sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White,
-                                                maxLines = 1,
-                                                modifier = Modifier.basicMarquee()
-                                            )
+                                            AnimatedContent(
+                                                targetState = track.title,
+                                                transitionSpec = {
+                                                    (fadeIn(animationSpec = tween(220)) + slideInHorizontally(animationSpec = tween(220)) { it / 6 })
+                                                        .togetherWith(fadeOut(animationSpec = tween(160)) + slideOutHorizontally(animationSpec = tween(160)) { -it / 6 })
+                                                },
+                                                label = "TrackTitleTransition"
+                                            ) { currentTitle ->
+                                                Text(
+                                                    text = currentTitle,
+                                                    fontSize = (if (isCanvasActive) 20f else (22f - (4f * halfExpansionFraction))).sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    modifier = Modifier.basicMarquee()
+                                                )
+                                            }
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Icon(
                                                 imageVector = Icons.Default.ChevronRight,
@@ -1123,25 +1378,33 @@ fun FullPlayerSheet(
 
                                     Spacer(modifier = Modifier.height(2.dp))
 
-                                    Text(
-                                        text = track.artist,
-                                        fontSize = (15f - (2f * halfExpansionFraction)).sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color.White.copy(alpha = 0.72f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .clickable {
-                                                val bId = track.artistBrowseId
-                                                if (!bId.isNullOrBlank()) {
-                                                    onOpenArtist(bId)
-                                                } else {
-                                                    onOpenArtist(track.artist)
+                                    AnimatedContent(
+                                        targetState = track.artist,
+                                        transitionSpec = {
+                                            fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(160))
+                                        },
+                                        label = "TrackArtistTransition"
+                                    ) { currentArtist ->
+                                        Text(
+                                            text = currentArtist,
+                                            fontSize = (15f - (2f * halfExpansionFraction)).sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.White.copy(alpha = 0.72f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable {
+                                                    val bId = track.artistBrowseId
+                                                    if (!bId.isNullOrBlank()) {
+                                                        onOpenArtist(bId)
+                                                    } else {
+                                                        onOpenArtist(track.artist)
+                                                    }
                                                 }
-                                            }
-                                            .padding(vertical = 2.dp)
-                                    )
+                                                .padding(vertical = 2.dp)
+                                        )
+                                    }
                                 }
                             }
 
@@ -1158,14 +1421,14 @@ fun FullPlayerSheet(
                                     onToggleDownload = { onToggleDownload(track.id) },
                                     downloadProgress = downloadProgress,
                                     onToggleLyrics = { isFullscreenLyricsActive = !isFullscreenLyricsActive },
-                                    modifier = Modifier.alpha((1f - halfExpansionFraction * 2.8f).coerceIn(0f, 1f))
+                                    modifier = Modifier.alpha(((1f - halfExpansionFraction * 2.8f) * controlsAlpha).coerceIn(0f, 1f))
                                 )
                             }
 
                             Spacer(modifier = Modifier.height((12f * (1f - halfExpansionFraction * 0.5f)).dp))
 
                             // Barra de Progresso Interativa + Tempos MM:SS (100% visível no Estado 0 e Estado 1)
-                            Column(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.fillMaxWidth().alpha(controlsAlpha)) {
                                 Slider(
                                     value = displayedFraction,
                                     onValueChange = { newFraction ->
@@ -1191,10 +1454,22 @@ fun FullPlayerSheet(
                                             modifier = Modifier.size(24.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
+                                            val thumbScale by animateFloatAsState(
+                                                targetValue = if (isDraggingSlider) 1.55f else 1.0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = 500f
+                                                ),
+                                                label = "ThumbScale"
+                                            )
                                             Box(
                                                 modifier = Modifier
-                                                    .size(if (isDraggingSlider) 13.dp else 9.dp)
-                                                    .shadow(elevation = 2.dp, shape = CircleShape, clip = false)
+                                                    .size(9.dp)
+                                                    .graphicsLayer {
+                                                        scaleX = thumbScale
+                                                        scaleY = thumbScale
+                                                    }
+                                                    .shadow(elevation = if (isDraggingSlider) 6.dp else 2.dp, shape = CircleShape, clip = false)
                                                     .clip(CircleShape)
                                                     .background(Color.White)
                                             )
@@ -1269,8 +1544,35 @@ fun FullPlayerSheet(
                             val sideButtonSize = (48f - (8f * halfExpansionFraction)).dp
                             val modeButtonSize = (40f - (6f * halfExpansionFraction)).dp
 
+                            val playInteractionSource = remember { MutableInteractionSource() }
+                            val isPlayPressed by playInteractionSource.collectIsPressedAsState()
+                            val playScale by animateFloatAsState(
+                                targetValue = if (isPlayPressed) 0.88f else 1.0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = 500f
+                                ),
+                                label = "PlayButtonScale"
+                            )
+
+                            val prevInteractionSource = remember { MutableInteractionSource() }
+                            val isPrevPressed by prevInteractionSource.collectIsPressedAsState()
+                            val prevScale by animateFloatAsState(
+                                targetValue = if (isPrevPressed) 0.88f else 1.0f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
+                                label = "PrevButtonScale"
+                            )
+
+                            val nextInteractionSource = remember { MutableInteractionSource() }
+                            val isNextPressed by nextInteractionSource.collectIsPressedAsState()
+                            val nextScale by animateFloatAsState(
+                                targetValue = if (isNextPressed) 0.88f else 1.0f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
+                                label = "NextButtonScale"
+                            )
+
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().alpha(controlsAlpha),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1294,7 +1596,13 @@ fun FullPlayerSheet(
                                 // 2. Anterior (SkipPrevious)
                                 FilledTonalIconButton(
                                     onClick = onSkipPrevious,
-                                    modifier = Modifier.size(sideButtonSize),
+                                    modifier = Modifier
+                                        .size(sideButtonSize)
+                                        .graphicsLayer {
+                                            scaleX = prevScale
+                                            scaleY = prevScale
+                                        },
+                                    interactionSource = prevInteractionSource,
                                     shape = CircleShape,
                                     colors = IconButtonDefaults.filledTonalIconButtonColors(
                                         containerColor = Color(0xFF262626),
@@ -1311,7 +1619,13 @@ fun FullPlayerSheet(
                                 // 3. Play/Pause (maior)
                                 Surface(
                                     onClick = onTogglePlay,
-                                    modifier = Modifier.size(mainPlayButtonSize),
+                                    modifier = Modifier
+                                        .size(mainPlayButtonSize)
+                                        .graphicsLayer {
+                                            scaleX = playScale
+                                            scaleY = playScale
+                                        },
+                                    interactionSource = playInteractionSource,
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.primary,
                                     shadowElevation = 8.dp
@@ -1341,7 +1655,13 @@ fun FullPlayerSheet(
                                 // 4. Próxima (SkipNext)
                                 FilledTonalIconButton(
                                     onClick = onSkipNext,
-                                    modifier = Modifier.size(sideButtonSize),
+                                    modifier = Modifier
+                                        .size(sideButtonSize)
+                                        .graphicsLayer {
+                                            scaleX = nextScale
+                                            scaleY = nextScale
+                                        },
+                                    interactionSource = nextInteractionSource,
                                     shape = CircleShape,
                                     colors = IconButtonDefaults.filledTonalIconButtonColors(
                                         containerColor = Color(0xFF262626),
@@ -1405,6 +1725,7 @@ fun FullPlayerSheet(
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
+                            .alpha(queueDrawerAlpha)
                             .offset { IntOffset(0, currentSheetY.roundToInt()) },
                         shape = RoundedCornerShape(
                             topStart = 24.dp,
@@ -1453,17 +1774,82 @@ fun FullPlayerSheet(
                                         )
                                     }
 
-                                    // 3. LazyColumn com as músicas da fila (com fade gradiente suave no topo)
+                                    // 3. LazyColumn com as músicas da fila (com fade gradiente suave no topo e nested scroll conectado)
                                     QueueTrackList(
                                         queue = state.queue,
                                         currentQueueIndex = state.currentQueueIndex,
                                         isPlaying = state.isPlaying,
+                                        listState = queueLazyListState,
                                         onPlayQueueItem = onPlayQueueItem,
                                         onMoveQueueItem = onMoveQueueItem,
                                         onRemoveQueueItem = onRemoveQueueItem,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .weight(1f)
+                                            .nestedScroll(queueNestedScrollConnection)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // =========================================================================
+                    // DOCKED MINI-PLAYER METADATA (Revela suavemente enquanto a capa pousa na barra)
+                    // =========================================================================
+                    if (miniPlayerRevealAlpha > 0.01f) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .alpha(miniPlayerRevealAlpha)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .padding(start = 70.dp, end = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = track.title,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        modifier = Modifier.basicMarquee()
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = track.artist,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                IconButton(onClick = onTogglePlay) {
+                                    Icon(
+                                        imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (state.isPlaying) "Pausar" else "Reproduzir",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+
+                                IconButton(onClick = onSkipNext) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipNext,
+                                        contentDescription = stringResource(id = R.string.next_track),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(28.dp)
                                     )
                                 }
                             }
@@ -1820,6 +2206,7 @@ private fun QueueTrackList(
     queue: List<Track>,
     currentQueueIndex: Int,
     isPlaying: Boolean,
+    listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
     onPlayQueueItem: (Int) -> Unit,
     onMoveQueueItem: (Int, Int) -> Unit,
     onRemoveQueueItem: (Int) -> Unit,
@@ -1835,6 +2222,7 @@ private fun QueueTrackList(
     val currentMoveCallback by rememberUpdatedState(onMoveQueueItem)
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -2041,11 +2429,13 @@ private fun QueueTrackRow(
                             .background(Color.Black.copy(alpha = 0.55f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                        AnimatedEqualizerBars(
+                            isPlaying = isPlaying,
+                            barColor = Color.White,
+                            barCount = 3,
+                            barWidth = 2.5.dp,
+                            barSpacing = 2.dp,
+                            maxHeight = 16.dp
                         )
                     }
                 }

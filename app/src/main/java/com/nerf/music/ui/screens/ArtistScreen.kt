@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.GraphicEq
+import com.nerf.music.ui.components.AnimatedEqualizerBars
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
@@ -180,11 +181,12 @@ fun ArtistScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 currentArtist.topSongs.forEachIndexed { index, track ->
-                                    val isPlaying = track.id == playbackState.currentTrack?.id
+                                    val isCurrent = track.id == playbackState.currentTrack?.id
                                     ArtistTopSongRow(
                                         trackNumber = index + 1,
                                         track = track,
-                                        isPlaying = isPlaying,
+                                        isCurrentTrack = isCurrent,
+                                        isPlaying = isCurrent && playbackState.isPlaying,
                                         onClick = { viewModel.playTrack(track) }
                                     )
                                 }
@@ -211,7 +213,7 @@ fun ArtistScreen(
                                     items(libraryTracks, key = { "lib_${it.id}" }) { track ->
                                         HomeSongCard(
                                             track = track,
-                                            isPlaying = track.id == playbackState.currentTrack?.id,
+                                            isPlaying = track.id == playbackState.currentTrack?.id && playbackState.isPlaying,
                                             onClick = { viewModel.playTrack(track) }
                                         )
                                     }
@@ -295,7 +297,7 @@ fun ArtistScreen(
                                     items(currentArtist.videos, key = { it.id }) { videoTrack ->
                                         ArtistVideoCard(
                                             track = videoTrack,
-                                            isPlaying = videoTrack.id == playbackState.currentTrack?.id,
+                                            isPlaying = videoTrack.id == playbackState.currentTrack?.id && playbackState.isPlaying,
                                             onClick = { viewModel.playTrack(videoTrack) }
                                         )
                                     }
@@ -549,6 +551,7 @@ private fun ArtistHeroHeader(
 private fun ArtistTopSongRow(
     trackNumber: Int,
     track: Track,
+    isCurrentTrack: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -565,12 +568,14 @@ private fun ArtistTopSongRow(
             modifier = Modifier.width(28.dp),
             contentAlignment = Alignment.CenterStart
         ) {
-            if (isPlaying) {
-                Icon(
-                    imageVector = Icons.Default.GraphicEq,
-                    contentDescription = "Tocando",
-                    tint = OrangeSecondary,
-                    modifier = Modifier.size(18.dp)
+            if (isCurrentTrack) {
+                AnimatedEqualizerBars(
+                    isPlaying = isPlaying,
+                    barColor = OrangeSecondary,
+                    barCount = 3,
+                    barWidth = 2.5.dp,
+                    barSpacing = 1.5.dp,
+                    maxHeight = 15.dp
                 )
             } else {
                 Text(
@@ -697,12 +702,23 @@ private fun ArtistVideoCard(
                     .background(Color(0xCC000000)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.GraphicEq else Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = YtmWhite,
-                    modifier = Modifier.size(16.dp)
-                )
+                if (isPlaying) {
+                    AnimatedEqualizerBars(
+                        isPlaying = isPlaying,
+                        barColor = YtmWhite,
+                        barCount = 3,
+                        barWidth = 2.5.dp,
+                        barSpacing = 1.5.dp,
+                        maxHeight = 14.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = YtmWhite,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
 
