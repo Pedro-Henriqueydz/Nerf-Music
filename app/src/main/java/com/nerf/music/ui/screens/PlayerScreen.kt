@@ -84,6 +84,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -1381,70 +1382,81 @@ fun FullPlayerSheet(
                 val isSheetExpandedOrDragging = halfExpansionFraction > 0.02f || queueState != QueueExpansionState.COLLAPSED
                 val queueSourceText = state.queueSourceTitle?.takeIf { it.isNotBlank() } ?: track.title
 
+                // Fundo gradiente dinâmico da fila adaptado à cor da capa da música (targetPaletteColor):
+                // A parte superior é translúcida/semi-transparente permitindo que o brilho e ambiência
+                // da capa no fundo do player vazem de forma suave e elegante (estilo oficial YouTube Music)
+                val queueSheetBackgroundBrush = Brush.verticalGradient(
+                    0.0f to targetPaletteColor.copy(alpha = 0.52f + 0.16f * fullExpansionFraction),
+                    0.09f to targetPaletteColor.copy(alpha = 0.32f).compositeOver(Color(0xFF141414).copy(alpha = 0.82f)),
+                    0.24f to Color(0xFF121212).copy(alpha = 0.94f),
+                    1.0f to Color(0xFF090909)
+                )
+
                 if (!isFullscreenLyricsActive) {
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
                             .offset { IntOffset(0, currentSheetY.roundToInt()) },
                         shape = RoundedCornerShape(
-                            topStart = 20.dp,
-                            topEnd = 20.dp
+                            topStart = 24.dp,
+                            topEnd = 24.dp
                         ),
-                        color = if (isSheetExpandedOrDragging) {
-                            Color(0xFF1E1E1E)
-                        } else {
-                            Color(0xFF1E1E1E).copy(alpha = 0.90f)
-                        },
-                        tonalElevation = if (isSheetExpandedOrDragging) 12.dp else 4.dp,
-                        shadowElevation = if (isSheetExpandedOrDragging) 16.dp else 6.dp
+                        color = Color.Transparent,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
                     ) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            // 1. DragHandle e cabeçalho ("Tocando de" + botão "+ Salvar")
-                            QueueDragHeader(
-                                queueSourceTitle = queueSourceText,
-                                isExpanded = isSheetExpandedOrDragging,
-                                onSaveQueue = { onToggleSave(track.id) },
-                                modifier = Modifier.draggable(
-                                    orientation = Orientation.Vertical,
-                                    state = queueSheetDraggableState,
-                                    onDragStopped = { velocity -> snapQueueSheet(velocity) }
-                                )
-                            )
-
-                            if (isSheetExpandedOrDragging) {
-                                HorizontalDivider(color = Color(0xFF2E2E2E), thickness = 0.5.dp)
-
-                                // 2. LazyRow com os Chips de filtro
-                                if (state.queueFilterChips.isNotEmpty()) {
-                                    QueueFilterChipsRow(
-                                        chips = state.queueFilterChips,
-                                        selectedChipParams = state.selectedQueueChipParams,
-                                        onSelectChip = onSelectQueueChip
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                                .background(queueSheetBackgroundBrush)
+                        ) {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // 1. DragHandle e cabeçalho ("Tocando de" + botão "+ Salvar")
+                                QueueDragHeader(
+                                    queueSourceTitle = queueSourceText,
+                                    isExpanded = isSheetExpandedOrDragging,
+                                    onSaveQueue = { onToggleSave(track.id) },
+                                    modifier = Modifier.draggable(
+                                        orientation = Orientation.Vertical,
+                                        state = queueSheetDraggableState,
+                                        onDragStopped = { velocity -> snapQueueSheet(velocity) }
                                     )
-                                }
+                                )
 
-                                if (state.isLoadingQueueRadio) {
-                                    LinearProgressIndicator(
+                                if (isSheetExpandedOrDragging) {
+                                    // 2. LazyRow com os Chips de filtro
+                                    if (state.queueFilterChips.isNotEmpty()) {
+                                        QueueFilterChipsRow(
+                                            chips = state.queueFilterChips,
+                                            selectedChipParams = state.selectedQueueChipParams,
+                                            onSelectChip = onSelectQueueChip
+                                        )
+                                    }
+
+                                    if (state.isLoadingQueueRadio) {
+                                        LinearProgressIndicator(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(2.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            trackColor = Color.Transparent
+                                        )
+                                    }
+
+                                    // 3. LazyColumn com as músicas da fila (com fade gradiente suave no topo)
+                                    QueueTrackList(
+                                        queue = state.queue,
+                                        currentQueueIndex = state.currentQueueIndex,
+                                        isPlaying = state.isPlaying,
+                                        onPlayQueueItem = onPlayQueueItem,
+                                        onMoveQueueItem = onMoveQueueItem,
+                                        onRemoveQueueItem = onRemoveQueueItem,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(2.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        trackColor = Color.Transparent
+                                            .weight(1f)
                                     )
                                 }
-
-                                // 3. LazyColumn com as músicas da fila (arraste e reordenação)
-                                QueueTrackList(
-                                    queue = state.queue,
-                                    currentQueueIndex = state.currentQueueIndex,
-                                    isPlaying = state.isPlaying,
-                                    onPlayQueueItem = onPlayQueueItem,
-                                    onMoveQueueItem = onMoveQueueItem,
-                                    onRemoveQueueItem = onRemoveQueueItem,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f)
-                                )
                             }
                         }
                     }
@@ -1651,7 +1663,7 @@ private fun QueueDragHeader(
                 .width(36.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color(0xFF757575))
+                .background(Color.White.copy(alpha = 0.35f))
         )
 
         Row(
@@ -1684,8 +1696,8 @@ private fun QueueDragHeader(
                 Surface(
                     onClick = onSaveQueue,
                     shape = RoundedCornerShape(50),
-                    color = Color(0xFF2A2A2A),
-                    border = BorderStroke(1.dp, Color(0xFF3E3E3E))
+                    color = Color.White.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -1753,18 +1765,18 @@ private fun QueueFilterChipsRow(
                 },
                 shape = RoundedCornerShape(50),
                 colors = FilterChipDefaults.filterChipColors(
-                    containerColor = Color(0xFF252525),
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
-                    selectedLabelColor = MaterialTheme.colorScheme.primary
+                    containerColor = Color.White.copy(alpha = 0.08f),
+                    labelColor = Color.White,
+                    selectedContainerColor = Color.White,
+                    selectedLabelColor = Color.Black
                 ),
                 border = FilterChipDefaults.filterChipBorder(
                     enabled = true,
                     selected = isSelected,
-                    borderColor = Color(0xFF383838),
-                    selectedBorderColor = MaterialTheme.colorScheme.primary,
+                    borderColor = Color.White.copy(alpha = 0.14f),
+                    selectedBorderColor = Color.Transparent,
                     borderWidth = 1.dp,
-                    selectedBorderWidth = 1.dp
+                    selectedBorderWidth = 0.dp
                 )
             )
         }
@@ -1800,9 +1812,23 @@ private fun QueueTrackList(
     val currentMoveCallback by rememberUpdatedState(onMoveQueueItem)
 
     LazyColumn(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0.0f to Color.Transparent,
+                        0.035f to Color.Black,
+                        0.975f to Color.Black,
+                        1.0f to Color.Transparent
+                    ),
+                    blendMode = BlendMode.DstIn
+                )
+            },
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         itemsIndexed(
             items = queue,
@@ -1937,19 +1963,19 @@ private fun QueueTrackRow(
             .then(
                 if (isCurrent || isBeingDragged) {
                     Modifier.border(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(10.dp)
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(12.dp)
                     )
                 } else {
                     Modifier
                 }
             ),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
-                isBeingDragged -> Color(0xFF303030)
-                isCurrent -> Color(0xFF262626)
+                isBeingDragged -> Color(0xFF333333)
+                isCurrent -> Color.White.copy(alpha = 0.10f)
                 else -> Color.Transparent
             }
         )
@@ -1995,7 +2021,7 @@ private fun QueueTrackRow(
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = Color.White,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -2010,7 +2036,7 @@ private fun QueueTrackRow(
                     text = track.title,
                     fontSize = 14.sp,
                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -2049,7 +2075,7 @@ private fun QueueTrackRow(
                 Icon(
                     imageVector = Icons.Default.DragHandle,
                     contentDescription = "Segure e arraste para reordenar",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = Color.White.copy(alpha = 0.40f),
                     modifier = Modifier.size(22.dp)
                 )
             }
