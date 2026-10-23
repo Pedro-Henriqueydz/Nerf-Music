@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
+import com.nerf.music.ui.components.AnimatedEqualizerBars
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -148,11 +149,12 @@ fun AlbumScreen(
 
                     // 2. Lista numerada de faixas
                     itemsIndexed(currentAlbum.tracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
-                        val isCurrentPlaying = track.id == playbackState.currentTrack?.id
+                        val isCurrent = track.id == playbackState.currentTrack?.id
                         AlbumTrackRow(
                             trackNumber = index + 1,
                             track = track,
-                            isPlaying = isCurrentPlaying,
+                            isCurrentTrack = isCurrent,
+                            isPlaying = isCurrent && playbackState.isPlaying,
                             onClick = {
                                 viewModel.playAlbum(currentAlbum, startIndex = index)
                             }
@@ -438,6 +440,7 @@ private fun AlbumHeroHeader(
 private fun AlbumTrackRow(
     trackNumber: Int,
     track: Track,
+    isCurrentTrack: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -449,17 +452,19 @@ private fun AlbumTrackRow(
             .padding(vertical = 10.dp, horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Número da faixa ou ícone de Equalizador se estiver tocando
+        // Número da faixa ou ícone de Equalizador se estiver selecionada/tocando
         Box(
             modifier = Modifier.width(32.dp),
             contentAlignment = Alignment.CenterStart
         ) {
-            if (isPlaying) {
-                Icon(
-                    imageVector = Icons.Default.GraphicEq,
-                    contentDescription = "Tocando",
-                    tint = OrangeSecondary,
-                    modifier = Modifier.size(18.dp)
+            if (isCurrentTrack) {
+                AnimatedEqualizerBars(
+                    isPlaying = isPlaying,
+                    barColor = OrangeSecondary,
+                    barCount = 3,
+                    barWidth = 2.5.dp,
+                    barSpacing = 1.5.dp,
+                    maxHeight = 14.dp
                 )
             } else {
                 Text(
@@ -484,7 +489,7 @@ private fun AlbumTrackRow(
                 fontFamily = YouTubeSansFontFamily,
                 fontWeight = FontWeight.Medium,
                 fontSize = 15.sp,
-                color = if (isPlaying) OrangeSecondary else YtmWhite,
+                color = if (isCurrentTrack) OrangeSecondary else YtmWhite,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

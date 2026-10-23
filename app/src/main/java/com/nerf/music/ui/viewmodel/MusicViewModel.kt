@@ -1021,6 +1021,26 @@ class MusicViewModel(
         }
     }
 
+    /**
+     * Pula imediatamente para a faixa anterior (usado em gestos de swipe),
+     * sem reiniciar a música atual mesmo se ela estiver após 3 segundos.
+     */
+    fun forceSkipPrevious() {
+        val controller = mediaController ?: return
+        val count = controller.mediaItemCount
+        if (count <= 0) return
+
+        if (controller.hasPreviousMediaItem()) {
+            controller.seekToPreviousMediaItem()
+            controller.play()
+        } else if (count > 1) {
+            controller.seekToDefaultPosition(count - 1)
+            controller.play()
+        } else {
+            seekTo(0L)
+        }
+    }
+
     fun seekTo(positionMs: Long) {
         val targetPos = positionMs.coerceAtLeast(0L)
         _playbackState.value = _playbackState.value.copy(currentPositionMs = targetPos)
