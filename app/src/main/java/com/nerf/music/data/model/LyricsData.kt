@@ -13,5 +13,6 @@ data class LyricsData(
     val trackId: String,
     val isSynced: Boolean,
     val plainLyrics: String? = null,
-    val syncedLines: List<SyncedLyricsLine> = emptyList()
+    val syncedLines: List<SyncedLyricsLine> = emptyList(),
+    val source: String = "LRCLIB"
 )

@@ -1,4 +1,4 @@
-﻿package com.nerf.music.data.network
+package com.nerf.music.data.network
 
 import com.nerf.music.data.model.AlbumDetail
 import com.nerf.music.data.model.ArtistDetail
@@ -14,6 +14,8 @@ import com.nerf.music.data.model.Track
 import com.nerf.music.data.model.UpNextResult
 import com.nerf.music.data.model.TrackRelatedData
 import com.nerf.music.data.model.RelatedSection
+import com.nerf.music.data.model.LyricsData
+import com.nerf.music.data.model.SyncedLyricsLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -213,6 +215,84 @@ class InnerTubeCatalogClient(
      * Obtém as recomendações e dados relacionados a uma faixa (Related / "Relacionados")
      * via [relatedBrowseId] retornado pelo endpoint /youtubei/v1/next.
      */
+    /**
+     * Obtém as letras oficiais via YouTube Music (parceria com Musixmatch) usando [lyricsBrowseId]
+     * ou resolvendo dinamicamente via [videoId].
+     */
+    suspend fun getTrackLyrics(
+        videoId: String,
+        lyricsBrowseId: String? = null
+    ): Result<LyricsData?> = withContext(Dispatchers.IO) {
+        if (videoId.isBlank()) return@withContext Result.success(null)
+        try {
+            var targetBrowseId = lyricsBrowseId
+            if (targetBrowseId.isNullOrBlank()) {
+                val nextResult = getUpNextRadio(videoId)
+                targetBrowseId = nextResult.getOrNull()?.lyricsBrowseId
+            }
+            if (targetBrowseId.isNullOrBlank()) {
+                return@withContext Result.success(null)
+            }
+            val body = executeBrowseRequest(targetBrowseId, null).getOrNull()
+                ?: return@withContext Result.success(null)
+
+            val parsed = parseLyricsResponse(body, videoId)
+            Result.success(parsed)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun parseLyricsResponse(jsonString: String, videoId: String): LyricsData? {
+        if (jsonString.isBlank()) return null
+        return try {
+            val root = JSONObject(jsonString)
+            val contents = root.optJSONObject("contents") ?: return null
+
+            // Se for messageRenderer (ex: "Letra não disponível")
+            if (contents.has("messageRenderer")) {
+                return null
+            }
+
+            val sectionList = contents.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+            if (sectionList != null) {
+                for (i in 0 until sectionList.length()) {
+                    val item = sectionList.optJSONObject(i) ?: continue
+                    val shelf = item.optJSONObject("musicDescriptionShelfRenderer") ?: continue
+                    val runs = shelf.optJSONObject("description")?.optJSONArray("runs") ?: continue
+                    val textBuilder = StringBuilder()
+                    for (r in 0 until runs.length()) {
+                        val runObj = runs.optJSONObject(r)
+                        textBuilder.append(runObj?.optString("text").orEmpty())
+                    }
+                    val fullText = textBuilder.toString().trim()
+                    if (fullText.isNotBlank()) {
+                        val footerRuns = shelf.optJSONObject("footer")?.optJSONArray("runs")
+                        val footerBuilder = StringBuilder()
+                        if (footerRuns != null) {
+                            for (f in 0 until footerRuns.length()) {
+                                footerBuilder.append(footerRuns.optJSONObject(f)?.optString("text").orEmpty())
+                            }
+                        }
+                        val footer = footerBuilder.toString().trim()
+                        val sourceName = if (footer.isNotBlank()) "YouTube Music ($footer)" else "YouTube Music"
+
+                        return LyricsData(
+                            trackId = videoId,
+                            isSynced = false,
+                            plainLyrics = fullText,
+                            syncedLines = emptyList(),
+                            source = sourceName
+                        )
+                    }
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun getTrackRelated(relatedBrowseId: String): Result<TrackRelatedData> = withContext(Dispatchers.IO) {
         if (relatedBrowseId.isBlank()) {
             return@withContext Result.success(TrackRelatedData())

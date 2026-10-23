@@ -2267,6 +2267,18 @@ private fun AppleMusicLyricsView(
                                 .padding(vertical = 12.dp)
                         )
                     }
+                    item {
+                        Text(
+                            text = "Fonte: ${lyrics!!.source}",
+                            fontFamily = SfProFontFamily,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.40f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 24.dp, bottom = 8.dp)
+                        )
+                    }
                 }
             } else if (hasPlainLyrics) {
                 LazyColumn(
@@ -2281,6 +2293,15 @@ private fun AppleMusicLyricsView(
                             fontSize = 20.sp,
                             lineHeight = 32.sp,
                             color = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = "Fonte: ${lyrics.source}",
+                            fontFamily = SfProFontFamily,
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.40f),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
