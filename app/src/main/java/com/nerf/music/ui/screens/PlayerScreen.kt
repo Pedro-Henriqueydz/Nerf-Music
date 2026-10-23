@@ -109,6 +109,8 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.nerf.music.R
 import android.content.Context
+import android.view.LayoutInflater
+import androidx.compose.ui.draw.scale
 import android.media.AudioManager
 import android.content.BroadcastReceiver
 import android.content.Intent
@@ -487,24 +489,21 @@ fun FullPlayerSheet(
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
+            // =========================================================================
+            // FUNDO: Canvas ou Capa Ampliada com Desfoque Profundo (Efeito Aurora Apple Music)
+            // =========================================================================
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .blur(if (isFullscreenLyricsActive) 45.dp else 0.dp)
+                    .blur(if (isFullscreenLyricsActive) 55.dp else 0.dp)
             ) {
                 if (isCanvasActive && canvasPlayer != null) {
                     key(canvasVideoUrl) {
                         AndroidView(
                             factory = { ctx ->
-                                PlayerView(ctx).apply {
-                                    useController = false
-                                    player = canvasPlayer
-                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                    layoutParams = android.view.ViewGroup.LayoutParams(
-                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
-                                }
+                                val view = LayoutInflater.from(ctx).inflate(R.layout.canvas_player_view, null) as PlayerView
+                                view.player = canvasPlayer
+                                view
                             },
                             update = { playerView ->
                                 if (playerView.player != canvasPlayer) {
@@ -520,28 +519,58 @@ fun FullPlayerSheet(
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.Black.copy(alpha = 0.5f),
+                                        Color.Black.copy(alpha = 0.45f),
                                         Color.Transparent,
-                                        Color.Black.copy(alpha = 0.6f),
+                                        Color.Black.copy(alpha = 0.60f),
                                         Color.Black.copy(alpha = 0.95f)
                                     )
                                 )
                             )
                     )
                 } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(backgroundBrush)
-                    )
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (!artworkUrl.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = artworkUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .scale(1.25f)
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            animatedTopColor.copy(alpha = 0.70f),
+                                            Color(0xFF141414).copy(alpha = 0.85f),
+                                            Color(0xFF0F0F0F)
+                                        )
+                                    )
+                                )
+                        )
+                    }
                 }
             }
 
+            // Overlay escuro suave que deixa as cores fluírem com destaque para o texto das letras
             if (isFullscreenLyricsActive) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.55f))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.35f),
+                                    Color.Black.copy(alpha = 0.15f),
+                                    Color.Black.copy(alpha = 0.50f),
+                                    Color.Black.copy(alpha = 0.80f)
+                                )
+                            )
+                        )
                 )
             }
 
@@ -2056,13 +2085,21 @@ private fun AppleMusicLyricsView(
         listState.scrollToItem(0, 0)
     }
 
-    // Auto-scroll suave acompanhando o verso ativo (centralizado verticalmente)
+    // Auto-scroll inteligente: se a distância for grande (ex: voltando do background), faz snap direto
     LaunchedEffect(activeIndex) {
         if (activeIndex >= 0) {
-            listState.animateScrollToItem(
-                index = activeIndex,
-                scrollOffset = -220
-            )
+            val currentIndex = listState.firstVisibleItemIndex
+            if (kotlin.math.abs(activeIndex - currentIndex) > 3) {
+                listState.scrollToItem(
+                    index = activeIndex,
+                    scrollOffset = -220
+                )
+            } else {
+                listState.animateScrollToItem(
+                    index = activeIndex,
+                    scrollOffset = -220
+                )
+            }
         }
     }
 
