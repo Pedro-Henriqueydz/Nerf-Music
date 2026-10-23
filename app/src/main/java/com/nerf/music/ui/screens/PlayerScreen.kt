@@ -503,14 +503,15 @@ fun FullPlayerSheet(
     }
 
     val playerDismissOffsetY = remember { Animatable(0f) }
-    val dismissProgress = (playerDismissOffsetY.value / 320f).coerceIn(0f, 1f)
+    // A animação de dismiss vai de 0f até 1f (onde 1f é a ancoragem completa no miniplayer)
+    val dismissProgress = (playerDismissOffsetY.value / 280f).coerceIn(0f, 1f)
     val dismissCornerRadius = (dismissProgress * 20f).dp
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
-                translationY = playerDismissOffsetY.value
+                translationY = playerDismissOffsetY.value * 0.40f
                 shape = RoundedCornerShape(
                     topStart = dismissCornerRadius,
                     topEnd = dismissCornerRadius,
@@ -660,19 +661,35 @@ fun FullPlayerSheet(
                     0f
                 }
 
-                // Tamanho dinâmico da capa 1:1 sem lag (120Hz fluido):
+                // Tamanho dinâmico da capa 1:1 estilo YouTube Music:
+                // - Com a fila recolhida: base de ~300dp
                 // - Ao abrir a fila: encolhe para 135dp
-                // - Ao arrastar para baixo: encolhe dinamicamente em direção a 48dp (tamanho da capa do Mini Player)
+                // - Ao arrastar para baixo para fechar o player: a capa encolhe em direção a 48dp
                 val screenWidthDp = with(density) { constraints.maxWidth.toDp() }
                 val screenWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
                 val artworkOffsetX = remember { Animatable(0f) }
                 val maxArtworkSizeDp = (screenWidthDp - 48.dp).coerceIn(290.dp, 330.dp)
                 val minArtworkSizeDp = 135.dp
-                val currentArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
-                val artworkCornerRadiusDp = 16.dp
-                val controlsAlpha = (1f - dismissProgress * 1.5f).coerceIn(0f, 1f)
-                val headerAlpha = (1f - dismissProgress * 1.5f).coerceIn(0f, 1f)
-                val queueDrawerAlpha = (1f - dismissProgress * 2.0f).coerceIn(0f, 1f)
+                val baseArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
+                val currentArtworkSizeDp = if (dismissProgress > 0f) {
+                    baseArtworkSizeDp - ((baseArtworkSizeDp - 48.dp) * dismissProgress)
+                } else {
+                    baseArtworkSizeDp
+                }
+                val artworkCornerRadiusDp = (16f - (8f * dismissProgress)).dp
+                // Deslocamento horizontal da capa para pousar alinhada à esquerda do miniplayer (padding inicial 12dp)
+                val targetArtworkTranslateXPx = with(density) {
+                    val fullCenterXPx = constraints.maxWidth / 2f
+                    val miniCenterXPx = 12.dp.toPx() + 24.dp.toPx()
+                    miniCenterXPx - fullCenterXPx
+                }
+                val artworkDismissTranslateXPx = targetArtworkTranslateXPx * dismissProgress
+
+                // Controles e botões do player desvanecem rapidamente no início da descida
+                val controlsAlpha = (1f - dismissProgress * 3.5f).coerceIn(0f, 1f)
+                val headerAlpha = (1f - dismissProgress * 3.5f).coerceIn(0f, 1f)
+                val queueDrawerAlpha = (1f - dismissProgress * 4.0f).coerceIn(0f, 1f)
+                val miniPlayerRevealAlpha = ((dismissProgress - 0.45f) / 0.55f).coerceIn(0f, 1f)
 
                 // Função para finalizar o gesto de arraste da folha da Fila e ancorar em um dos 3 estados
                 fun snapQueueSheet(velocityY: Float) {
@@ -1206,9 +1223,9 @@ fun FullPlayerSheet(
                                         .clip(RoundedCornerShape(artworkCornerRadiusDp))
                                         .background(Color(0xFF262626))
                                         .graphicsLayer {
-                                            translationX = artworkOffsetX.value
-                                            rotationZ = (artworkOffsetX.value / screenWidthPx) * 7f
-                                            alpha = (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
+                                            translationX = artworkOffsetX.value + artworkDismissTranslateXPx
+                                            rotationZ = if (dismissProgress > 0f) 0f else (artworkOffsetX.value / screenWidthPx) * 7f
+                                            alpha = if (dismissProgress > 0f) 1f else (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -1268,7 +1285,9 @@ fun FullPlayerSheet(
                             }
 
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .alpha(controlsAlpha),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 if (isCanvasActive && halfExpansionFraction < 0.35f) {
@@ -1761,6 +1780,69 @@ fun FullPlayerSheet(
                                             .fillMaxWidth()
                                             .weight(1f)
                                             .nestedScroll(queueNestedScrollConnection)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // =========================================================================
+                    // DOCKED MINI-PLAYER METADATA (Revela suavemente enquanto a capa pousa na barra)
+                    // =========================================================================
+                    if (miniPlayerRevealAlpha > 0.01f) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .alpha(miniPlayerRevealAlpha)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .padding(start = 70.dp, end = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = track.title,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        modifier = Modifier.basicMarquee()
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = track.artist,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                IconButton(onClick = onTogglePlay) {
+                                    Icon(
+                                        imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (state.isPlaying) "Pausar" else "Reproduzir",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+
+                                IconButton(onClick = onSkipNext) {
+                                    Icon(
+                                        imageVector = Icons.Default.SkipNext,
+                                        contentDescription = stringResource(id = R.string.next_track),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(28.dp)
                                     )
                                 }
                             }
