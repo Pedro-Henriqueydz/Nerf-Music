@@ -3,6 +3,7 @@ package com.nerf.music.data.repository
 import android.util.Log
 import com.nerf.music.data.model.LyricsData
 import com.nerf.music.data.model.SyncedLyricsLine
+import com.nerf.music.data.network.InnerTubeCatalogClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -22,7 +23,8 @@ class LyricsRepositoryImpl(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    private val catalogClient: InnerTubeCatalogClient = InnerTubeCatalogClient()
 ) : LyricsRepository {
 
     private val cache = ConcurrentHashMap<String, LyricsData>()
@@ -82,6 +84,12 @@ class LyricsRepositoryImpl(
             if (lyricsData == null && cleanTitle.length >= 3) {
                 Log.d(TAG, "Tentando busca apenas pelo titulo com validacao estrita: '$cleanTitle'")
                 lyricsData = searchLrclib(cleanTitle, trackId, cleanTitle, cleanArtist, primaryArtist, durationSeconds)
+            }
+
+            // 7. Fallback Oficial: Se o LRCLIB não retornou letras válidas, consulta o YouTube Music (Musixmatch)
+            if (lyricsData == null && trackId.isNotBlank() && !trackId.startsWith("playlist_")) {
+                Log.i(TAG, "Tentando busca de letras via fallback do YouTube Music (Musixmatch) para trackId='$trackId'")
+                lyricsData = catalogClient.getTrackLyrics(videoId = trackId).getOrNull()
             }
             Log.i(TAG, "Resultado da busca de letras: isSynced=${lyricsData?.isSynced}, linhas=${lyricsData?.syncedLines?.size}")
 
