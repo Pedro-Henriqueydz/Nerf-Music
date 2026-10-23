@@ -477,13 +477,17 @@ fun FullPlayerSheet(
         }
     }
 
-    LaunchedEffect(state.isPlaying) {
+    val hasCanva = !canvasVideoUrl.isNullOrBlank()
+    var isCanvaSelected by remember(track.id, hasCanva) {
+        mutableStateOf(hasCanva)
+    }
+    val isCanvasActive = hasCanva && isCanvaSelected
+
+    LaunchedEffect(state.isPlaying, isCanvasActive) {
         canvasPlayer?.let { cp ->
-            if (state.isPlaying) cp.play() else cp.pause()
+            if (state.isPlaying && isCanvasActive) cp.play() else cp.pause()
         }
     }
-
-    val isCanvasActive = !canvasVideoUrl.isNullOrBlank()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -896,7 +900,7 @@ fun FullPlayerSheet(
                                     )
                                 }
 
-                                // Segmented Pill: [ Música | Vídeo ]
+                                // Segmented Pill: [ Música | Canva ]
                                 Surface(
                                     shape = RoundedCornerShape(50),
                                     color = Color(0xFF262626),
@@ -909,7 +913,7 @@ fun FullPlayerSheet(
                                         Surface(
                                             shape = RoundedCornerShape(50),
                                             color = if (!isCanvasActive) Color(0xFF3E3E3E) else Color.Transparent,
-                                            modifier = Modifier.clickable { /* Audio mode */ }
+                                            modifier = Modifier.clickable { isCanvaSelected = false }
                                         ) {
                                             Row(
                                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
@@ -933,7 +937,9 @@ fun FullPlayerSheet(
                                         Surface(
                                             shape = RoundedCornerShape(50),
                                             color = if (isCanvasActive) Color(0xFF3E3E3E) else Color.Transparent,
-                                            modifier = Modifier.clickable { /* Video/Canvas mode */ }
+                                            modifier = Modifier.clickable(enabled = hasCanva) {
+                                                if (hasCanva) isCanvaSelected = true
+                                            }
                                         ) {
                                             Row(
                                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
@@ -942,15 +948,15 @@ fun FullPlayerSheet(
                                                 Icon(
                                                     imageVector = Icons.Default.PlayArrow,
                                                     contentDescription = null,
-                                                    tint = if (isCanvasActive) Color.White else Color.White.copy(alpha = 0.55f),
+                                                    tint = if (isCanvasActive) Color.White else Color.White.copy(alpha = if (hasCanva) 0.55f else 0.25f),
                                                     modifier = Modifier.size(15.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    text = "Vídeo",
+                                                    text = "Canva",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Medium,
-                                                    color = if (isCanvasActive) Color.White else Color.White.copy(alpha = 0.55f)
+                                                    color = if (isCanvasActive) Color.White else Color.White.copy(alpha = if (hasCanva) 0.55f else 0.25f)
                                                 )
                                             }
                                         }
@@ -1382,15 +1388,18 @@ fun FullPlayerSheet(
                 val isSheetExpandedOrDragging = halfExpansionFraction > 0.02f || queueState != QueueExpansionState.COLLAPSED
                 val queueSourceText = state.queueSourceTitle?.takeIf { it.isNotBlank() } ?: track.title
 
-                // Fundo gradiente dinâmico da fila adaptado à cor da capa da música (targetPaletteColor):
-                // A parte superior é translúcida/semi-transparente permitindo que o brilho e ambiência
-                // da capa no fundo do player vazem de forma suave e elegante (estilo oficial YouTube Music)
-                val queueSheetBackgroundBrush = Brush.verticalGradient(
-                    0.0f to targetPaletteColor.copy(alpha = 0.52f + 0.16f * fullExpansionFraction),
-                    0.09f to targetPaletteColor.copy(alpha = 0.32f).compositeOver(Color(0xFF141414).copy(alpha = 0.82f)),
-                    0.24f to Color(0xFF121212).copy(alpha = 0.94f),
-                    1.0f to Color(0xFF090909)
-                )
+                // Fundo da fila: 100% transparente no estado recolhido (sem caixa, sem borda).
+                // Ao puxar, revela gradiente translúcido adaptativo com ambiência suave.
+                val queueSheetBackgroundBrush = if (isSheetExpandedOrDragging) {
+                    Brush.verticalGradient(
+                        0.0f to targetPaletteColor.copy(alpha = 0.50f * halfExpansionFraction + 0.18f * fullExpansionFraction),
+                        0.10f to targetPaletteColor.copy(alpha = 0.30f * halfExpansionFraction).compositeOver(Color(0xFF141414).copy(alpha = 0.85f * halfExpansionFraction)),
+                        0.26f to Color(0xFF121212).copy(alpha = 0.94f * halfExpansionFraction),
+                        1.0f to Color(0xFF090909).copy(alpha = halfExpansionFraction.coerceAtLeast(0.85f))
+                    )
+                } else {
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+                }
 
                 if (!isFullscreenLyricsActive) {
                     Surface(
@@ -1652,70 +1661,84 @@ private fun QueueDragHeader(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (isExpanded) 68.dp else 56.dp)
-            .padding(top = 8.dp, bottom = 6.dp, start = 16.dp, end = 16.dp),
+            .height(if (isExpanded) 68.dp else 52.dp)
+            .padding(top = 8.dp, bottom = 4.dp, start = 16.dp, end = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = if (isExpanded) Arrangement.SpaceBetween else Arrangement.Center
     ) {
-        // Drag pill handle
+        // Centered drag bar
         Box(
             modifier = Modifier
-                .width(36.dp)
-                .height(4.dp)
+                .width(38.dp)
+                .height(3.5.dp)
                 .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.35f))
+                .background(Color.White.copy(alpha = 0.38f))
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                if (isExpanded) {
+        if (!isExpanded) {
+            Spacer(modifier = Modifier.height(5.dp))
+            // Fiel ao segundo print do YouTube Music: apenas o nome centralizado, sem prefixo "A seguir:" e sem bordas
+            Text(
+                text = queueSourceTitle,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            // Cabeçalho expandido (Estados 1 e 2): "Tocando de" na esquerda, [+ Salvar] na direita
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Tocando de",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Normal,
                         color = Color.White.copy(alpha = 0.55f)
                     )
+                    Text(
+                        text = queueSourceTitle,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Text(
-                    text = if (isExpanded) queueSourceTitle else "A seguir: $queueSourceTitle",
-                    fontSize = if (isExpanded) 14.sp else 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
 
-            if (isExpanded && onSaveQueue != null) {
-                Surface(
-                    onClick = onSaveQueue,
-                    shape = RoundedCornerShape(50),
-                    color = Color.White.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                if (onSaveQueue != null) {
+                    Surface(
+                        onClick = onSaveQueue,
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Salvar",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Salvar",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }
