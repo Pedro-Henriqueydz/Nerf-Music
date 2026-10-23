@@ -40,5 +40,8 @@ jobs:
           files: nerf-music-${{ github.ref_name }}.apk
           body: |
             ## O que há de novo na versão ${{ github.ref_name }}
-            • Correção de bugs na reprodução e resolução do Spotify Canvas
+            • Gesto 1:1 de arrastar para baixo para recolher o Player completo em direção ao Mini Player com morphing contínuo da capa (300dp → 46dp) e fade suave dos controles
+            • Animação orgânica de barras equalizadoras de áudio premium, pausando responsivamente ao pausar a reprodução
+            • Troca imediata de música via gesto lateral no player de capa e mini cover com transição suave no modo Spotify Canvas
+            • Fila de reprodução dinâmica com rolagem aninhada fluida e estados adaptativos
           generate_release_notes: false
