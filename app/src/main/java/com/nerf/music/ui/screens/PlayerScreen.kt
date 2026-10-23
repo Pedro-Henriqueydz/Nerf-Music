@@ -48,6 +48,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
@@ -498,7 +504,7 @@ fun FullPlayerSheet(
 
     val playerDismissOffsetY = remember { Animatable(0f) }
     val dismissProgress = (playerDismissOffsetY.value / 320f).coerceIn(0f, 1f)
-    val dismissCornerRadius = (dismissProgress * 14f).dp
+    val dismissCornerRadius = (dismissProgress * 20f).dp
 
     Surface(
         modifier = Modifier
@@ -662,20 +668,11 @@ fun FullPlayerSheet(
                 val artworkOffsetX = remember { Animatable(0f) }
                 val maxArtworkSizeDp = (screenWidthDp - 48.dp).coerceIn(290.dp, 330.dp)
                 val minArtworkSizeDp = 135.dp
-                val baseArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
-                val currentArtworkSizeDp = if (dismissProgress > 0f) {
-                    baseArtworkSizeDp - ((baseArtworkSizeDp - 48.dp) * dismissProgress)
-                } else {
-                    baseArtworkSizeDp
-                }
-                val artworkCornerRadiusDp = if (dismissProgress > 0f) {
-                    (16f - (8f * dismissProgress)).dp
-                } else {
-                    16.dp
-                }
-                val controlsAlpha = (1f - dismissProgress * 2.8f).coerceIn(0f, 1f)
-                val headerAlpha = (1f - dismissProgress * 3.2f).coerceIn(0f, 1f)
-                val queueDrawerAlpha = (1f - dismissProgress * 4.0f).coerceIn(0f, 1f)
+                val currentArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
+                val artworkCornerRadiusDp = 16.dp
+                val controlsAlpha = (1f - dismissProgress * 1.5f).coerceIn(0f, 1f)
+                val headerAlpha = (1f - dismissProgress * 1.5f).coerceIn(0f, 1f)
+                val queueDrawerAlpha = (1f - dismissProgress * 2.0f).coerceIn(0f, 1f)
 
                 // Função para finalizar o gesto de arraste da folha da Fila e ancorar em um dos 3 estados
                 fun snapQueueSheet(velocityY: Float) {
@@ -731,6 +728,62 @@ fun FullPlayerSheet(
                     coroutineScope.launch {
                         val newY = (sheetOffsetY.value + deltaY).coerceIn(anchorExpandedY, anchorCollapsedY)
                         sheetOffsetY.snapTo(newY)
+                    }
+                }
+
+                val queueLazyListState = rememberLazyListState()
+
+                val queueNestedScrollConnection = remember(anchorExpandedY, anchorHalfExpandedY, anchorCollapsedY) {
+                    object : NestedScrollConnection {
+                        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                            val deltaY = available.y
+                            // Se estiver rolando para baixo e a lista já estiver no topo, a folha da fila desce
+                            val isAtTop = queueLazyListState.firstVisibleItemIndex == 0 &&
+                                    queueLazyListState.firstVisibleItemScrollOffset == 0
+                            if (deltaY > 0f && isAtTop) {
+                                val currentY = sheetOffsetY.value
+                                if (currentY < anchorCollapsedY) {
+                                    val newY = (currentY + deltaY).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                    val consumed = newY - currentY
+                                    coroutineScope.launch { sheetOffsetY.snapTo(newY) }
+                                    return Offset(0f, consumed)
+                                }
+                            }
+                            return Offset.Zero
+                        }
+
+                        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                            val deltaY = available.y
+                            // Se a lista terminou de rolar e sobrou arrasto para cima ou para baixo
+                            if (deltaY != 0f) {
+                                val currentY = sheetOffsetY.value
+                                val newY = (currentY + deltaY).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                val consumedDelta = newY - currentY
+                                if (abs(consumedDelta) > 0.5f) {
+                                    coroutineScope.launch { sheetOffsetY.snapTo(newY) }
+                                    return Offset(0f, consumedDelta)
+                                }
+                            }
+                            return Offset.Zero
+                        }
+
+                        override suspend fun onPreFling(available: Velocity): Velocity {
+                            val isAtTop = queueLazyListState.firstVisibleItemIndex == 0 &&
+                                    queueLazyListState.firstVisibleItemScrollOffset == 0
+                            if (available.y > 0f && isAtTop && sheetOffsetY.value < anchorCollapsedY) {
+                                snapQueueSheet(available.y)
+                                return available
+                            }
+                            return Velocity.Zero
+                        }
+
+                        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                            if (available.y != 0f) {
+                                snapQueueSheet(available.y)
+                                return available
+                            }
+                            return Velocity.Zero
+                        }
                     }
                 }
 
@@ -873,46 +926,50 @@ fun FullPlayerSheet(
                                 .padding(horizontal = 24.dp)
                                 .padding(bottom = collapsedPeekHeightDp + 16.dp)
                                 .pointerInput(queueState, showRelatedSheet, track.id) {
-                                    if (queueState == QueueExpansionState.COLLAPSED && !showRelatedSheet) {
-                                        var totalDragX = 0f
-                                        var totalDragY = 0f
-                                        var isHorizontalGesture = false
-                                        var isVerticalGesture = false
+                                    if (showRelatedSheet) return@pointerInput
 
-                                        detectDragGestures(
-                                            onDragStart = {
-                                                totalDragX = 0f
-                                                totalDragY = 0f
-                                                isHorizontalGesture = false
-                                                isVerticalGesture = false
-                                            },
-                                            onDragEnd = {
-                                                if (isHorizontalGesture) {
-                                                    val swipeThreshold = 65.dp.toPx()
-                                                    if (totalDragX < -swipeThreshold) {
-                                                        // Arrastou para a esquerda -> Próxima música
-                                                        coroutineScope.launch {
-                                                            artworkOffsetX.animateTo(-screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
-                                                            onSkipNext()
-                                                            artworkOffsetX.snapTo(screenWidthPx * 0.75f)
-                                                            artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
-                                                        }
-                                                    } else if (totalDragX > swipeThreshold) {
-                                                        // Arrastou para a direita -> Música anterior direta (sem resetar!)
-                                                        coroutineScope.launch {
-                                                            artworkOffsetX.animateTo(screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
-                                                            onForceSkipPrevious()
-                                                            artworkOffsetX.snapTo(-screenWidthPx * 0.75f)
-                                                            artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
-                                                        }
-                                                    } else {
-                                                        coroutineScope.launch {
-                                                            artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
-                                                        }
+                                    var totalDragX = 0f
+                                    var totalDragY = 0f
+                                    var isHorizontalGesture = false
+                                    var isVerticalGesture = false
+
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                            isHorizontalGesture = false
+                                            isVerticalGesture = false
+                                        },
+                                        onDragEnd = {
+                                            if (isHorizontalGesture) {
+                                                val swipeThreshold = 65.dp.toPx()
+                                                if (totalDragX < -swipeThreshold) {
+                                                    // Arrastou para a esquerda -> Próxima música
+                                                    coroutineScope.launch {
+                                                        artworkOffsetX.animateTo(-screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
+                                                        onSkipNext()
+                                                        artworkOffsetX.snapTo(screenWidthPx * 0.75f)
+                                                        artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
                                                     }
-                                                } else if (isVerticalGesture) {
-                                                    val dismissThreshold = 110.dp.toPx()
-                                                    if (playerDismissOffsetY.value > dismissThreshold || totalDragY > 200f) {
+                                                } else if (totalDragX > swipeThreshold) {
+                                                    // Arrastou para a direita -> Música anterior direta (sem resetar!)
+                                                    coroutineScope.launch {
+                                                        artworkOffsetX.animateTo(screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
+                                                        onForceSkipPrevious()
+                                                        artworkOffsetX.snapTo(-screenWidthPx * 0.75f)
+                                                        artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                    }
+                                                } else {
+                                                    coroutineScope.launch {
+                                                        artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                    }
+                                                }
+                                            } else if (isVerticalGesture) {
+                                                if (queueState == QueueExpansionState.COLLAPSED) {
+                                                    // No estado 0:
+                                                    // - Se arrastou para baixo: recolhe para Mini Player
+                                                    // - Se arrastou para cima: sobe a fila para HALF_EXPANDED
+                                                    if (playerDismissOffsetY.value > 110.dp.toPx() || totalDragY > 200f) {
                                                         coroutineScope.launch {
                                                             playerDismissOffsetY.animateTo(
                                                                 targetValue = totalHeightPx,
@@ -922,86 +979,90 @@ fun FullPlayerSheet(
                                                         }
                                                     } else if (playerDismissOffsetY.value > 0f) {
                                                         coroutineScope.launch {
-                                                            playerDismissOffsetY.animateTo(
-                                                                targetValue = 0f,
-                                                                animationSpec = spring(
-                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                    stiffness = 400f
-                                                                )
-                                                            )
+                                                            playerDismissOffsetY.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 400f))
                                                         }
-                                                    } else if (totalDragY < -50f) {
+                                                    } else if (totalDragY < -40f || sheetOffsetY.value < anchorCollapsedY - 50f) {
                                                         snapQueueSheet(-1000f)
                                                     } else {
                                                         coroutineScope.launch {
-                                                            sheetOffsetY.animateTo(
-                                                                anchorCollapsedY,
-                                                                animationSpec = spring(
-                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                    stiffness = 380f
-                                                                )
-                                                            )
+                                                            sheetOffsetY.animateTo(anchorCollapsedY, spring(Spring.DampingRatioNoBouncy, 380f))
                                                         }
                                                     }
+                                                } else if (queueState == QueueExpansionState.HALF_EXPANDED) {
+                                                    // No estado 1 (metade ocupada pela fila):
+                                                    // Toque na área livre superior:
+                                                    // - Se arrastar para baixo: recolhe a fila para COLLAPSED
+                                                    // - Se arrastar forte para cima: expande a fila para EXPANDED
+                                                    snapQueueSheet(if (totalDragY > 40f) 1000f else if (totalDragY < -40f) -1000f else 0f)
                                                 }
-                                                totalDragX = 0f
-                                                totalDragY = 0f
-                                            },
-                                            onDragCancel = {
-                                                totalDragX = 0f
-                                                totalDragY = 0f
+                                            }
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                        },
+                                        onDragCancel = {
+                                            totalDragX = 0f
+                                            totalDragY = 0f
+                                            coroutineScope.launch {
+                                                artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                if (playerDismissOffsetY.value > 0f) {
+                                                    playerDismissOffsetY.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 400f))
+                                                }
+                                                val targetY = when (queueState) {
+                                                    QueueExpansionState.COLLAPSED -> anchorCollapsedY
+                                                    QueueExpansionState.HALF_EXPANDED -> anchorHalfExpandedY
+                                                    QueueExpansionState.EXPANDED -> anchorExpandedY
+                                                }
+                                                sheetOffsetY.animateTo(targetY, spring(Spring.DampingRatioNoBouncy, 380f))
+                                            }
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            totalDragX += dragAmount.x
+                                            totalDragY += dragAmount.y
+
+                                            if (!isHorizontalGesture && !isVerticalGesture) {
+                                                if (abs(totalDragX) > 18f && abs(totalDragX) > abs(totalDragY)) {
+                                                    isHorizontalGesture = true
+                                                } else if (abs(totalDragY) > 18f && abs(totalDragY) > abs(totalDragX)) {
+                                                    isVerticalGesture = true
+                                                }
+                                            }
+
+                                            if (isHorizontalGesture) {
                                                 coroutineScope.launch {
-                                                    artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
-                                                    if (playerDismissOffsetY.value > 0f) {
-                                                        playerDismissOffsetY.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 400f))
-                                                    }
-                                                    sheetOffsetY.animateTo(
-                                                        anchorCollapsedY,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                                            stiffness = 380f
-                                                        )
-                                                    )
+                                                    artworkOffsetX.snapTo(artworkOffsetX.value + dragAmount.x)
                                                 }
-                                            },
-                                            onDrag = { change, dragAmount ->
-                                                change.consume()
-                                                totalDragX += dragAmount.x
-                                                totalDragY += dragAmount.y
-
-                                                if (!isHorizontalGesture && !isVerticalGesture) {
-                                                    if (abs(totalDragX) > 18f && abs(totalDragX) > abs(totalDragY)) {
-                                                        isHorizontalGesture = true
-                                                    } else if (abs(totalDragY) > 18f && abs(totalDragY) > abs(totalDragX)) {
-                                                        isVerticalGesture = true
-                                                    }
-                                                }
-
-                                                if (isHorizontalGesture) {
-                                                    coroutineScope.launch {
-                                                        artworkOffsetX.snapTo(artworkOffsetX.value + dragAmount.x)
-                                                    }
-                                                } else if (isVerticalGesture) {
+                                            } else if (isVerticalGesture) {
+                                                if (queueState == QueueExpansionState.COLLAPSED) {
                                                     if (dragAmount.y > 0f && sheetOffsetY.value >= anchorCollapsedY) {
+                                                        // Puxando para baixo com fila fechada -> Desce o Full Player
                                                         coroutineScope.launch {
                                                             val nextDismissY = (playerDismissOffsetY.value + dragAmount.y).coerceAtLeast(0f)
                                                             playerDismissOffsetY.snapTo(nextDismissY)
                                                         }
                                                     } else if (playerDismissOffsetY.value > 0f) {
+                                                        // Se já estiver descendo o Full Player
                                                         coroutineScope.launch {
                                                             val nextDismissY = (playerDismissOffsetY.value + dragAmount.y).coerceAtLeast(0f)
                                                             playerDismissOffsetY.snapTo(nextDismissY)
                                                         }
                                                     } else {
+                                                        // Puxando para cima -> Sobe a fila suavemente
                                                         coroutineScope.launch {
-                                                            val newY = (sheetOffsetY.value + dragAmount.y).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                                            val newY = (sheetOffsetY.value + dragAmount.y).coerceIn(anchorHalfExpandedY, anchorCollapsedY)
                                                             sheetOffsetY.snapTo(newY)
                                                         }
                                                     }
+                                                } else if (queueState == QueueExpansionState.HALF_EXPANDED) {
+                                                    // Na área superior com fila na metade: arrastar move a fila de volta
+                                                    coroutineScope.launch {
+                                                        val newY = (sheetOffsetY.value + dragAmount.y).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                                        sheetOffsetY.snapTo(newY)
+                                                    }
                                                 }
                                             }
-                                        )
-                                    }
+                                        }
+                                    )
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
@@ -1687,17 +1748,19 @@ fun FullPlayerSheet(
                                         )
                                     }
 
-                                    // 3. LazyColumn com as músicas da fila (com fade gradiente suave no topo)
+                                    // 3. LazyColumn com as músicas da fila (com fade gradiente suave no topo e nested scroll conectado)
                                     QueueTrackList(
                                         queue = state.queue,
                                         currentQueueIndex = state.currentQueueIndex,
                                         isPlaying = state.isPlaying,
+                                        listState = queueLazyListState,
                                         onPlayQueueItem = onPlayQueueItem,
                                         onMoveQueueItem = onMoveQueueItem,
                                         onRemoveQueueItem = onRemoveQueueItem,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .weight(1f)
+                                            .nestedScroll(queueNestedScrollConnection)
                                     )
                                 }
                             }
@@ -2054,6 +2117,7 @@ private fun QueueTrackList(
     queue: List<Track>,
     currentQueueIndex: Int,
     isPlaying: Boolean,
+    listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
     onPlayQueueItem: (Int) -> Unit,
     onMoveQueueItem: (Int, Int) -> Unit,
     onRemoveQueueItem: (Int) -> Unit,
@@ -2069,6 +2133,7 @@ private fun QueueTrackList(
     val currentMoveCallback by rememberUpdatedState(onMoveQueueItem)
 
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
