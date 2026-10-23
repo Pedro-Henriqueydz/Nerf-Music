@@ -75,6 +75,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import com.nerf.music.ui.theme.SfProFontFamily
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -483,47 +487,61 @@ fun FullPlayerSheet(
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
-            if (isCanvasActive && canvasPlayer != null) {
-                key(canvasVideoUrl) {
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                useController = false
-                                player = canvasPlayer
-                                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                                layoutParams = android.view.ViewGroup.LayoutParams(
-                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                            }
-                        },
-                        update = { playerView ->
-                            if (playerView.player != canvasPlayer) {
-                                playerView.player = canvasPlayer
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.5f),
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.6f),
-                                    Color.Black.copy(alpha = 0.95f)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(if (isFullscreenLyricsActive) 45.dp else 0.dp)
+            ) {
+                if (isCanvasActive && canvasPlayer != null) {
+                    key(canvasVideoUrl) {
+                        AndroidView(
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    useController = false
+                                    player = canvasPlayer
+                                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                    layoutParams = android.view.ViewGroup.LayoutParams(
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                }
+                            },
+                            update = { playerView ->
+                                if (playerView.player != canvasPlayer) {
+                                    playerView.player = canvasPlayer
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = 0.5f),
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.6f),
+                                        Color.Black.copy(alpha = 0.95f)
+                                    )
                                 )
                             )
-                        )
-                )
-            } else {
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(backgroundBrush)
+                    )
+                }
+            }
+
+            if (isFullscreenLyricsActive) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(backgroundBrush)
+                        .background(Color.Black.copy(alpha = 0.55f))
                 )
             }
 
@@ -1938,6 +1956,72 @@ private fun rememberSystemVolume(context: Context): Pair<Float, (Float) -> Unit>
     return Pair(currentVolumeFraction, setVolume)
 }
 
+@Composable
+private fun AppleMusicVolumeBar(
+    volume: Float,
+    onVolumeChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isInteracting by remember { mutableStateOf(false) }
+    val animatedHeight by animateDpAsState(
+        targetValue = if (isInteracting) 10.dp else 4.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "VolumeBarThickness"
+    )
+
+    BoxWithConstraints(
+        modifier = modifier
+            .height(30.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        isInteracting = true
+                        val newVol = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                        onVolumeChange(newVol)
+                        tryAwaitRelease()
+                        isInteracting = false
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        isInteracting = true
+                        val newVol = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                        onVolumeChange(newVol)
+                    },
+                    onDragEnd = { isInteracting = false },
+                    onDragCancel = { isInteracting = false },
+                    onHorizontalDrag = { change, _ ->
+                        change.consume()
+                        val newVol = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                        onVolumeChange(newVol)
+                    }
+                )
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(animatedHeight)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.24f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction = volume.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppleMusicLyricsView(
@@ -1965,6 +2049,11 @@ private fun AppleMusicLyricsView(
     val listState = rememberLazyListState()
     val activeIndex = remember(lyrics, currentPositionMs) {
         lyrics?.syncedLines?.indexOfLast { currentPositionMs >= it.timeMs } ?: -1
+    }
+
+    // Reset de rolagem imediato quando a faixa muda (garante início limpo)
+    LaunchedEffect(track.id) {
+        listState.scrollToItem(0, 0)
     }
 
     // Auto-scroll suave acompanhando o verso ativo (centralizado verticalmente)
@@ -2037,7 +2126,7 @@ private fun AppleMusicLyricsView(
             ) {
                 Text(
                     text = track.title,
-                    fontFamily = YouTubeSansFontFamily,
+                    fontFamily = SfProFontFamily,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -2047,7 +2136,7 @@ private fun AppleMusicLyricsView(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = track.artist,
-                    fontFamily = YouTubeSansFontFamily,
+                    fontFamily = SfProFontFamily,
                     fontSize = 13.sp,
                     color = Color.White.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -2120,7 +2209,7 @@ private fun AppleMusicLyricsView(
 
                         Text(
                             text = line.text,
-                            fontFamily = YouTubeSansFontFamily,
+                            fontFamily = SfProFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = if (isCurrent) 28.sp else 22.sp,
                             lineHeight = if (isCurrent) 38.sp else 32.sp,
@@ -2150,7 +2239,7 @@ private fun AppleMusicLyricsView(
                     item {
                         Text(
                             text = lyrics!!.plainLyrics.orEmpty(),
-                            fontFamily = YouTubeSansFontFamily,
+                            fontFamily = SfProFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 20.sp,
                             lineHeight = 32.sp,
@@ -2166,7 +2255,7 @@ private fun AppleMusicLyricsView(
                 ) {
                     Text(
                         text = "Letra não disponível para esta música",
-                        fontFamily = YouTubeSansFontFamily,
+                        fontFamily = SfProFontFamily,
                         fontSize = 16.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
@@ -2251,14 +2340,14 @@ private fun AppleMusicLyricsView(
                 Text(
                     text = formatDurationMs(displayedPositionMs),
                     fontSize = 11.sp,
-                    fontFamily = YouTubeSansFontFamily,
+                    fontFamily = SfProFontFamily,
                     color = Color.White.copy(alpha = 0.65f)
                 )
                 val remainingMs = (effectiveDurationMs - displayedPositionMs).coerceAtLeast(0L)
                 Text(
                     text = "-${formatDurationMs(remainingMs)}",
                     fontSize = 11.sp,
-                    fontFamily = YouTubeSansFontFamily,
+                    fontFamily = SfProFontFamily,
                     color = Color.White.copy(alpha = 0.65f)
                 )
             }
@@ -2342,23 +2431,9 @@ private fun AppleMusicLyricsView(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            Slider(
-                value = systemVolume,
-                onValueChange = setSystemVolume,
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color.White,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.22f)
-                ),
-                thumb = {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .shadow(2.dp, CircleShape)
-                            .clip(CircleShape)
-                            .background(Color.White)
-                    )
-                },
+            AppleMusicVolumeBar(
+                volume = systemVolume,
+                onVolumeChange = setSystemVolume,
                 modifier = Modifier.weight(1f)
             )
 
