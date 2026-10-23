@@ -62,12 +62,12 @@ class LyricsRepositoryImpl(
             // 3. Busca geral com Título + Artista Primário (evita erro 503 e encontra colaborações)
             if (lyricsData == null) {
                 val queryPrimary = if (primaryArtist.isNotBlank()) "$cleanTitle $primaryArtist" else cleanTitle
-                lyricsData = searchLrclib(queryPrimary, trackId)
+                lyricsData = searchLrclib(queryPrimary, trackId, cleanTitle, cleanArtist, primaryArtist, durationSeconds)
             }
 
             // 4. Se ainda não encontrou e o artista original tem mais detalhes, tenta busca com o artista completo
             if (lyricsData == null && !cleanArtist.equals(primaryArtist, ignoreCase = true)) {
-                lyricsData = searchLrclib("$cleanTitle $cleanArtist", trackId)
+                lyricsData = searchLrclib("$cleanTitle $cleanArtist", trackId, cleanTitle, cleanArtist, primaryArtist, durationSeconds)
             }
 
             // 5. Fallback sem sufixos entre parênteses (ex: 'Spaceship (edit)' -> 'Spaceship')
@@ -75,13 +75,13 @@ class LyricsRepositoryImpl(
             if (lyricsData == null && strippedTitle.isNotBlank() && !strippedTitle.equals(cleanTitle, ignoreCase = true)) {
                 val fallbackQuery = if (primaryArtist.isNotBlank()) "$strippedTitle $primaryArtist" else strippedTitle
                 Log.d(TAG, "Tentando busca secundaria sem parenteses: '$fallbackQuery'")
-                lyricsData = searchLrclib(fallbackQuery, trackId)
+                lyricsData = searchLrclib(fallbackQuery, trackId, strippedTitle, cleanArtist, primaryArtist, durationSeconds)
             }
 
-            // 6. Último recurso: busca apenas pelo título da faixa se tiver tamanho significativo
+            // 6. Último recurso: busca pelo título SOMENTE SE validar que o artista ou duração batem com precisão
             if (lyricsData == null && cleanTitle.length >= 3) {
-                Log.d(TAG, "Tentando busca apenas pelo titulo: '$cleanTitle'")
-                lyricsData = searchLrclib(cleanTitle, trackId)
+                Log.d(TAG, "Tentando busca apenas pelo titulo com validacao estrita: '$cleanTitle'")
+                lyricsData = searchLrclib(cleanTitle, trackId, cleanTitle, cleanArtist, primaryArtist, durationSeconds)
             }
             Log.i(TAG, "Resultado da busca de letras: isSynced=${lyricsData?.isSynced}, linhas=${lyricsData?.syncedLines?.size}")
 
@@ -129,7 +129,14 @@ class LyricsRepositoryImpl(
         }
     }
 
-    private fun searchLrclib(query: String, trackId: String): LyricsData? {
+    private fun searchLrclib(
+        query: String,
+        trackId: String,
+        expectedTitle: String,
+        expectedArtist: String,
+        primaryArtist: String,
+        expectedDurationSeconds: Int
+    ): LyricsData? {
         return try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
             val url = "https://lrclib.net/api/search?q=$encodedQuery"
@@ -150,21 +157,70 @@ class LyricsRepositoryImpl(
                 Log.i(TAG, "searchLrclib retornou ${array.length()} resultados para '$query'")
                 if (array.length() == 0) return null
 
-                // Procura primeiro por um que tenha letras sincronizadas
+                // Encontra os candidatos válidos (valida se o artista OU duração são compatíveis para evitar músicas aleatórias)
+                var bestCandidate: JSONObject? = null
+
                 for (i in 0 until array.length()) {
                     val item = array.getJSONObject(i)
-                    val parsed = parseLrclibJson(item, trackId)
-                    if (parsed != null && parsed.isSynced) {
-                        return parsed
+                    val candTrack = item.optString("trackName", "").trim()
+                    val candArtist = item.optString("artistName", "").trim()
+                    val candDuration = item.optDouble("duration", 0.0).toInt()
+                    val hasSynced = item.optString("syncedLyrics", "").isNotBlank()
+                    val hasPlain = item.optString("plainLyrics", "").isNotBlank()
+                    if (!hasSynced && !hasPlain) continue
+
+                    val artistMatches = isArtistMatch(candArtist, expectedArtist, primaryArtist)
+                    val titleMatches = isTitleMatch(candTrack, expectedTitle)
+                    val durationMatches = expectedDurationSeconds <= 0 || candDuration <= 0 ||
+                            kotlin.math.abs(candDuration - expectedDurationSeconds) <= 6
+
+                    // Validação estrita: se for resultado de busca, DEVE bater o artista, ou bater título e duração com precisão
+                    val isValidCandidate = when {
+                        artistMatches && titleMatches -> true
+                        artistMatches -> true
+                        titleMatches && durationMatches && isArtistPartiallyRelated(candArtist, expectedArtist) -> true
+                        else -> false
+                    }
+
+                    if (isValidCandidate) {
+                        if (hasSynced) {
+                            return parseLrclibJson(item, trackId)
+                        } else if (bestCandidate == null) {
+                            bestCandidate = item
+                        }
                     }
                 }
-                // Senão retorna o primeiro disponível
-                parseLrclibJson(array.getJSONObject(0), trackId)
+
+                bestCandidate?.let { parseLrclibJson(it, trackId) }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Exceção em searchLrclib: ${e.message}")
             null
         }
+    }
+
+    private fun isArtistMatch(candArtist: String, expectedArtist: String, primaryArtist: String): Boolean {
+        if (candArtist.isBlank() || expectedArtist.isBlank()) return false
+        val c = candArtist.lowercase()
+        val e = expectedArtist.lowercase()
+        val p = primaryArtist.lowercase()
+        if (c == e || (p.isNotBlank() && c == p)) return true
+        if (c.contains(e) || e.contains(c)) return true
+        if (p.isNotBlank() && (c.contains(p) || p.contains(c))) return true
+        return false
+    }
+
+    private fun isTitleMatch(candTitle: String, expectedTitle: String): Boolean {
+        if (candTitle.isBlank() || expectedTitle.isBlank()) return false
+        val c = cleanTrackTitle(candTitle).lowercase()
+        val e = cleanTrackTitle(expectedTitle).lowercase()
+        return c == e || c.contains(e) || e.contains(c)
+    }
+
+    private fun isArtistPartiallyRelated(candArtist: String, expectedArtist: String): Boolean {
+        val candTokens = candArtist.lowercase().split(Regex("[\\s,&/]+")).filter { it.length > 2 }
+        val expTokens = expectedArtist.lowercase().split(Regex("[\\s,&/]+")).filter { it.length > 2 }
+        return candTokens.any { it in expTokens }
     }
 
     private fun parseLrclibJson(obj: JSONObject, trackId: String): LyricsData? {
@@ -217,73 +273,8 @@ class LyricsRepositoryImpl(
             }
         }
         val sorted = rawList.sortedBy { it.timeMs }
-        return paginateSyncedLines(sorted)
-    }
-
-    private fun paginateSyncedLines(lines: List<SyncedLyricsLine>): List<SyncedLyricsLine> {
-        if (lines.isEmpty()) return emptyList()
-        val result = mutableListOf<SyncedLyricsLine>()
-
-        for (i in lines.indices) {
-            val current = lines[i]
-            val nextTime = lines.getOrNull(i + 1)?.timeMs
-            val rawDuration = if (nextTime != null && nextTime > current.timeMs) {
-                (nextTime - current.timeMs).coerceIn(2000L, 8000L)
-            } else {
-                4000L
-            }
-
-            val chunks = splitIntoChunks(current.text, maxChars = 40)
-            if (chunks.size <= 1) {
-                result.add(current)
-            } else {
-                val totalChars = current.text.length.coerceAtLeast(1)
-                var accumulatedMs = 0L
-                for (chunk in chunks) {
-                    val chunkFraction = chunk.length.toDouble() / totalChars.toDouble()
-                    val chunkDuration = (rawDuration * chunkFraction).toLong().coerceAtLeast(1000L)
-                    result.add(
-                        SyncedLyricsLine(
-                            timeMs = current.timeMs + accumulatedMs,
-                            text = chunk
-                        )
-                    )
-                    accumulatedMs += chunkDuration
-                }
-            }
-        }
-        return result.sortedBy { it.timeMs }
-    }
-
-    private fun splitIntoChunks(text: String, maxChars: Int = 40): List<String> {
-        val trimmed = text.trim()
-        if (trimmed.length <= maxChars) return listOf(trimmed)
-        val words = trimmed.split(Regex("\\s+"))
-        if (words.size <= 1) return listOf(trimmed)
-
-        val chunks = mutableListOf<String>()
-        val currentWords = mutableListOf<String>()
-        var currentLen = 0
-
-        for (word in words) {
-            val wordLen = word.length
-            if (currentWords.isEmpty()) {
-                currentWords.add(word)
-                currentLen = wordLen
-            } else if (currentLen + 1 + wordLen <= maxChars) {
-                currentWords.add(word)
-                currentLen += 1 + wordLen
-            } else {
-                chunks.add(currentWords.joinToString(" "))
-                currentWords.clear()
-                currentWords.add(word)
-                currentLen = wordLen
-            }
-        }
-        if (currentWords.isNotEmpty()) {
-            chunks.add(currentWords.joinToString(" "))
-        }
-        return chunks
+        // Retorna versos naturais completos do LRC (sem fragmentacao artificial)
+        return rawList.sortedBy { it.timeMs }
     }
 
     private fun cleanTrackTitle(title: String): String {

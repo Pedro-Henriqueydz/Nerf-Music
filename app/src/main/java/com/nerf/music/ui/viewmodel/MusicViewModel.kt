@@ -448,6 +448,7 @@ class MusicViewModel(
             repeatMode = player.repeatMode,
             queueSourceTitle = _playbackState.value.queueSourceTitle ?: activeTrack?.title
         )
+        updateCurrentLyricsLine(currentPos)
 
         if (isCurrentlyPlaying) {
             startProgressTracker()
