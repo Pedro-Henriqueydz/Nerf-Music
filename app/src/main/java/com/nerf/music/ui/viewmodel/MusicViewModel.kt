@@ -373,11 +373,23 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            • Novo Gesto 1:1 no Player: Deslize para baixo fluido com morphing contínuo da capa (300dp para 46dp) e ancoragem exata no Mini Player.
-            • Barras de Equalizador Premium: Animação refinada e dinâmica que pausa sincronizadamente com a música.
-            • Troca Rápida de Faixas: Deslize lateral para avançar ou voltar imediatamente, com transição suave da mini capa no modo Canva.
-            • Fila de Reprodução 'A Seguir': Três estágios dinâmicos (recolhido, meio expandido e tela cheia) com suporte a filtros e rolagem aninhada.
-            • Correções de estabilidade e fluidez geral a 120Hz.
+            ✨ NOVA ABA BIBLIOTECA COMPLETA (ESTILO YTM):
+            • Suas playlists personalizadas, músicas salvas e faixas baixadas em um só lugar.
+            • Downloads rápidos em partes para reprodução offline (com indicador de progresso e badge nos cards).
+            • Alternância entre visualização em Lista e Grade persistente.
+            • Criação rápida de playlists com modal moderno e opções de edição/exclusão.
+
+            🎤 LETRAS EM TELA CHEIA (ESTILO APPLE MUSIC):
+            • Experiência imersiva de letras sincronizadas linha por linha com fonte SF Pro.
+            • Fundo dinâmico com efeito Aurora Blur derivado das cores do álbum e do Canva.
+            • Cápsula de volume elástica e clique em qualquer verso para navegar no áudio.
+            • Integração com múltiplos provedores com fallback inteligente.
+
+            ⚡ GESTOS FLUIDOS & MOTION NO PLAYER (120Hz):
+            • Gesto 1:1 de arrastar para baixo: a capa encolhe continuamente até virar a miniatura do Mini Player.
+            • Barras de Equalizador Premium: animação refinada que pausa sincronizadamente com a música.
+            • Fila 'A Seguir' com 3 estágios por gesto e filtros rápidos de reprodução.
+            • Troca imediata de faixa por deslizamento lateral no player e no modo Canva.
         """.trimIndent()
     }
 

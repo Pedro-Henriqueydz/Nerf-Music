@@ -39,9 +39,24 @@ jobs:
         with:
           files: nerf-music-${{ github.ref_name }}.apk
           body: |
-            ## O que há de novo na versão ${{ github.ref_name }}
-            • Gesto 1:1 de arrastar para baixo para recolher o Player completo em direção ao Mini Player com morphing contínuo da capa (300dp → 46dp) e fade suave dos controles
-            • Animação orgânica de barras equalizadoras de áudio premium, pausando responsivamente ao pausar a reprodução
-            • Troca imediata de música via gesto lateral no player de capa e mini cover com transição suave no modo Spotify Canvas
-            • Fila de reprodução dinâmica com rolagem aninhada fluida e estados adaptativos
+            # 🚀 Nerf Music ${{ github.ref_name }} — O Maior Salto de Experiência e Fluidez!
+
+            ### 📚 Nova Aba Biblioteca Completa (YouTube Music Style)
+            - **Playlists e Coleção Pessoal:** Crie, edite e organize suas próprias playlists com modal nativo e menu contextual de opções.
+            - **Downloads Rápidos & Reprodução Offline:** Sistema de download multi-partes paralelo de alto desempenho com indicador circular de progresso e badge dedicado em músicas baixadas.
+            - **Visualização Flexível:** Alterne livremente entre exibição em Grade (Grid) ou Lista de forma persistente.
+            - **Capas Dinâmicas de Playlists:** Grade de capas 1 a 4 faixas com gradientes dinâmicos e badge de fixação.
+
+            ### 🎤 Letras em Tela Cheia Imersivas (Apple Music Aurora Style)
+            - **Karaokê Sincronizado Linha por Linha:** Renderização rica com tipografia SF Pro e rolagem automática suave com destaque da estrofe ativa.
+            - **Efeito Aurora Blur Dinâmico:** Fundo fluido com desfoque profundo adaptado em tempo real à paleta do álbum e do Canva.
+            - **Cápsula de Volume Interativa:** Controle elástico de volume do sistema diretamente na tela de letras.
+            - **Navegação Rápida:** Toque em qualquer linha da letra para saltar imediatamente a reprodução para aquele trecho.
+            - **Fallback Inteligente:** Integração com múltiplos provedores de letras e atribuição transparente.
+
+            ### ⚡ Motion, Gestos 1:1 e Equalizador Premium (120Hz)
+            - **Gesto de Fechamento do Player 1:1:** O Full Player agora desce diretamente com o dedo e a capa sofre *morphing* contínuo de 300dp para 46dp, ancorando com precisão milimétrica na barra do Mini Player.
+            - **Barras Equalizadoras Refinadas:** Equalizador de áudio orgânico, premium e responsivo, que pausa imediatamente quando a reprodução é pausada.
+            - **Fila "A Seguir" com 3 Estágios:** Deslize vertical para navegar entre estados Oculto, Meio Expandido e Tela Cheia, com chips de filtro dinâmicos e rolagem aninhada suave.
+            - **Troca Instantânea de Faixas:** Gesto lateral no player para avançar/voltar imediatamente, com animação de mini capa e suporte completo ao modo Spotify Canvas.
           generate_release_notes: false
