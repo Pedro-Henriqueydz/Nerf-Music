@@ -14,6 +14,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -21,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -62,9 +66,9 @@ fun LibraryScreen(
     val likedTracks by viewModel.likedTracks.collectAsState()
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
+    val isGridView by viewModel.isLibraryGridView.collectAsState()
 
     var selectedFilter by remember { mutableStateOf(LibraryFilter.ALL) }
-    var isGridView by remember { mutableStateOf(false) }
     var sortOption by remember { mutableStateOf(LibrarySortOption.RECENT) }
     var isSortMenuExpanded by remember { mutableStateOf(false) }
 
@@ -72,11 +76,14 @@ fun LibraryScreen(
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    // BottomSheet "Nova" estilo YouTube Music
+    var showNewBottomSheet by remember { mutableStateOf(false) }
+
     // Dialog para criar nova playlist
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistTitle by remember { mutableStateOf("") }
 
-    // Dialog para ver/reproduzir playlist do usuário
+    // Sub-telas de navegação direta
     var selectedUserPlaylist by remember { mutableStateOf<UserPlaylist?>(null) }
     var showLikedTracksView by remember { mutableStateOf(false) }
     var showDownloadedTracksView by remember { mutableStateOf(false) }
@@ -143,7 +150,7 @@ fun LibraryScreen(
                     searchQuery = ""
                 }) {
                     Icon(
-                        imageVector = Icons.Default.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Fechar pesquisa",
                         tint = YtmWhite
                     )
@@ -304,7 +311,7 @@ fun LibraryScreen(
                     }
                 }
 
-                // 3. Sub-header de Ordenação e Alternador de Lista/Grade
+                // 3. Sub-header de Ordenação e Alternador de Lista/Grade (com persistência)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -359,13 +366,13 @@ fun LibraryScreen(
                         }
                     }
 
-                    // Botão alternador de Lista vs Grade
+                    // Botão alternador de Lista vs Grade (persiste via ViewModel)
                     IconButton(
-                        onClick = { isGridView = !isGridView },
+                        onClick = { viewModel.setLibraryGridView(!isGridView) },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
+                            imageVector = if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                             contentDescription = if (isGridView) "Exibir em lista" else "Exibir em grade",
                             tint = YtmWhite,
                             modifier = Modifier.size(20.dp)
@@ -377,7 +384,6 @@ fun LibraryScreen(
                 Box(modifier = Modifier.weight(1f)) {
                     val q = searchQuery.trim().lowercase()
 
-                    // Filtragem com busca
                     val filteredLiked = likedTracks.filter {
                         q.isEmpty() || it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)
                     }
@@ -405,8 +411,7 @@ fun LibraryScreen(
                                     LibraryListItem(
                                         title = "Músicas Curtidas",
                                         subtitle = "Playlist automática • ${likedTracks.size} músicas",
-                                        iconVector = Icons.Filled.Favorite,
-                                        iconTint = Color(0xFFE91E63),
+                                        isSpecialLiked = true,
                                         onClick = { showLikedTracksView = true }
                                     )
                                 }
@@ -417,8 +422,7 @@ fun LibraryScreen(
                                     LibraryListItem(
                                         title = "Músicas Baixadas",
                                         subtitle = "Downloads offline • ${downloadedTracks.size} músicas",
-                                        iconVector = Icons.Filled.DownloadDone,
-                                        iconTint = Color(0xFF4CAF50),
+                                        isSpecialDownload = true,
                                         onClick = { showDownloadedTracksView = true }
                                     )
                                 }
@@ -430,7 +434,7 @@ fun LibraryScreen(
                                         title = pl.title,
                                         subtitle = "Playlist • ${pl.trackCount} músicas",
                                         imageUrl = pl.thumbnailUrl,
-                                        iconVector = Icons.Default.QueueMusic,
+                                        iconVector = Icons.AutoMirrored.Filled.QueueMusic,
                                         onClick = { selectedUserPlaylist = pl }
                                     )
                                 }
@@ -448,7 +452,7 @@ fun LibraryScreen(
                             }
                         }
                     } else {
-                        // Visualização em Grade
+                        // Visualização em Grade (Padrão Oficial)
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(2),
                             modifier = Modifier.fillMaxSize(),
@@ -460,9 +464,8 @@ fun LibraryScreen(
                                 item(key = "liked_music_grid") {
                                     LibraryGridCard(
                                         title = "Músicas Curtidas",
-                                        subtitle = "Playlist • ${likedTracks.size} músicas",
-                                        iconVector = Icons.Filled.Favorite,
-                                        iconTint = Color(0xFFE91E63),
+                                        subtitle = "Playlist automática",
+                                        isSpecialLiked = true,
                                         onClick = { showLikedTracksView = true }
                                     )
                                 }
@@ -473,8 +476,7 @@ fun LibraryScreen(
                                     LibraryGridCard(
                                         title = "Músicas Baixadas",
                                         subtitle = "Downloads • ${downloadedTracks.size} músicas",
-                                        iconVector = Icons.Filled.DownloadDone,
-                                        iconTint = Color(0xFF4CAF50),
+                                        isSpecialDownload = true,
                                         onClick = { showDownloadedTracksView = true }
                                     )
                                 }
@@ -486,7 +488,7 @@ fun LibraryScreen(
                                         title = pl.title,
                                         subtitle = "Playlist • ${pl.trackCount} músicas",
                                         imageUrl = pl.thumbnailUrl,
-                                        iconVector = Icons.Default.QueueMusic,
+                                        iconVector = Icons.AutoMirrored.Filled.QueueMusic,
                                         onClick = { selectedUserPlaylist = pl }
                                     )
                                 }
@@ -494,9 +496,9 @@ fun LibraryScreen(
                         }
                     }
 
-                    // Botão Flutuante "+ Nova"
+                    // Botão Flutuante Cápsula estilo YouTube Music (+ Nova)
                     FloatingActionButton(
-                        onClick = { showCreatePlaylistDialog = true },
+                        onClick = { showNewBottomSheet = true },
                         containerColor = YtmGrey10,
                         contentColor = YtmWhite,
                         shape = RoundedCornerShape(24.dp),
@@ -506,23 +508,100 @@ fun LibraryScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Nova playlist",
+                                text = "Nova",
                                 fontFamily = YouTubeSansFontFamily,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // ModalBottomSheet "Nova" idêntico ao YouTube Music
+    if (showNewBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showNewBottomSheet = false },
+            containerColor = YtmGrey11,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 10.dp, bottom = 12.dp)
+                        .width(40.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White.copy(alpha = 0.3f))
+                )
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Nova",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = YtmWhite,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                NewBottomSheetOption(
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    title = "Playlist",
+                    subtitle = "Reúna músicas e vídeos",
+                    onClick = {
+                        showNewBottomSheet = false
+                        showCreatePlaylistDialog = true
+                    }
+                )
+
+                NewBottomSheetOption(
+                    icon = Icons.Default.GroupAdd,
+                    title = "Playlist colaborativa",
+                    subtitle = "Crie uma playlist com amigos",
+                    onClick = {
+                        showNewBottomSheet = false
+                        showCreatePlaylistDialog = true
+                    }
+                )
+
+                NewBottomSheetOption(
+                    icon = Icons.Default.JoinInner,
+                    title = "Taste match",
+                    subtitle = "Combine o gosto musical dos seus amigos",
+                    onClick = {
+                        showNewBottomSheet = false
+                        showCreatePlaylistDialog = true
+                    }
+                )
+
+                NewBottomSheetOption(
+                    icon = Icons.Default.Radio,
+                    title = "Mix",
+                    subtitle = "Escolha um artista e criaremos um mix",
+                    onClick = {
+                        showNewBottomSheet = false
+                        showCreatePlaylistDialog = true
+                    }
+                )
             }
         }
     }
@@ -586,12 +665,54 @@ fun LibraryScreen(
 }
 
 @Composable
+private fun NewBottomSheetOption(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = YtmWhite,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = YtmWhite
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = YtmTextSecondary
+            )
+        }
+    }
+}
+
+@Composable
 private fun LibraryListItem(
     title: String,
     subtitle: String,
     imageUrl: String? = null,
     iconVector: ImageVector? = null,
-    iconTint: Color = YtmWhite,
+    isSpecialLiked: Boolean = false,
+    isSpecialDownload: Boolean = false,
     onClick: () -> Unit
 ) {
     Row(
@@ -606,10 +727,30 @@ private fun LibraryListItem(
             modifier = Modifier
                 .size(60.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(YtmGrey10),
+                .background(
+                    when {
+                        isSpecialLiked -> Brush.linearGradient(listOf(Color(0xFF5C3592), Color(0xFF2F2458)))
+                        isSpecialDownload -> Brush.linearGradient(listOf(Color(0xFF1B4E43), Color(0xFF102824)))
+                        else -> Brush.linearGradient(listOf(YtmGrey10, YtmGrey10))
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
-            if (!imageUrl.isNullOrBlank()) {
+            if (isSpecialLiked) {
+                Icon(
+                    imageVector = Icons.Filled.ThumbUp,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.70f),
+                    modifier = Modifier.size(28.dp)
+                )
+            } else if (isSpecialDownload) {
+                Icon(
+                    imageVector = Icons.Filled.Download,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier.size(28.dp)
+                )
+            } else if (!imageUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = null,
@@ -620,7 +761,7 @@ private fun LibraryListItem(
                 Icon(
                     imageVector = iconVector,
                     contentDescription = null,
-                    tint = iconTint,
+                    tint = YtmWhite,
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -639,15 +780,27 @@ private fun LibraryListItem(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = subtitle,
-                fontFamily = YouTubeSansFontFamily,
-                fontWeight = FontWeight.Normal,
-                fontSize = 13.sp,
-                color = YtmTextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isSpecialLiked || isSpecialDownload) {
+                    Icon(
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = null,
+                        tint = YtmTextSecondary,
+                        modifier = Modifier
+                            .size(12.dp)
+                            .padding(end = 2.dp)
+                    )
+                }
+                Text(
+                    text = subtitle,
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 13.sp,
+                    color = YtmTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         IconButton(onClick = {}) {
@@ -667,7 +820,8 @@ private fun LibraryGridCard(
     subtitle: String,
     imageUrl: String? = null,
     iconVector: ImageVector? = null,
-    iconTint: Color = YtmWhite,
+    isSpecialLiked: Boolean = false,
+    isSpecialDownload: Boolean = false,
     onClick: () -> Unit
 ) {
     Column(
@@ -681,10 +835,30 @@ private fun LibraryGridCard(
                 .fillMaxWidth()
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(8.dp))
-                .background(YtmGrey10),
+                .background(
+                    when {
+                        isSpecialLiked -> Brush.linearGradient(listOf(Color(0xFF5C3592), Color(0xFF2F2458)))
+                        isSpecialDownload -> Brush.linearGradient(listOf(Color(0xFF1B4E43), Color(0xFF102824)))
+                        else -> Brush.linearGradient(listOf(YtmGrey10, YtmGrey10))
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
-            if (!imageUrl.isNullOrBlank()) {
+            if (isSpecialLiked) {
+                Icon(
+                    imageVector = Icons.Filled.ThumbUp,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.65f),
+                    modifier = Modifier.size(54.dp)
+                )
+            } else if (isSpecialDownload) {
+                Icon(
+                    imageVector = Icons.Filled.Download,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.70f),
+                    modifier = Modifier.size(54.dp)
+                )
+            } else if (!imageUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = null,
@@ -695,7 +869,7 @@ private fun LibraryGridCard(
                 Icon(
                     imageVector = iconVector,
                     contentDescription = null,
-                    tint = iconTint,
+                    tint = YtmWhite,
                     modifier = Modifier.size(42.dp)
                 )
             }
@@ -712,15 +886,27 @@ private fun LibraryGridCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Text(
-            text = subtitle,
-            fontFamily = YouTubeSansFontFamily,
-            fontWeight = FontWeight.Normal,
-            fontSize = 12.sp,
-            color = YtmTextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isSpecialLiked || isSpecialDownload) {
+                Icon(
+                    imageVector = Icons.Default.PushPin,
+                    contentDescription = null,
+                    tint = YtmTextSecondary,
+                    modifier = Modifier
+                        .size(11.dp)
+                        .padding(end = 2.dp)
+                )
+            }
+            Text(
+                text = subtitle,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Normal,
+                fontSize = 12.sp,
+                color = YtmTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -750,7 +936,7 @@ fun TrackListDetailView(
         ) {
             IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = Icons.Default.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Voltar",
                     tint = YtmWhite
                 )

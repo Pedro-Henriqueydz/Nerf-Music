@@ -81,6 +81,9 @@ class MusicViewModel(
     private val _isLyricsAboveTitleEnabled = MutableStateFlow(true)
     val isLyricsAboveTitleEnabled: StateFlow<Boolean> = _isLyricsAboveTitleEnabled.asStateFlow()
 
+    private val _isLibraryGridView = MutableStateFlow(true)
+    val isLibraryGridView: StateFlow<Boolean> = _isLibraryGridView.asStateFlow()
+
     // URL do vídeo para o background do Player (Canvas)
     private val _canvasVideoUrl = MutableStateFlow<String?>(null)
     val canvasVideoUrl: StateFlow<String?> = _canvasVideoUrl.asStateFlow()
@@ -222,6 +225,7 @@ class MusicViewModel(
             _isCanvasEnabled.value = settingsRepo.isCanvasEnabled.value
             _isCanvasWifiOnly.value = settingsRepo.isCanvasWifiOnly.value
             _isLyricsAboveTitleEnabled.value = settingsRepo.isLyricsAboveTitleEnabled.value
+            _isLibraryGridView.value = settingsRepo.isLibraryGridView.value
         }
         if (userHistoryRepository == null) {
             val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
@@ -1283,6 +1287,11 @@ class MusicViewModel(
     fun setLyricsAboveTitleEnabled(enabled: Boolean) {
         _isLyricsAboveTitleEnabled.value = enabled
         userSettingsRepository?.setLyricsAboveTitleEnabled(enabled)
+    }
+
+    fun setLibraryGridView(isGrid: Boolean) {
+        _isLibraryGridView.value = isGrid
+        userSettingsRepository?.setLibraryGridView(isGrid)
     }
 
     fun showChangeLogManually() {

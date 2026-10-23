@@ -107,6 +107,7 @@ fun MainScreen(
     val isCanvasEnabled by viewModel.isCanvasEnabled.collectAsState()
     val isLyricsAboveTitleEnabled by viewModel.isLyricsAboveTitleEnabled.collectAsState()
     val currentLyricsLine by viewModel.currentLyricsLine.collectAsState()
+    val downloadProgressMap by viewModel.downloadProgressMap.collectAsState()
     val currentLyrics by viewModel.currentLyrics.collectAsState()
     val trackRelatedData by viewModel.trackRelatedData.collectAsState()
     val isLoadingRelated by viewModel.isLoadingRelated.collectAsState()
@@ -466,6 +467,7 @@ fun MainScreen(
                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
                 onToggleSave = { trackId -> viewModel.toggleSaveToPlaylist(trackId) },
                 onToggleDownload = { trackId -> viewModel.toggleDownload(trackId) },
+                downloadProgress = playbackState.currentTrack?.let { downloadProgressMap[it.id] },
                 onSelectQueueChip = { chip -> viewModel.selectQueueFilterChip(chip) },
                 onPlayQueueItem = { index -> viewModel.playQueueItemAt(index) },
                 onMoveQueueItem = { fromIndex, toIndex -> viewModel.moveQueueItem(fromIndex, toIndex) },

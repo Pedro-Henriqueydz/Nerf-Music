@@ -10,10 +10,12 @@ interface UserSettingsRepository {
     val isCanvasEnabled: StateFlow<Boolean>
     val isCanvasWifiOnly: StateFlow<Boolean>
     val isLyricsAboveTitleEnabled: StateFlow<Boolean>
+    val isLibraryGridView: StateFlow<Boolean>
 
     fun setCanvasEnabled(enabled: Boolean)
     fun setCanvasWifiOnly(wifiOnly: Boolean)
     fun setLyricsAboveTitleEnabled(enabled: Boolean)
+    fun setLibraryGridView(isGrid: Boolean)
 }
 
 class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
@@ -28,6 +30,9 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
 
     private val _isLyricsAboveTitleEnabled = MutableStateFlow(prefs.getBoolean(KEY_LYRICS_ABOVE_TITLE, true))
     override val isLyricsAboveTitleEnabled: StateFlow<Boolean> = _isLyricsAboveTitleEnabled.asStateFlow()
+
+    private val _isLibraryGridView = MutableStateFlow(prefs.getBoolean(KEY_LIBRARY_GRID_VIEW, true))
+    override val isLibraryGridView: StateFlow<Boolean> = _isLibraryGridView.asStateFlow()
 
     override fun setCanvasEnabled(enabled: Boolean) {
         _isCanvasEnabled.value = enabled
@@ -44,10 +49,16 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         prefs.edit().putBoolean(KEY_LYRICS_ABOVE_TITLE, enabled).apply()
     }
 
+    override fun setLibraryGridView(isGrid: Boolean) {
+        _isLibraryGridView.value = isGrid
+        prefs.edit().putBoolean(KEY_LIBRARY_GRID_VIEW, isGrid).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "nerf_user_settings_prefs"
         private const val KEY_CANVAS_ENABLED = "key_canvas_video_enabled"
         private const val KEY_CANVAS_WIFI_ONLY = "key_canvas_wifi_only"
         private const val KEY_LYRICS_ABOVE_TITLE = "key_lyrics_above_title"
+        private const val KEY_LIBRARY_GRID_VIEW = "key_library_grid_view"
     }
 }
