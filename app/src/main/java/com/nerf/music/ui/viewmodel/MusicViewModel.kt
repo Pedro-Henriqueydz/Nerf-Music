@@ -1117,13 +1117,138 @@ class MusicViewModel(
         _userMessage.value = if (ok) "Adicionada à playlist" else "Faixa já estava na playlist"
     }
 
-    fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
+        fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
         val ok = libraryRepository?.removeTrackFromPlaylist(playlistId, trackId) == true
         if (ok) {
             _userMessage.value = "Faixa removida da playlist"
         }
     }
-    fun clearUserMessage() {
+
+    fun updatePlaylistTitle(playlistId: String, newTitle: String) {
+        val ok = libraryRepository?.updatePlaylistTitle(playlistId, newTitle) == true
+        if (ok) {
+            _userMessage.value = "Playlist renomeada"
+        }
+    }
+
+    fun playUserPlaylist(playlist: UserPlaylist, startIndex: Int = 0, isShuffle: Boolean = false) {
+        if (playlist.tracks.isEmpty()) return
+        val effectiveTracks = if (isShuffle) playlist.tracks.shuffled() else playlist.tracks
+        val targetIndex = if (isShuffle) 0 else startIndex.coerceIn(0, effectiveTracks.size - 1)
+        val targetTrack = effectiveTracks[targetIndex]
+
+        _selectedTrack.value = targetTrack
+        val controller = mediaController ?: return
+
+        radioFetchJob?.cancel()
+        seedVideoId = targetTrack.id
+
+        userHistoryRepository?.recordTrackPlayed(targetTrack)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        _recentlyPlayed.value = updatedRecent
+
+        effectiveTracks.forEach { trackMetadataMap[it.id] = it }
+
+        _loadingTrackId.value = targetTrack.id
+        loadLyrics(targetTrack)
+        loadCanvasVideo(targetTrack)
+        _playbackState.value = _playbackState.value.copy(
+            currentTrack = targetTrack,
+            queue = effectiveTracks,
+            currentQueueIndex = targetIndex,
+            isPlaying = false,
+            currentPositionMs = 0L,
+            durationMs = (targetTrack.durationSeconds * 1000L).coerceAtLeast(0L),
+            isBuffering = true,
+            hasNext = targetIndex < effectiveTracks.size - 1,
+            hasPrevious = targetIndex > 0,
+            queueSourceTitle = playlist.title,
+            queueFilterChips = emptyList(),
+            selectedQueueChipParams = null,
+            isLoadingQueueRadio = false,
+            errorMessage = null
+        )
+
+        val mediaItems = effectiveTracks.map { trackToMediaItem(it) }
+        controller.setMediaItems(mediaItems, targetIndex, 0L)
+        controller.prepare()
+        controller.play()
+    }
+
+    fun playTrackList(title: String, tracks: List<Track>, startIndex: Int = 0, isShuffle: Boolean = false) {
+        if (tracks.isEmpty()) return
+        val effectiveTracks = if (isShuffle) tracks.shuffled() else tracks
+        val targetIndex = if (isShuffle) 0 else startIndex.coerceIn(0, effectiveTracks.size - 1)
+        val targetTrack = effectiveTracks[targetIndex]
+
+        _selectedTrack.value = targetTrack
+        val controller = mediaController ?: return
+
+        radioFetchJob?.cancel()
+        seedVideoId = targetTrack.id
+
+        userHistoryRepository?.recordTrackPlayed(targetTrack)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        _recentlyPlayed.value = updatedRecent
+
+        effectiveTracks.forEach { trackMetadataMap[it.id] = it }
+
+        _loadingTrackId.value = targetTrack.id
+        loadLyrics(targetTrack)
+        loadCanvasVideo(targetTrack)
+        _playbackState.value = _playbackState.value.copy(
+            currentTrack = targetTrack,
+            queue = effectiveTracks,
+            currentQueueIndex = targetIndex,
+            isPlaying = false,
+            currentPositionMs = 0L,
+            durationMs = (targetTrack.durationSeconds * 1000L).coerceAtLeast(0L),
+            isBuffering = true,
+            hasNext = targetIndex < effectiveTracks.size - 1,
+            hasPrevious = targetIndex > 0,
+            queueSourceTitle = title,
+            queueFilterChips = emptyList(),
+            selectedQueueChipParams = null,
+            isLoadingQueueRadio = false,
+            errorMessage = null
+        )
+
+        val mediaItems = effectiveTracks.map { trackToMediaItem(it) }
+        controller.setMediaItems(mediaItems, targetIndex, 0L)
+        controller.prepare()
+        controller.play()
+    }
+
+    fun downloadAll(tracks: List<Track>) {
+        val libRepo = libraryRepository ?: return
+        val toDownload = tracks.filterNot { libRepo.isDownloaded(it.id) }
+        if (toDownload.isEmpty()) {
+            _userMessage.value = "Todas as músicas já foram baixadas"
+            return
+        }
+        _userMessage.value = "Baixando  músicas..."
+        viewModelScope.launch {
+            for (track in toDownload) {
+                trackMetadataMap[track.id] = track
+                val currentProg = _downloadProgressMap.value.toMutableMap()
+                currentProg[track.id] = 0.05f
+                _downloadProgressMap.value = currentProg
+
+                libRepo.downloadTrack(track) { prog ->
+                    val pMap = _downloadProgressMap.value.toMutableMap()
+                    pMap[track.id] = prog
+                    _downloadProgressMap.value = pMap
+                }
+                val pMap = _downloadProgressMap.value.toMutableMap()
+                pMap.remove(track.id)
+                _downloadProgressMap.value = pMap
+            }
+            _userMessage.value = "Download da playlist concluído!"
+        }
+    }
+        fun clearUserMessage() {
         _userMessage.value = null
     }
 

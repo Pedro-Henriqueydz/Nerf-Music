@@ -35,6 +35,7 @@ interface LibraryRepository {
 
     fun createPlaylist(title: String, description: String = ""): UserPlaylist
     fun deletePlaylist(playlistId: String): Boolean
+    fun updatePlaylistTitle(playlistId: String, newTitle: String): Boolean
     fun addTrackToPlaylist(playlistId: String, track: Track): Boolean
     fun removeTrackFromPlaylist(playlistId: String, trackId: String): Boolean
     fun isTrackInPlaylist(playlistId: String, trackId: String): Boolean
@@ -241,6 +242,19 @@ class LibraryRepositoryImpl(
         _playlistsFlow.value = current
         savePlaylists(current)
         return newPlaylist
+    }
+
+    override fun updatePlaylistTitle(playlistId: String, newTitle: String): Boolean {
+        val current = _playlistsFlow.value.toMutableList()
+        val index = current.indexOfFirst { it.id == playlistId }
+        if (index >= 0) {
+            val pl = current[index]
+            current[index] = pl.copy(title = newTitle.trim().ifBlank { pl.title })
+            _playlistsFlow.value = current
+            savePlaylists(current)
+            return true
+        }
+        return false
     }
 
     override fun deletePlaylist(playlistId: String): Boolean {

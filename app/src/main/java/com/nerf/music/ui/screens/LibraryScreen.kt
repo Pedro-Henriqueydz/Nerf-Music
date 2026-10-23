@@ -6,10 +6,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,9 +81,11 @@ fun LibraryScreen(
     // BottomSheet "Nova" estilo YouTube Music
     var showNewBottomSheet by remember { mutableStateOf(false) }
 
-    // Dialog para criar nova playlist
+    // Modal oficial "Nova playlist" idêntico ao YouTube Music
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistTitle by remember { mutableStateOf("") }
+    var newPlaylistVisibility by remember { mutableStateOf("Pública") }
+    var isCollaborative by remember { mutableStateOf(false) }
 
     // Sub-telas de navegação direta
     var selectedUserPlaylist by remember { mutableStateOf<UserPlaylist?>(null) }
@@ -114,7 +118,6 @@ fun LibraryScreen(
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Lupa de busca exclusiva da biblioteca
                     IconButton(onClick = { isSearchActive = true }) {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -124,7 +127,6 @@ fun LibraryScreen(
                         )
                     }
 
-                    // Engrenagem de Configurações
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -136,7 +138,6 @@ fun LibraryScreen(
                 }
             }
         } else {
-            // Barra de busca ativa
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -192,21 +193,23 @@ fun LibraryScreen(
             }
         }
 
-        // Sub-telas de navegação direta (Músicas Curtidas / Downloads / Playlist)
+        // Sub-telas de navegação direta (Músicas Curtidas / Downloads / Playlist do Usuário)
         when {
             showLikedTracksView -> {
                 TrackListDetailView(
                     title = "Músicas Curtidas",
                     subtitle = "Playlist automática • ${likedTracks.size} músicas",
                     tracks = likedTracks,
+                    isLikedMusic = true,
                     onBack = { showLikedTracksView = false },
-                    onPlayTrack = { track ->
-                        viewModel.playTrack(track)
+                    onPlayTrack = { track, index ->
+                        viewModel.playTrackList("Músicas Curtidas", likedTracks, index, false)
                     },
                     onShuffleAll = {
-                        if (likedTracks.isNotEmpty()) {
-                            viewModel.playTrack(likedTracks.shuffled().first())
-                        }
+                        viewModel.playTrackList("Músicas Curtidas", likedTracks, 0, true)
+                    },
+                    onDownloadAll = {
+                        viewModel.downloadAll(likedTracks)
                     }
                 )
             }
@@ -216,36 +219,22 @@ fun LibraryScreen(
                     title = "Músicas Baixadas",
                     subtitle = "Downloads offline • ${downloadedList.size} músicas",
                     tracks = downloadedList,
+                    isDownloads = true,
                     onBack = { showDownloadedTracksView = false },
-                    onPlayTrack = { track ->
-                        viewModel.playTrack(track)
+                    onPlayTrack = { track, index ->
+                        viewModel.playTrackList("Músicas Baixadas", downloadedList, index, false)
                     },
                     onShuffleAll = {
-                        if (downloadedList.isNotEmpty()) {
-                            viewModel.playTrack(downloadedList.shuffled().first())
-                        }
+                        viewModel.playTrackList("Músicas Baixadas", downloadedList, 0, true)
                     }
                 )
             }
             selectedUserPlaylist != null -> {
                 val currentPl = userPlaylists.firstOrNull { it.id == selectedUserPlaylist!!.id } ?: selectedUserPlaylist!!
-                TrackListDetailView(
-                    title = currentPl.title,
-                    subtitle = "Playlist personalizada • ${currentPl.trackCount} músicas",
-                    tracks = currentPl.tracks,
-                    onBack = { selectedUserPlaylist = null },
-                    onPlayTrack = { track ->
-                        viewModel.playTrack(track)
-                    },
-                    onShuffleAll = {
-                        if (currentPl.tracks.isNotEmpty()) {
-                            viewModel.playTrack(currentPl.tracks.shuffled().first())
-                        }
-                    },
-                    onDelete = {
-                        viewModel.deletePlaylist(currentPl.id)
-                        selectedUserPlaylist = null
-                    }
+                UserPlaylistDetailView(
+                    playlist = currentPl,
+                    viewModel = viewModel,
+                    onBack = { selectedUserPlaylist = null }
                 )
             }
             else -> {
@@ -433,8 +422,7 @@ fun LibraryScreen(
                                     LibraryListItem(
                                         title = pl.title,
                                         subtitle = "Playlist • ${pl.trackCount} músicas",
-                                        imageUrl = pl.thumbnailUrl,
-                                        iconVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                        playlistTracks = pl.tracks,
                                         onClick = { selectedUserPlaylist = pl }
                                     )
                                 }
@@ -487,8 +475,7 @@ fun LibraryScreen(
                                     LibraryGridCard(
                                         title = pl.title,
                                         subtitle = "Playlist • ${pl.trackCount} músicas",
-                                        imageUrl = pl.thumbnailUrl,
-                                        iconVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                        playlistTracks = pl.tracks,
                                         onClick = { selectedUserPlaylist = pl }
                                     )
                                 }
@@ -606,50 +593,142 @@ fun LibraryScreen(
         }
     }
 
-    // Modal para criar nova playlist
+    // Diálogo "Nova playlist" Fiel ao Print do YouTube Music
     if (showCreatePlaylistDialog) {
         AlertDialog(
             onDismissRequest = {
                 showCreatePlaylistDialog = false
                 newPlaylistTitle = ""
             },
-            containerColor = YtmGrey11,
+            containerColor = Color(0xFF282828),
+            shape = RoundedCornerShape(24.dp),
             title = {
                 Text(
                     text = "Nova playlist",
                     fontFamily = YouTubeSansFontFamily,
                     fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
                     color = YtmWhite
                 )
             },
             text = {
-                OutlinedTextField(
-                    value = newPlaylistTitle,
-                    onValueChange = { newPlaylistTitle = it },
-                    placeholder = {
-                        Text(text = "Título da playlist", color = YtmTextSecondary)
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = YtmWhite,
-                        unfocusedTextColor = YtmWhite,
-                        focusedBorderColor = OrangePrimary,
-                        unfocusedBorderColor = YtmWhite20Pct
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (newPlaylistTitle.isNotBlank()) {
-                            viewModel.createPlaylist(newPlaylistTitle.trim())
-                            showCreatePlaylistDialog = false
-                            newPlaylistTitle = ""
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Campo Título
+                    OutlinedTextField(
+                        value = newPlaylistTitle,
+                        onValueChange = { newPlaylistTitle = it },
+                        placeholder = {
+                            Text(text = "Título", color = YtmTextSecondary)
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = YtmWhite,
+                            unfocusedTextColor = YtmWhite,
+                            focusedBorderColor = YtmWhite,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.4f),
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Campo Privacidade
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Transparent,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                newPlaylistVisibility = if (newPlaylistVisibility == "Pública") "Privada" else "Pública"
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Privacidade",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = YtmTextSecondary
+                                )
+                                Text(
+                                    text = newPlaylistVisibility,
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    color = YtmWhite
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                tint = YtmWhite
+                            )
                         }
                     }
+
+                    // Linha Colaborar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Colaborar",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 16.sp,
+                            color = YtmWhite
+                        )
+                        Switch(
+                            checked = isCollaborative,
+                            onCheckedChange = { isCollaborative = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = YtmWhite,
+                                checkedTrackColor = OrangePrimary,
+                                uncheckedThumbColor = Color(0xFF909090),
+                                uncheckedTrackColor = Color(0xFF383838)
+                            )
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                val isEnabled = newPlaylistTitle.isNotBlank()
+                Button(
+                    onClick = {
+                        if (isEnabled) {
+                            val created = viewModel.createPlaylist(newPlaylistTitle.trim())
+                            showCreatePlaylistDialog = false
+                            newPlaylistTitle = ""
+                            if (created != null) {
+                                selectedUserPlaylist = created
+                            }
+                        }
+                    },
+                    enabled = isEnabled,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isEnabled) YtmWhite else Color(0xFF3A3A3A),
+                        contentColor = if (isEnabled) YtmBlack else YtmTextSecondary
+                    ),
+                    shape = RoundedCornerShape(50),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp)
                 ) {
-                    Text(text = "Criar", color = OrangePrimary, fontWeight = FontWeight.Bold)
+                    Text(text = "Criar", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             },
             dismissButton = {
@@ -657,7 +736,7 @@ fun LibraryScreen(
                     showCreatePlaylistDialog = false
                     newPlaylistTitle = ""
                 }) {
-                    Text(text = "Cancelar", color = YtmTextSecondary)
+                    Text(text = "Cancelar", color = YtmWhite, fontSize = 14.sp)
                 }
             }
         )
@@ -705,12 +784,88 @@ private fun NewBottomSheetOption(
     }
 }
 
+/**
+ * Renderiza uma colagem 2x2 das capas das 4 primeiras músicas da playlist
+ * (ou capa individual se tiver < 4 músicas, ou gradiente estilizado se vazia).
+ */
+@Composable
+fun PlaylistCollageCover(
+    tracks: List<Track>,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(YtmGrey10),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            tracks.size >= 4 -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AsyncImage(
+                            model = tracks[0].thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                        AsyncImage(
+                            model = tracks[1].thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                    }
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AsyncImage(
+                            model = tracks[2].thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                        AsyncImage(
+                            model = tracks[3].thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                    }
+                }
+            }
+            tracks.isNotEmpty() -> {
+                AsyncImage(
+                    model = tracks[0].thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            else -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Brush.linearGradient(listOf(Color(0xFF2C2459), Color(0xFF131313)))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null,
+                        tint = YtmWhite.copy(alpha = 0.5f),
+                        modifier = Modifier.size(56.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun LibraryListItem(
     title: String,
     subtitle: String,
     imageUrl: String? = null,
     iconVector: ImageVector? = null,
+    playlistTracks: List<Track> = emptyList(),
     isSpecialLiked: Boolean = false,
     isSpecialDownload: Boolean = false,
     onClick: () -> Unit
@@ -723,47 +878,54 @@ private fun LibraryListItem(
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(60.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(
-                    when {
-                        isSpecialLiked -> Brush.linearGradient(listOf(Color(0xFF5C3592), Color(0xFF2F2458)))
-                        isSpecialDownload -> Brush.linearGradient(listOf(Color(0xFF1B4E43), Color(0xFF102824)))
-                        else -> Brush.linearGradient(listOf(YtmGrey10, YtmGrey10))
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isSpecialLiked) {
-                Icon(
-                    imageVector = Icons.Filled.ThumbUp,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.70f),
-                    modifier = Modifier.size(28.dp)
-                )
-            } else if (isSpecialDownload) {
-                Icon(
-                    imageVector = Icons.Filled.Download,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.75f),
-                    modifier = Modifier.size(28.dp)
-                )
-            } else if (!imageUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (iconVector != null) {
-                Icon(
-                    imageVector = iconVector,
-                    contentDescription = null,
-                    tint = YtmWhite,
-                    modifier = Modifier.size(28.dp)
-                )
+        if (playlistTracks.isNotEmpty()) {
+            PlaylistCollageCover(
+                tracks = playlistTracks,
+                modifier = Modifier.size(60.dp)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        when {
+                            isSpecialLiked -> Brush.linearGradient(listOf(Color(0xFF5C3592), Color(0xFF2F2458)))
+                            isSpecialDownload -> Brush.linearGradient(listOf(Color(0xFF1B4E43), Color(0xFF102824)))
+                            else -> Brush.linearGradient(listOf(YtmGrey10, YtmGrey10))
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isSpecialLiked) {
+                    Icon(
+                        imageVector = Icons.Filled.ThumbUp,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.70f),
+                        modifier = Modifier.size(28.dp)
+                    )
+                } else if (isSpecialDownload) {
+                    Icon(
+                        imageVector = Icons.Filled.Download,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.75f),
+                        modifier = Modifier.size(28.dp)
+                    )
+                } else if (!imageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (iconVector != null) {
+                    Icon(
+                        imageVector = iconVector,
+                        contentDescription = null,
+                        tint = YtmWhite,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         }
 
@@ -820,6 +982,7 @@ private fun LibraryGridCard(
     subtitle: String,
     imageUrl: String? = null,
     iconVector: ImageVector? = null,
+    playlistTracks: List<Track> = emptyList(),
     isSpecialLiked: Boolean = false,
     isSpecialDownload: Boolean = false,
     onClick: () -> Unit
@@ -830,48 +993,57 @@ private fun LibraryGridCard(
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(
-                    when {
-                        isSpecialLiked -> Brush.linearGradient(listOf(Color(0xFF5C3592), Color(0xFF2F2458)))
-                        isSpecialDownload -> Brush.linearGradient(listOf(Color(0xFF1B4E43), Color(0xFF102824)))
-                        else -> Brush.linearGradient(listOf(YtmGrey10, YtmGrey10))
-                    }
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isSpecialLiked) {
-                Icon(
-                    imageVector = Icons.Filled.ThumbUp,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.65f),
-                    modifier = Modifier.size(54.dp)
-                )
-            } else if (isSpecialDownload) {
-                Icon(
-                    imageVector = Icons.Filled.Download,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.70f),
-                    modifier = Modifier.size(54.dp)
-                )
-            } else if (!imageUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else if (iconVector != null) {
-                Icon(
-                    imageVector = iconVector,
-                    contentDescription = null,
-                    tint = YtmWhite,
-                    modifier = Modifier.size(42.dp)
-                )
+        if (playlistTracks.isNotEmpty()) {
+            PlaylistCollageCover(
+                tracks = playlistTracks,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        when {
+                            isSpecialLiked -> Brush.linearGradient(listOf(Color(0xFF5C3592), Color(0xFF2F2458)))
+                            isSpecialDownload -> Brush.linearGradient(listOf(Color(0xFF1B4E43), Color(0xFF102824)))
+                            else -> Brush.linearGradient(listOf(YtmGrey10, YtmGrey10))
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isSpecialLiked) {
+                    Icon(
+                        imageVector = Icons.Filled.ThumbUp,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.65f),
+                        modifier = Modifier.size(54.dp)
+                    )
+                } else if (isSpecialDownload) {
+                    Icon(
+                        imageVector = Icons.Filled.Download,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.70f),
+                        modifier = Modifier.size(54.dp)
+                    )
+                } else if (!imageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else if (iconVector != null) {
+                    Icon(
+                        imageVector = iconVector,
+                        contentDescription = null,
+                        tint = YtmWhite,
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
             }
         }
 
@@ -910,15 +1082,546 @@ private fun LibraryGridCard(
     }
 }
 
+/**
+ * Tela de Detalhes Completa da Playlist do Usuário
+ * Fiel ao print oficial do YouTube Music com colagem 2x2, botões de ação e FAB de play ao rolar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UserPlaylistDetailView(
+    playlist: UserPlaylist,
+    viewModel: MusicViewModel,
+    onBack: () -> Unit
+) {
+    val listState = rememberLazyListState()
+    val showFloatingPlay by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
+
+    var showEditTitleDialog by remember { mutableStateOf(false) }
+    var editTitleText by remember { mutableStateOf(playlist.title) }
+
+    // Diálogo de Busca para adicionar música à playlist
+    var showAddSongSheet by remember { mutableStateOf(false) }
+    var searchSongQuery by remember { mutableStateOf("") }
+    val searchResult by viewModel.searchResult.collectAsState()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(YtmBlack)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header TopBar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .height(56.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Voltar",
+                        tint = YtmWhite
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showAddSongSheet = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Buscar e adicionar",
+                            tint = YtmWhite
+                        )
+                    }
+
+                    IconButton(onClick = { showEditTitleDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Editar playlist",
+                            tint = YtmWhite
+                        )
+                    }
+
+                    IconButton(onClick = {
+                        viewModel.deletePlaylist(playlist.id)
+                        onBack()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Excluir playlist",
+                            tint = ErrorColor
+                        )
+                    }
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 96.dp)
+            ) {
+                // 1. Capa em Colagem 2x2
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PlaylistCollageCover(
+                            tracks = playlist.tracks,
+                            modifier = Modifier
+                                .size(260.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                    }
+                }
+
+                // 2. Título & Metadados
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Text(
+                            text = playlist.title,
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 26.sp,
+                            color = YtmWhite,
+                            lineHeight = 32.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(OrangePrimary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "V",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = YtmWhite
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Você • Pública • ${playlist.trackCount} músicas",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 13.sp,
+                                color = YtmTextSecondary
+                            )
+                        }
+                    }
+                }
+
+                // 3. Fileira de Botões de Ação estilo YouTube Music
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Botões de ação circulares à esquerda
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // Botão Download All
+                            Surface(
+                                shape = CircleShape,
+                                color = YtmGrey10,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clickable {
+                                        viewModel.downloadAll(playlist.tracks)
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = "Baixar tudo",
+                                        tint = YtmWhite,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            // Botão Editar Título
+                            Surface(
+                                shape = CircleShape,
+                                color = YtmGrey10,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clickable { showEditTitleDialog = true }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Editar",
+                                        tint = YtmWhite,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Botões de Reprodução à direita (Shuffle + Grande Play Branco)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Botão Aleatório
+                            IconButton(
+                                onClick = {
+                                    viewModel.playUserPlaylist(playlist, isShuffle = true)
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shuffle,
+                                    contentDescription = "Aleatório",
+                                    tint = YtmWhite,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+
+                            // Botão Grande Play Branco
+                            Surface(
+                                shape = CircleShape,
+                                color = YtmWhite,
+                                shadowElevation = 6.dp,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clickable {
+                                        viewModel.playUserPlaylist(playlist, isShuffle = false)
+                                    }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Tocar",
+                                        tint = YtmBlack,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Item "+ Add a song"
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showAddSongSheet = true }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(YtmGrey10),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = YtmWhite,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Text(
+                            text = "Adicionar uma música",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            color = YtmWhite
+                        )
+                    }
+                }
+
+                // 5. Faixas da Playlist
+                itemsIndexed(playlist.tracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.playUserPlaylist(playlist, startIndex = index, isShuffle = false)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = track.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(YtmGrey10)
+                        )
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = YtmWhite,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${track.artist} • ${track.durationText}",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 12.sp,
+                                color = YtmTextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            viewModel.removeTrackFromPlaylist(playlist.id, track.id)
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remover",
+                                tint = YtmTextSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Botão Flutuante de Play no Rodapé à Direita (surge suavemente ao rolar para baixo)
+        AnimatedVisibility(
+            visible = showFloatingPlay,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 20.dp, bottom = 24.dp)
+        ) {
+            FloatingActionButton(
+                onClick = {
+                    viewModel.playUserPlaylist(playlist, isShuffle = false)
+                },
+                containerColor = YtmWhite,
+                contentColor = YtmBlack,
+                shape = CircleShape,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Tocar",
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+    }
+
+    // Modal para renomear playlist
+    if (showEditTitleDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditTitleDialog = false },
+            containerColor = Color(0xFF282828),
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Editar playlist",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = YtmWhite
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = editTitleText,
+                    onValueChange = { editTitleText = it },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = YtmWhite,
+                        unfocusedTextColor = YtmWhite,
+                        focusedBorderColor = YtmWhite,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editTitleText.isNotBlank()) {
+                            viewModel.updatePlaylistTitle(playlist.id, editTitleText.trim())
+                            showEditTitleDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = YtmWhite, contentColor = YtmBlack),
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(text = "Salvar", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditTitleDialog = false }) {
+                    Text(text = "Cancelar", color = YtmWhite)
+                }
+            }
+        )
+    }
+
+    // Bottom Sheet para pesquisar e adicionar música à playlist
+    if (showAddSongSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddSongSheet = false },
+            containerColor = YtmGrey11,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f)
+                    .padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    text = "Adicionar à playlist",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = YtmWhite,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                OutlinedTextField(
+                    value = searchSongQuery,
+                    onValueChange = {
+                        searchSongQuery = it
+                        viewModel.onQueryChanged(it)
+                        if (it.length >= 2) {
+                            viewModel.performSearch()
+                        }
+                    },
+                    placeholder = {
+                        Text(text = "Pesquisar músicas...", color = YtmTextSecondary)
+                    },
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = YtmTextSecondary)
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = YtmWhite,
+                        unfocusedTextColor = YtmWhite,
+                        focusedBorderColor = YtmWhite,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(searchResult.songs, key = { it.id }) { song ->
+                        val isAlreadyIn = playlist.tracks.any { it.id == song.id }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    if (!isAlreadyIn) {
+                                        viewModel.addTrackToPlaylist(playlist.id, song)
+                                    }
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = song.thumbnailUrl,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(YtmGrey10)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = song.title,
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = YtmWhite,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${song.artist} • ${song.durationText}",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = YtmTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = {
+                                if (!isAlreadyIn) {
+                                    viewModel.addTrackToPlaylist(playlist.id, song)
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = if (isAlreadyIn) Icons.Default.Check else Icons.Default.Add,
+                                    contentDescription = if (isAlreadyIn) "Já adicionada" else "Adicionar",
+                                    tint = if (isAlreadyIn) Color(0xFF4CAF50) else YtmWhite
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun TrackListDetailView(
     title: String,
     subtitle: String,
     tracks: List<Track>,
+    isLikedMusic: Boolean = false,
+    isDownloads: Boolean = false,
     onBack: () -> Unit,
-    onPlayTrack: (Track) -> Unit,
+    onPlayTrack: (Track, Int) -> Unit,
     onShuffleAll: () -> Unit,
-    onDelete: (() -> Unit)? = null
+    onDownloadAll: (() -> Unit)? = null
 ) {
     Column(
         modifier = Modifier
@@ -959,12 +1662,12 @@ fun TrackListDetailView(
                     color = YtmTextSecondary
                 )
             }
-            if (onDelete != null) {
-                IconButton(onClick = onDelete) {
+            if (onDownloadAll != null) {
+                IconButton(onClick = onDownloadAll) {
                     Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = "Excluir playlist",
-                        tint = ErrorColor
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Baixar todas",
+                        tint = YtmWhite
                     )
                 }
             }
@@ -979,7 +1682,7 @@ fun TrackListDetailView(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
-                    onClick = { onPlayTrack(tracks.first()) },
+                    onClick = { onPlayTrack(tracks.first(), 0) },
                     colors = ButtonDefaults.buttonColors(containerColor = YtmWhite, contentColor = YtmBlack),
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.weight(1f)
@@ -1023,12 +1726,12 @@ fun TrackListDetailView(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(tracks, key = { it.id }) { track ->
+                itemsIndexed(tracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onPlayTrack(track) }
+                            .clickable { onPlayTrack(track, index) }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
