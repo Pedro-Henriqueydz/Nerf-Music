@@ -503,15 +503,15 @@ fun FullPlayerSheet(
     }
 
     val playerDismissOffsetY = remember { Animatable(0f) }
-    // A animação de dismiss vai de 0f até 1f (onde 1f é a ancoragem completa no miniplayer)
-    val dismissProgress = (playerDismissOffsetY.value / 280f).coerceIn(0f, 1f)
-    val dismissCornerRadius = (dismissProgress * 20f).dp
+    var dismissDistancePx by remember { mutableFloatStateOf(1f) }
+    val dismissProgress = (playerDismissOffsetY.value / dismissDistancePx).coerceIn(0f, 1f)
+    val dismissCornerRadius = (dismissProgress * 14f).dp
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
-                translationY = playerDismissOffsetY.value * 0.40f
+                translationY = playerDismissOffsetY.value
                 shape = RoundedCornerShape(
                     topStart = dismissCornerRadius,
                     topEnd = dismissCornerRadius,
@@ -622,6 +622,12 @@ fun FullPlayerSheet(
                 val miniHeaderHeightDp = 64.dp
                 val miniHeaderHeightPx = with(density) { miniHeaderHeightDp.toPx() }
 
+                // Distância total exata de descida do Full Player até ancorar no Mini Player
+                val calculatedDismissDistancePx = with(density) { (totalHeightPx - 76.dp.toPx()).coerceAtLeast(1f) }
+                LaunchedEffect(calculatedDismissDistancePx) {
+                    dismissDistancePx = calculatedDismissDistancePx
+                }
+
                 // Âncoras verticais (coordenada Y do topo da folha da Fila)
                 val anchorCollapsedY = (totalHeightPx - collapsedPeekPx).coerceAtLeast(0f)
                 val anchorHalfExpandedY = totalHeightPx * 0.50f
@@ -672,7 +678,7 @@ fun FullPlayerSheet(
                 val minArtworkSizeDp = 135.dp
                 val baseArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
                 val currentArtworkSizeDp = if (dismissProgress > 0f) {
-                    baseArtworkSizeDp - ((baseArtworkSizeDp - 48.dp) * dismissProgress)
+                    baseArtworkSizeDp - ((baseArtworkSizeDp - 46.dp) * dismissProgress)
                 } else {
                     baseArtworkSizeDp
                 }
@@ -680,16 +686,16 @@ fun FullPlayerSheet(
                 // Deslocamento horizontal da capa para pousar alinhada à esquerda do miniplayer (padding inicial 12dp)
                 val targetArtworkTranslateXPx = with(density) {
                     val fullCenterXPx = constraints.maxWidth / 2f
-                    val miniCenterXPx = 12.dp.toPx() + 24.dp.toPx()
+                    val miniCenterXPx = 12.dp.toPx() + 23.dp.toPx()
                     miniCenterXPx - fullCenterXPx
                 }
                 val artworkDismissTranslateXPx = targetArtworkTranslateXPx * dismissProgress
 
-                // Controles e botões do player desvanecem rapidamente no início da descida
-                val controlsAlpha = (1f - dismissProgress * 3.5f).coerceIn(0f, 1f)
-                val headerAlpha = (1f - dismissProgress * 3.5f).coerceIn(0f, 1f)
-                val queueDrawerAlpha = (1f - dismissProgress * 4.0f).coerceIn(0f, 1f)
-                val miniPlayerRevealAlpha = ((dismissProgress - 0.45f) / 0.55f).coerceIn(0f, 1f)
+                // Controles e botões do player desvanecem suavemente no primeiro terço da descida
+                val controlsAlpha = (1f - dismissProgress * 3.0f).coerceIn(0f, 1f)
+                val headerAlpha = (1f - dismissProgress * 3.0f).coerceIn(0f, 1f)
+                val queueDrawerAlpha = (1f - dismissProgress * 3.5f).coerceIn(0f, 1f)
+                val miniPlayerRevealAlpha = ((dismissProgress - 0.40f) / 0.60f).coerceIn(0f, 1f)
 
                 // Função para finalizar o gesto de arraste da folha da Fila e ancorar em um dos 3 estados
                 fun snapQueueSheet(velocityY: Float) {
@@ -986,10 +992,10 @@ fun FullPlayerSheet(
                                                     // No estado 0:
                                                     // - Se arrastou para baixo: recolhe para Mini Player
                                                     // - Se arrastou para cima: sobe a fila para HALF_EXPANDED
-                                                    if (playerDismissOffsetY.value > 110.dp.toPx() || totalDragY > 200f) {
+                                                    if (playerDismissOffsetY.value > dismissDistancePx * 0.35f || totalDragY > 350f) {
                                                         coroutineScope.launch {
                                                             playerDismissOffsetY.animateTo(
-                                                                targetValue = totalHeightPx,
+                                                                targetValue = dismissDistancePx,
                                                                 animationSpec = tween(180, easing = FastOutLinearInEasing)
                                                             )
                                                             onDismiss()
@@ -1095,7 +1101,7 @@ fun FullPlayerSheet(
                                     onClick = {
                                         coroutineScope.launch {
                                             playerDismissOffsetY.animateTo(
-                                                targetValue = totalHeightPx,
+                                                targetValue = dismissDistancePx,
                                                 animationSpec = tween(180, easing = FastOutLinearInEasing)
                                             )
                                             onDismiss()
@@ -1214,6 +1220,11 @@ fun FullPlayerSheet(
                             } else {
                                 Box(
                                     modifier = Modifier
+                                        .graphicsLayer {
+                                            translationX = artworkOffsetX.value + artworkDismissTranslateXPx
+                                            rotationZ = if (dismissProgress > 0f) 0f else (artworkOffsetX.value / screenWidthPx) * 7f
+                                            alpha = if (dismissProgress > 0f) 1f else (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
+                                        }
                                         .size(currentArtworkSizeDp)
                                         .shadow(
                                             elevation = ((18f * (1f - halfExpansionFraction * 0.5f)) * (1f - dismissProgress)).dp,
@@ -1221,12 +1232,7 @@ fun FullPlayerSheet(
                                             clip = false
                                         )
                                         .clip(RoundedCornerShape(artworkCornerRadiusDp))
-                                        .background(Color(0xFF262626))
-                                        .graphicsLayer {
-                                            translationX = artworkOffsetX.value + artworkDismissTranslateXPx
-                                            rotationZ = if (dismissProgress > 0f) 0f else (artworkOffsetX.value / screenWidthPx) * 7f
-                                            alpha = if (dismissProgress > 0f) 1f else (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
-                                        },
+                                        .background(Color(0xFF262626)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (!artworkUrl.isNullOrEmpty()) {
@@ -1255,6 +1261,7 @@ fun FullPlayerSheet(
                                 exit = fadeOut(animationSpec = tween(200)),
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .alpha(controlsAlpha)
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable { isFullscreenLyricsActive = true }
                                     .padding(bottom = 8.dp)
@@ -1414,7 +1421,7 @@ fun FullPlayerSheet(
                                     onToggleDownload = { onToggleDownload(track.id) },
                                     downloadProgress = downloadProgress,
                                     onToggleLyrics = { isFullscreenLyricsActive = !isFullscreenLyricsActive },
-                                    modifier = Modifier.alpha((1f - halfExpansionFraction * 2.8f).coerceIn(0f, 1f))
+                                    modifier = Modifier.alpha(((1f - halfExpansionFraction * 2.8f) * controlsAlpha).coerceIn(0f, 1f))
                                 )
                             }
 
