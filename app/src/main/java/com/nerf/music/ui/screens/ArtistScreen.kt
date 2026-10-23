@@ -181,11 +181,12 @@ fun ArtistScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 currentArtist.topSongs.forEachIndexed { index, track ->
-                                    val isPlaying = track.id == playbackState.currentTrack?.id
+                                    val isCurrent = track.id == playbackState.currentTrack?.id
                                     ArtistTopSongRow(
                                         trackNumber = index + 1,
                                         track = track,
-                                        isPlaying = isPlaying,
+                                        isCurrentTrack = isCurrent,
+                                        isPlaying = isCurrent && playbackState.isPlaying,
                                         onClick = { viewModel.playTrack(track) }
                                     )
                                 }
@@ -212,7 +213,7 @@ fun ArtistScreen(
                                     items(libraryTracks, key = { "lib_${it.id}" }) { track ->
                                         HomeSongCard(
                                             track = track,
-                                            isPlaying = track.id == playbackState.currentTrack?.id,
+                                            isPlaying = track.id == playbackState.currentTrack?.id && playbackState.isPlaying,
                                             onClick = { viewModel.playTrack(track) }
                                         )
                                     }
@@ -296,7 +297,7 @@ fun ArtistScreen(
                                     items(currentArtist.videos, key = { it.id }) { videoTrack ->
                                         ArtistVideoCard(
                                             track = videoTrack,
-                                            isPlaying = videoTrack.id == playbackState.currentTrack?.id,
+                                            isPlaying = videoTrack.id == playbackState.currentTrack?.id && playbackState.isPlaying,
                                             onClick = { viewModel.playTrack(videoTrack) }
                                         )
                                     }
@@ -550,6 +551,7 @@ private fun ArtistHeroHeader(
 private fun ArtistTopSongRow(
     trackNumber: Int,
     track: Track,
+    isCurrentTrack: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -566,9 +568,9 @@ private fun ArtistTopSongRow(
             modifier = Modifier.width(28.dp),
             contentAlignment = Alignment.CenterStart
         ) {
-            if (isPlaying) {
+            if (isCurrentTrack) {
                 AnimatedEqualizerBars(
-                    isPlaying = true,
+                    isPlaying = isPlaying,
                     barColor = OrangeSecondary,
                     barCount = 3,
                     barWidth = 2.5.dp,
@@ -702,7 +704,7 @@ private fun ArtistVideoCard(
             ) {
                 if (isPlaying) {
                     AnimatedEqualizerBars(
-                        isPlaying = true,
+                        isPlaying = isPlaying,
                         barColor = YtmWhite,
                         barCount = 3,
                         barWidth = 2.5.dp,

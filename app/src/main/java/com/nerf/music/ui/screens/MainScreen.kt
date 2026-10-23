@@ -1,5 +1,10 @@
 ﻿package com.nerf.music.ui.screens
 
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -462,8 +467,11 @@ fun MainScreen(
         // Full Player Screen (Sobreposto ao app inteiro com animação de slide)
         AnimatedVisibility(
             visible = isFullPlayerVisible && playbackState.currentTrack != null,
-            enter = slideInVertically(initialOffsetY = { it }),
-            exit = slideOutVertically(targetOffsetY = { it })
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f)
+            ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 150))
         ) {
             FullPlayerSheet(
                 state = playbackState,
@@ -473,6 +481,7 @@ fun MainScreen(
                 onDismiss = { viewModel.closeFullPlayer() },
                 onTogglePlay = { viewModel.togglePlayPause() },
                 onSkipPrevious = { viewModel.skipPrevious() },
+                onForceSkipPrevious = { viewModel.forceSkipPrevious() },
                 onSkipNext = { viewModel.skipNext() },
                 onToggleShuffle = { viewModel.toggleShuffle() },
                 onToggleRepeat = { viewModel.toggleRepeat() },
