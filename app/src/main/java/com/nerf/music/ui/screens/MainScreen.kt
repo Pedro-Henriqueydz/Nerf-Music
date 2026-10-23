@@ -438,6 +438,7 @@ fun MainScreen(
                 state = playbackState,
                 canvasVideoUrl = if (isCanvasEnabled) canvasVideoUrl else null,
                 lyricsLine = if (isLyricsAboveTitleEnabled) currentLyricsLine else null,
+                lyrics = currentLyrics,
                 onDismiss = { viewModel.closeFullPlayer() },
                 onTogglePlay = { viewModel.togglePlayPause() },
                 onSkipPrevious = { viewModel.skipPrevious() },
