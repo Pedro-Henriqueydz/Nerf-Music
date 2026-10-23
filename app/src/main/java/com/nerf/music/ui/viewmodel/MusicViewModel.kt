@@ -325,13 +325,7 @@ class MusicViewModel(
     }
 
     private fun getDefaultChangeLog(): String {
-        return "• Spotify Canvas Oficial: reprodução de vídeos verticais em loop integrados diretamente ao fundo do player\n" +
-               "• Letras Sincronizadas em Tempo Real (LRCLIB): exibição dinâmica linha por linha acima do título da música\n" +
-               "• Gestos Verticais no Player: deslize para baixo para minimizar e deslize para cima para abrir a fila de reprodução\n" +
-               "• Navegação & Recomendações: toque no nome do artista para abrir seu perfil e no título para ver músicas e artistas relacionados\n" +
-               "• Novo visual estilo Spotify: barra de progresso branca com thumb circular centralizado e linha de ações rolável\n" +
-               "• Notificações de Atualizações em Segundo Plano: verificação periódica automática via WorkManager mesmo fora do app\n" +
-               "• Configurações completas: controle de Canvas (ativar/desativar, modo somente Wi-Fi) e ativação de letras sincronizadas"
+        return "• Correção de bugs na reprodução e resolução do Spotify Canvas"
     }
 
     fun confirmAndDownloadUpdate(context: Context) {
@@ -851,6 +845,10 @@ class MusicViewModel(
         } else {
             val targetTrack = _playbackState.value.queue.getOrNull(index)
             _loadingTrackId.value = targetTrack?.id
+            if (targetTrack != null) {
+                loadLyrics(targetTrack)
+                loadCanvasVideo(targetTrack)
+            }
             _playbackState.value = _playbackState.value.copy(
                 currentTrack = targetTrack ?: _playbackState.value.currentTrack,
                 currentQueueIndex = index,
@@ -1067,6 +1065,8 @@ class MusicViewModel(
         album.tracks.forEach { trackMetadataMap[it.id] = it }
 
         _loadingTrackId.value = targetTrack.id
+        loadLyrics(targetTrack)
+        loadCanvasVideo(targetTrack)
         _playbackState.value = _playbackState.value.copy(
             currentTrack = targetTrack,
             queue = album.tracks,
@@ -1200,7 +1200,13 @@ class MusicViewModel(
         }
     }
 
+    private var lastCanvasTrackId: String? = null
+
     fun loadCanvasVideo(track: Track) {
+        if (lastCanvasTrackId == track.id && _canvasVideoUrl.value != null) {
+            return
+        }
+        lastCanvasTrackId = track.id
         canvasFetchJob?.cancel()
         _canvasVideoUrl.value = null
 

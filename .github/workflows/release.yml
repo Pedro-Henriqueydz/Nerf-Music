@@ -38,4 +38,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: nerf-music-${{ github.ref_name }}.apk
-          generate_release_notes: true
+          body: |
+            ## O que há de novo na versão ${{ github.ref_name }}
+            • Correção de bugs na reprodução e resolução do Spotify Canvas
+          generate_release_notes: false
