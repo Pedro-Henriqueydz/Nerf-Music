@@ -386,7 +386,24 @@ fun MainScreen(
                     )
                 }
                 composable(Screen.Library.route) {
-                    LibraryScreen()
+                    LibraryScreen(
+                        viewModel = viewModel,
+                        onOpenSettings = {
+                            navController.navigate("settings") {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenAlbum = { browseId ->
+                            navController.navigate("album/$browseId") {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenArtist = { artistId ->
+                            navController.navigate("artist/$artistId") {
+                                launchSingleTop = true
+                            }
+                        }
+                    )
                 }
                 composable(
                     route = "album/{browseId}",

@@ -51,6 +51,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import com.nerf.music.data.repository.SpotifyCanvasRepository
 import com.nerf.music.data.repository.SpotifyCanvasRepositoryImpl
+import com.nerf.music.data.repository.LibraryRepository
+import com.nerf.music.data.repository.LibraryRepositoryImpl
+import com.nerf.music.data.model.UserPlaylist
+import com.nerf.music.data.model.DownloadedTrack
 import kotlinx.coroutines.launch
 
 class MusicViewModel(
@@ -193,6 +197,19 @@ class MusicViewModel(
     private var seedVideoId: String? = null
     private var hasCheckedForUpdates = false
     private var userHistoryRepository: UserHistoryRepository? = null
+    private var libraryRepository: LibraryRepository? = null
+
+    private val _likedTracks = MutableStateFlow<List<Track>>(emptyList())
+    val likedTracks: StateFlow<List<Track>> = _likedTracks.asStateFlow()
+
+    private val _userPlaylists = MutableStateFlow<List<UserPlaylist>>(emptyList())
+    val userPlaylists: StateFlow<List<UserPlaylist>> = _userPlaylists.asStateFlow()
+
+    private val _downloadedTracks = MutableStateFlow<List<DownloadedTrack>>(emptyList())
+    val downloadedTracks: StateFlow<List<DownloadedTrack>> = _downloadedTracks.asStateFlow()
+
+    private val _downloadProgressMap = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val downloadProgressMap: StateFlow<Map<String, Float>> = _downloadProgressMap.asStateFlow()
     private var applicationContext: Context? = null
 
     fun initializePlayerController(context: Context) {
@@ -219,6 +236,30 @@ class MusicViewModel(
             }
             _searchHistory.value = historyRepo.getSearchHistory()
             checkPostUpdateChangelog(historyRepo)
+        }
+
+        if (libraryRepository == null) {
+            val libRepo = LibraryRepositoryImpl(context.applicationContext)
+            libraryRepository = libRepo
+            viewModelScope.launch {
+                libRepo.likedTracksFlow.collect { list ->
+                    _likedTracks.value = list
+                    val ids = list.map { it.id }.toSet()
+                    _playbackState.value = _playbackState.value.copy(favoriteTrackIds = ids)
+                }
+            }
+            viewModelScope.launch {
+                libRepo.playlistsFlow.collect { list ->
+                    _userPlaylists.value = list
+                }
+            }
+            viewModelScope.launch {
+                libRepo.downloadedTracksFlow.collect { list ->
+                    _downloadedTracks.value = list
+                    val ids = list.map { it.track.id }.toSet()
+                    _playbackState.value = _playbackState.value.copy(downloadedTrackIds = ids)
+                }
+            }
         }
 
         if (!hasCheckedForUpdates) {
@@ -982,19 +1023,27 @@ class MusicViewModel(
     }
 
     fun toggleFavorite(trackId: String) {
-        val currentFavs = _playbackState.value.favoriteTrackIds.toMutableSet()
-        val added = if (currentFavs.contains(trackId)) {
-            currentFavs.remove(trackId)
-            false
+        val targetTrack = trackMetadataMap[trackId] ?: _playbackState.value.currentTrack?.takeIf { it.id == trackId }
+        val libRepo = libraryRepository
+        if (targetTrack != null && libRepo != null) {
+            val added = libRepo.toggleFavorite(targetTrack)
+            _userMessage.value = if (added) "Adicionada às Músicas Curtidas" else "Removida das Músicas Curtidas"
         } else {
-            currentFavs.add(trackId)
-            true
+            val currentFavs = _playbackState.value.favoriteTrackIds.toMutableSet()
+            val added = if (currentFavs.contains(trackId)) {
+                currentFavs.remove(trackId)
+                false
+            } else {
+                currentFavs.add(trackId)
+                true
+            }
+            _playbackState.value = _playbackState.value.copy(favoriteTrackIds = currentFavs)
+            _userMessage.value = if (added) "Adicionada aos favoritos" else "Removida dos favoritos"
         }
-        _playbackState.value = _playbackState.value.copy(favoriteTrackIds = currentFavs)
-        _userMessage.value = if (added) "Adicionada aos favoritos" else "Removida dos favoritos"
     }
 
     fun toggleSaveToPlaylist(trackId: String) {
+        val targetTrack = trackMetadataMap[trackId] ?: _playbackState.value.currentTrack?.takeIf { it.id == trackId }
         val currentSaved = _playbackState.value.savedTrackIds.toMutableSet()
         val added = if (currentSaved.contains(trackId)) {
             currentSaved.remove(trackId)
@@ -1008,18 +1057,68 @@ class MusicViewModel(
     }
 
     fun toggleDownload(trackId: String) {
-        val currentDownloads = _playbackState.value.downloadedTrackIds.toMutableSet()
-        val added = if (currentDownloads.contains(trackId)) {
-            currentDownloads.remove(trackId)
-            false
-        } else {
-            currentDownloads.add(trackId)
-            true
+        val targetTrack = trackMetadataMap[trackId] ?: _playbackState.value.currentTrack?.takeIf { it.id == trackId }
+        val libRepo = libraryRepository
+        if (targetTrack == null || libRepo == null) {
+            _userMessage.value = "Não foi possível baixar esta faixa"
+            return
         }
-        _playbackState.value = _playbackState.value.copy(downloadedTrackIds = currentDownloads)
-        _userMessage.value = if (added) "Download agendado para modo offline" else "Download removido"
+
+        if (libRepo.isDownloaded(trackId)) {
+            libRepo.removeDownload(trackId)
+            _userMessage.value = "Download removido"
+        } else {
+            _userMessage.value = "Iniciando download para reprodução offline..."
+            viewModelScope.launch {
+                val currentProg = _downloadProgressMap.value.toMutableMap()
+                currentProg[trackId] = 0.05f
+                _downloadProgressMap.value = currentProg
+
+                val result = libRepo.downloadTrack(targetTrack) { prog ->
+                    val pMap = _downloadProgressMap.value.toMutableMap()
+                    pMap[trackId] = prog
+                    _downloadProgressMap.value = pMap
+                }
+
+                val pMap = _downloadProgressMap.value.toMutableMap()
+                pMap.remove(trackId)
+                _downloadProgressMap.value = pMap
+
+                result.onSuccess {
+                    _userMessage.value = "Download concluído com sucesso!"
+                }.onFailure { err ->
+                    _userMessage.value = "Falha no download: ${err.message}"
+                }
+            }
+        }
     }
 
+    fun createPlaylist(title: String, description: String = ""): UserPlaylist? {
+        val created = libraryRepository?.createPlaylist(title, description)
+        if (created != null) {
+            _userMessage.value = "Playlist '${created.title}' criada!"
+        }
+        return created
+    }
+
+    fun deletePlaylist(playlistId: String) {
+        val ok = libraryRepository?.deletePlaylist(playlistId) == true
+        if (ok) {
+            _userMessage.value = "Playlist removida"
+        }
+    }
+
+    fun addTrackToPlaylist(playlistId: String, track: Track) {
+        val ok = libraryRepository?.addTrackToPlaylist(playlistId, track) == true
+        _userMessage.value = if (ok) "Adicionada à playlist" else "Faixa já estava na playlist"
+    }
+
+    fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
+        val ok = libraryRepository?.removeTrackFromPlaylist(playlistId, trackId) == true
+        if (ok) {
+            _userMessage.value = "Faixa removida da playlist"
+        }
+    }
     fun clearUserMessage() {
         _userMessage.value = null
     }

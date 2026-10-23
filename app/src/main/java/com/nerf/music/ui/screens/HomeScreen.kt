@@ -80,8 +80,8 @@ fun HomeScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Navbar oficial estilo YouTube Music (sem lupa no topo, pesquisa na navbar inferior)
-            YtmTopBar(onOpenSettings = onOpenSettings)
+            // Top Navbar oficial estilo YouTube Music
+            YtmTopBar()
 
             when {
                 isLoading && homeSections.isEmpty() -> {
