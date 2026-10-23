@@ -372,7 +372,13 @@ class MusicViewModel(
     }
 
     private fun getDefaultChangeLog(): String {
-        return "• Correção de bugs na reprodução e resolução do Spotify Canvas"
+        return """
+            • Novo Gesto 1:1 no Player: Deslize para baixo fluido com morphing contínuo da capa (300dp para 46dp) e ancoragem exata no Mini Player.
+            • Barras de Equalizador Premium: Animação refinada e dinâmica que pausa sincronizadamente com a música.
+            • Troca Rápida de Faixas: Deslize lateral para avançar ou voltar imediatamente, com transição suave da mini capa no modo Canva.
+            • Fila de Reprodução 'A Seguir': Três estágios dinâmicos (recolhido, meio expandido e tela cheia) com suporte a filtros e rolagem aninhada.
+            • Correções de estabilidade e fluidez geral a 120Hz.
+        """.trimIndent()
     }
 
     fun confirmAndDownloadUpdate(context: Context) {
