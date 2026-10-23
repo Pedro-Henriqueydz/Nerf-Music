@@ -187,9 +187,11 @@ fun HomeScreen(
                                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
                                     items(recentlyPlayed, key = { "recent_${it.id}" }) { track ->
+                                        val isCurrent = track.id == playbackState.currentTrack?.id
                                         HomeSongCard(
                                             track = track,
-                                            isPlaying = track.id == playbackState.currentTrack?.id,
+                                            isCurrentTrack = isCurrent,
+                                            isPlaying = isCurrent && playbackState.isPlaying,
                                             onClick = { viewModel.playTrack(track) }
                                         )
                                     }
@@ -223,12 +225,14 @@ fun HomeScreen(
                                 YtmQuickPicksGridCarousel(
                                     tracks = section.items,
                                     currentPlayingId = playbackState.currentTrack?.id,
+                                    isPlaybackActive = playbackState.isPlaying,
                                     onTrackClick = { track -> viewModel.playTrack(track) }
                                 )
                             } else {
                                 YtmTwoRowCarousel(
                                     tracks = section.items,
                                     currentPlayingId = playbackState.currentTrack?.id,
+                                    isPlaybackActive = playbackState.isPlaying,
                                     onTrackClick = { track ->
                                         val albumId = track.browseId?.takeIf { it.isNotBlank() }
                                             ?: if (track.isAlbumOrPlaylist) track.id else null
@@ -431,6 +435,7 @@ fun YtmSectionHeader(
 fun YtmQuickPicksGridCarousel(
     tracks: List<Track>,
     currentPlayingId: String?,
+    isPlaybackActive: Boolean = false,
     onTrackClick: (Track) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -447,9 +452,11 @@ fun YtmQuickPicksGridCarousel(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 columnTracks.forEach { track ->
+                    val isCurrent = track.id == currentPlayingId
                     YtmQuickPickRowItem(
                         track = track,
-                        isPlaying = track.id == currentPlayingId,
+                        isCurrentTrack = isCurrent,
+                        isPlaying = isCurrent && isPlaybackActive,
                         onClick = { onTrackClick(track) }
                     )
                 }
@@ -461,7 +468,8 @@ fun YtmQuickPicksGridCarousel(
 @Composable
 fun YtmQuickPickRowItem(
     track: Track,
-    isPlaying: Boolean,
+    isCurrentTrack: Boolean = false,
+    isPlaying: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -498,7 +506,7 @@ fun YtmQuickPickRowItem(
                 )
             }
 
-            if (isPlaying) {
+            if (isCurrentTrack) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -506,12 +514,12 @@ fun YtmQuickPickRowItem(
                     contentAlignment = Alignment.Center
                 ) {
                     AnimatedEqualizerBars(
-                        isPlaying = true,
+                        isPlaying = isPlaying,
                         barColor = YtmWhite,
-                        barCount = 4,
-                        barWidth = 3.dp,
-                        barSpacing = 2.dp,
-                        maxHeight = 18.dp
+                        barCount = 3,
+                        barWidth = 2.5.dp,
+                        barSpacing = 1.5.dp,
+                        maxHeight = 15.dp
                     )
                 }
             }
@@ -526,7 +534,7 @@ fun YtmQuickPickRowItem(
                 fontFamily = YouTubeSansFontFamily,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
-                color = if (isPlaying) OrangeSecondary else YtmWhite,
+                color = if (isCurrentTrack) OrangeSecondary else YtmWhite,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -569,6 +577,7 @@ fun YtmQuickPickRowItem(
 fun YtmTwoRowCarousel(
     tracks: List<Track>,
     currentPlayingId: String?,
+    isPlaybackActive: Boolean = false,
     onTrackClick: (Track) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -578,9 +587,11 @@ fun YtmTwoRowCarousel(
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         items(tracks, key = { it.id }) { track ->
+            val isCurrent = track.id == currentPlayingId
             HomeSongCard(
                 track = track,
-                isPlaying = track.id == currentPlayingId,
+                isCurrentTrack = isCurrent,
+                isPlaying = isCurrent && isPlaybackActive,
                 onClick = { onTrackClick(track) }
             )
         }
@@ -595,7 +606,8 @@ fun YtmTwoRowCarousel(
 @Composable
 fun HomeSongCard(
     track: Track,
-    isPlaying: Boolean,
+    isCurrentTrack: Boolean = false,
+    isPlaying: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -640,9 +652,9 @@ fun HomeSongCard(
                     .background(Color(0xCC000000)),
                 contentAlignment = Alignment.Center
             ) {
-                if (isPlaying) {
+                if (isCurrentTrack) {
                     AnimatedEqualizerBars(
-                        isPlaying = true,
+                        isPlaying = isPlaying,
                         barColor = YtmWhite,
                         barCount = 3,
                         barWidth = 2.5.dp,
@@ -667,7 +679,7 @@ fun HomeSongCard(
             fontFamily = YouTubeSansFontFamily,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
-            color = if (isPlaying) OrangeSecondary else YtmWhite,
+            color = if (isCurrentTrack) OrangeSecondary else YtmWhite,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )

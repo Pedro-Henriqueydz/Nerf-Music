@@ -349,6 +349,7 @@ fun FullPlayerSheet(
     onDismiss: () -> Unit,
     onTogglePlay: () -> Unit,
     onSkipPrevious: () -> Unit,
+    onForceSkipPrevious: () -> Unit = onSkipPrevious,
     onSkipNext: () -> Unit,
     onToggleShuffle: () -> Unit,
     onToggleRepeat: () -> Unit,
@@ -496,22 +497,19 @@ fun FullPlayerSheet(
     }
 
     val playerDismissOffsetY = remember { Animatable(0f) }
-    val dismissFraction = (playerDismissOffsetY.value / 800f).coerceIn(0f, 1f)
-    val dismissScale = 1f - (dismissFraction * 0.08f)
-    val dismissAlpha = (1f - dismissFraction * 0.35f).coerceIn(0f, 1f)
-    val dismissCornerRadius = (dismissFraction * 32f).dp
+    val dismissProgress = (playerDismissOffsetY.value / 320f).coerceIn(0f, 1f)
+    val dismissCornerRadius = (dismissProgress * 14f).dp
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
                 translationY = playerDismissOffsetY.value
-                scaleX = dismissScale
-                scaleY = dismissScale
-                alpha = dismissAlpha
                 shape = RoundedCornerShape(
                     topStart = dismissCornerRadius,
-                    topEnd = dismissCornerRadius
+                    topEnd = dismissCornerRadius,
+                    bottomStart = dismissCornerRadius,
+                    bottomEnd = dismissCornerRadius
                 )
                 clip = playerDismissOffsetY.value > 2f
             },
@@ -656,13 +654,28 @@ fun FullPlayerSheet(
                     0f
                 }
 
-                // Tamanho dinâmico da capa 1:1 sem lag (120Hz fluido)
+                // Tamanho dinâmico da capa 1:1 sem lag (120Hz fluido):
+                // - Ao abrir a fila: encolhe para 135dp
+                // - Ao arrastar para baixo: encolhe dinamicamente em direção a 48dp (tamanho da capa do Mini Player)
                 val screenWidthDp = with(density) { constraints.maxWidth.toDp() }
                 val screenWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
                 val artworkOffsetX = remember { Animatable(0f) }
                 val maxArtworkSizeDp = (screenWidthDp - 48.dp).coerceIn(290.dp, 330.dp)
                 val minArtworkSizeDp = 135.dp
-                val currentArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
+                val baseArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
+                val currentArtworkSizeDp = if (dismissProgress > 0f) {
+                    baseArtworkSizeDp - ((baseArtworkSizeDp - 48.dp) * dismissProgress)
+                } else {
+                    baseArtworkSizeDp
+                }
+                val artworkCornerRadiusDp = if (dismissProgress > 0f) {
+                    (16f - (8f * dismissProgress)).dp
+                } else {
+                    16.dp
+                }
+                val controlsAlpha = (1f - dismissProgress * 2.8f).coerceIn(0f, 1f)
+                val headerAlpha = (1f - dismissProgress * 3.2f).coerceIn(0f, 1f)
+                val queueDrawerAlpha = (1f - dismissProgress * 4.0f).coerceIn(0f, 1f)
 
                 // Função para finalizar o gesto de arraste da folha da Fila e ancorar em um dos 3 estados
                 fun snapQueueSheet(velocityY: Float) {
@@ -859,55 +872,88 @@ fun FullPlayerSheet(
                                 }
                                 .padding(horizontal = 24.dp)
                                 .padding(bottom = collapsedPeekHeightDp + 16.dp)
-                                .pointerInput(queueState, showRelatedSheet) {
+                                .pointerInput(queueState, showRelatedSheet, track.id) {
                                     if (queueState == QueueExpansionState.COLLAPSED && !showRelatedSheet) {
+                                        var totalDragX = 0f
                                         var totalDragY = 0f
-                                        detectVerticalDragGestures(
-                                            onDragStart = { totalDragY = 0f },
+                                        var isHorizontalGesture = false
+                                        var isVerticalGesture = false
+
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                totalDragX = 0f
+                                                totalDragY = 0f
+                                                isHorizontalGesture = false
+                                                isVerticalGesture = false
+                                            },
                                             onDragEnd = {
-                                                val dismissThreshold = 120.dp.toPx()
-                                                if (playerDismissOffsetY.value > dismissThreshold || totalDragY > 260f) {
-                                                    coroutineScope.launch {
-                                                        playerDismissOffsetY.animateTo(
-                                                            targetValue = totalHeightPx,
-                                                            animationSpec = tween(180, easing = FastOutLinearInEasing)
-                                                        )
-                                                        onDismiss()
-                                                        playerDismissOffsetY.snapTo(0f)
+                                                if (isHorizontalGesture) {
+                                                    val swipeThreshold = 65.dp.toPx()
+                                                    if (totalDragX < -swipeThreshold) {
+                                                        // Arrastou para a esquerda -> Próxima música
+                                                        coroutineScope.launch {
+                                                            artworkOffsetX.animateTo(-screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
+                                                            onSkipNext()
+                                                            artworkOffsetX.snapTo(screenWidthPx * 0.75f)
+                                                            artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                        }
+                                                    } else if (totalDragX > swipeThreshold) {
+                                                        // Arrastou para a direita -> Música anterior direta (sem resetar!)
+                                                        coroutineScope.launch {
+                                                            artworkOffsetX.animateTo(screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
+                                                            onForceSkipPrevious()
+                                                            artworkOffsetX.snapTo(-screenWidthPx * 0.75f)
+                                                            artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                        }
+                                                    } else {
+                                                        coroutineScope.launch {
+                                                            artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
+                                                        }
                                                     }
-                                                } else if (playerDismissOffsetY.value > 0f) {
-                                                    coroutineScope.launch {
-                                                        playerDismissOffsetY.animateTo(
-                                                            targetValue = 0f,
-                                                            animationSpec = spring(
-                                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                stiffness = 400f
+                                                } else if (isVerticalGesture) {
+                                                    val dismissThreshold = 110.dp.toPx()
+                                                    if (playerDismissOffsetY.value > dismissThreshold || totalDragY > 200f) {
+                                                        coroutineScope.launch {
+                                                            playerDismissOffsetY.animateTo(
+                                                                targetValue = totalHeightPx,
+                                                                animationSpec = tween(180, easing = FastOutLinearInEasing)
                                                             )
-                                                        )
-                                                    }
-                                                } else if (totalDragY < -50f) {
-                                                    snapQueueSheet(-1000f)
-                                                } else {
-                                                    coroutineScope.launch {
-                                                        sheetOffsetY.animateTo(
-                                                            anchorCollapsedY,
-                                                            animationSpec = spring(
-                                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                stiffness = 380f
+                                                            onDismiss()
+                                                        }
+                                                    } else if (playerDismissOffsetY.value > 0f) {
+                                                        coroutineScope.launch {
+                                                            playerDismissOffsetY.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = spring(
+                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                                    stiffness = 400f
+                                                                )
                                                             )
-                                                        )
+                                                        }
+                                                    } else if (totalDragY < -50f) {
+                                                        snapQueueSheet(-1000f)
+                                                    } else {
+                                                        coroutineScope.launch {
+                                                            sheetOffsetY.animateTo(
+                                                                anchorCollapsedY,
+                                                                animationSpec = spring(
+                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                                    stiffness = 380f
+                                                                )
+                                                            )
+                                                        }
                                                     }
                                                 }
+                                                totalDragX = 0f
                                                 totalDragY = 0f
                                             },
                                             onDragCancel = {
+                                                totalDragX = 0f
                                                 totalDragY = 0f
                                                 coroutineScope.launch {
+                                                    artworkOffsetX.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 380f))
                                                     if (playerDismissOffsetY.value > 0f) {
-                                                        playerDismissOffsetY.animateTo(
-                                                            0f,
-                                                            spring(Spring.DampingRatioNoBouncy, 400f)
-                                                        )
+                                                        playerDismissOffsetY.animateTo(0f, spring(Spring.DampingRatioNoBouncy, 400f))
                                                     }
                                                     sheetOffsetY.animateTo(
                                                         anchorCollapsedY,
@@ -918,23 +964,39 @@ fun FullPlayerSheet(
                                                     )
                                                 }
                                             },
-                                            onVerticalDrag = { change, dragAmount ->
+                                            onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                totalDragY += dragAmount
-                                                if (dragAmount > 0f && sheetOffsetY.value >= anchorCollapsedY) {
-                                                    coroutineScope.launch {
-                                                        val nextDismissY = (playerDismissOffsetY.value + dragAmount).coerceAtLeast(0f)
-                                                        playerDismissOffsetY.snapTo(nextDismissY)
+                                                totalDragX += dragAmount.x
+                                                totalDragY += dragAmount.y
+
+                                                if (!isHorizontalGesture && !isVerticalGesture) {
+                                                    if (abs(totalDragX) > 18f && abs(totalDragX) > abs(totalDragY)) {
+                                                        isHorizontalGesture = true
+                                                    } else if (abs(totalDragY) > 18f && abs(totalDragY) > abs(totalDragX)) {
+                                                        isVerticalGesture = true
                                                     }
-                                                } else if (playerDismissOffsetY.value > 0f) {
+                                                }
+
+                                                if (isHorizontalGesture) {
                                                     coroutineScope.launch {
-                                                        val nextDismissY = (playerDismissOffsetY.value + dragAmount).coerceAtLeast(0f)
-                                                        playerDismissOffsetY.snapTo(nextDismissY)
+                                                        artworkOffsetX.snapTo(artworkOffsetX.value + dragAmount.x)
                                                     }
-                                                } else {
-                                                    coroutineScope.launch {
-                                                        val newY = (sheetOffsetY.value + dragAmount).coerceIn(anchorExpandedY, anchorCollapsedY)
-                                                        sheetOffsetY.snapTo(newY)
+                                                } else if (isVerticalGesture) {
+                                                    if (dragAmount.y > 0f && sheetOffsetY.value >= anchorCollapsedY) {
+                                                        coroutineScope.launch {
+                                                            val nextDismissY = (playerDismissOffsetY.value + dragAmount.y).coerceAtLeast(0f)
+                                                            playerDismissOffsetY.snapTo(nextDismissY)
+                                                        }
+                                                    } else if (playerDismissOffsetY.value > 0f) {
+                                                        coroutineScope.launch {
+                                                            val nextDismissY = (playerDismissOffsetY.value + dragAmount.y).coerceAtLeast(0f)
+                                                            playerDismissOffsetY.snapTo(nextDismissY)
+                                                        }
+                                                    } else {
+                                                        coroutineScope.launch {
+                                                            val newY = (sheetOffsetY.value + dragAmount.y).coerceIn(anchorExpandedY, anchorCollapsedY)
+                                                            sheetOffsetY.snapTo(newY)
+                                                        }
                                                     }
                                                 }
                                             }
@@ -949,6 +1011,7 @@ fun FullPlayerSheet(
                                     .fillMaxWidth()
                                     .height(52.dp)
                                     .padding(top = 2.dp)
+                                    .alpha(headerAlpha)
                             ) {
                                 IconButton(
                                     onClick = {
@@ -1075,90 +1138,16 @@ fun FullPlayerSheet(
                                     modifier = Modifier
                                         .size(currentArtworkSizeDp)
                                         .shadow(
-                                            elevation = (18f * (1f - halfExpansionFraction * 0.5f)).dp,
-                                            shape = RoundedCornerShape(16.dp),
+                                            elevation = ((18f * (1f - halfExpansionFraction * 0.5f)) * (1f - dismissProgress)).dp,
+                                            shape = RoundedCornerShape(artworkCornerRadiusDp),
                                             clip = false
                                         )
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .clip(RoundedCornerShape(artworkCornerRadiusDp))
                                         .background(Color(0xFF262626))
                                         .graphicsLayer {
                                             translationX = artworkOffsetX.value
                                             rotationZ = (artworkOffsetX.value / screenWidthPx) * 7f
                                             alpha = (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
-                                        }
-                                        .pointerInput(track.id) {
-                                            var totalDragX = 0f
-                                            detectHorizontalDragGestures(
-                                                onDragStart = { totalDragX = 0f },
-                                                onDragEnd = {
-                                                    val swipeThreshold = 75.dp.toPx()
-                                                    if (totalDragX < -swipeThreshold) {
-                                                        // Swipe para a esquerda -> Próxima faixa
-                                                        coroutineScope.launch {
-                                                            artworkOffsetX.animateTo(
-                                                                targetValue = -screenWidthPx * 0.85f,
-                                                                animationSpec = tween(140, easing = FastOutLinearInEasing)
-                                                            )
-                                                            onSkipNext()
-                                                            artworkOffsetX.snapTo(screenWidthPx * 0.85f)
-                                                            artworkOffsetX.animateTo(
-                                                                targetValue = 0f,
-                                                                animationSpec = spring(
-                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                    stiffness = 380f
-                                                                )
-                                                            )
-                                                        }
-                                                    } else if (totalDragX > swipeThreshold) {
-                                                        // Swipe para a direita -> Faixa anterior
-                                                        coroutineScope.launch {
-                                                            artworkOffsetX.animateTo(
-                                                                targetValue = screenWidthPx * 0.85f,
-                                                                animationSpec = tween(140, easing = FastOutLinearInEasing)
-                                                            )
-                                                            onSkipPrevious()
-                                                            artworkOffsetX.snapTo(-screenWidthPx * 0.85f)
-                                                            artworkOffsetX.animateTo(
-                                                                targetValue = 0f,
-                                                                animationSpec = spring(
-                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                    stiffness = 380f
-                                                                )
-                                                            )
-                                                        }
-                                                    } else {
-                                                        coroutineScope.launch {
-                                                            artworkOffsetX.animateTo(
-                                                                targetValue = 0f,
-                                                                animationSpec = spring(
-                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                    stiffness = 380f
-                                                                )
-                                                            )
-                                                        }
-                                                    }
-                                                    totalDragX = 0f
-                                                },
-                                                onDragCancel = {
-                                                    totalDragX = 0f
-                                                    coroutineScope.launch {
-                                                        artworkOffsetX.animateTo(
-                                                            targetValue = 0f,
-                                                            animationSpec = spring(
-                                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                                stiffness = 380f
-                                                            )
-                                                        )
-                                                    }
-                                                },
-                                                onHorizontalDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    totalDragX += dragAmount
-                                                    coroutineScope.launch {
-                                                        artworkOffsetX.snapTo(artworkOffsetX.value + dragAmount)
-                                                    }
-                                                }
-                                            )
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -1229,20 +1218,28 @@ fun FullPlayerSheet(
                                             .background(Color(0xFF262626)),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (!artworkUrl.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = artworkUrl,
-                                                contentDescription = track.title,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.MusicNote,
-                                                contentDescription = null,
-                                                tint = Color.Gray,
-                                                modifier = Modifier.size(26.dp)
-                                            )
+                                        AnimatedContent(
+                                            targetState = artworkUrl,
+                                            transitionSpec = {
+                                                fadeIn(animationSpec = tween(250)) togetherWith fadeOut(animationSpec = tween(200), targetAlpha = 0.25f)
+                                            },
+                                            label = "CanvasMiniCoverTransition"
+                                        ) { currentArt ->
+                                            if (!currentArt.isNullOrEmpty()) {
+                                                AsyncImage(
+                                                    model = currentArt,
+                                                    contentDescription = track.title,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = Color.Gray,
+                                                    modifier = Modifier.size(26.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
@@ -1344,7 +1341,7 @@ fun FullPlayerSheet(
                             Spacer(modifier = Modifier.height((12f * (1f - halfExpansionFraction * 0.5f)).dp))
 
                             // Barra de Progresso Interativa + Tempos MM:SS (100% visível no Estado 0 e Estado 1)
-                            Column(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.fillMaxWidth().alpha(controlsAlpha)) {
                                 Slider(
                                     value = displayedFraction,
                                     onValueChange = { newFraction ->
@@ -1488,7 +1485,7 @@ fun FullPlayerSheet(
                             )
 
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().alpha(controlsAlpha),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -1641,6 +1638,7 @@ fun FullPlayerSheet(
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
+                            .alpha(queueDrawerAlpha)
                             .offset { IntOffset(0, currentSheetY.roundToInt()) },
                         shape = RoundedCornerShape(
                             topStart = 24.dp,
@@ -2277,23 +2275,14 @@ private fun QueueTrackRow(
                             .background(Color.Black.copy(alpha = 0.55f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (isPlaying) {
-                            AnimatedEqualizerBars(
-                                isPlaying = true,
-                                barColor = Color.White,
-                                barCount = 3,
-                                barWidth = 2.5.dp,
-                                barSpacing = 2.dp,
-                                maxHeight = 16.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
+                        AnimatedEqualizerBars(
+                            isPlaying = isPlaying,
+                            barColor = Color.White,
+                            barCount = 3,
+                            barWidth = 2.5.dp,
+                            barSpacing = 2.dp,
+                            maxHeight = 16.dp
+                        )
                     }
                 }
             }
