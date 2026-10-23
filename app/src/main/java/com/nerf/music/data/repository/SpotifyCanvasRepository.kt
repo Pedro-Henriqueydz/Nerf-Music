@@ -61,28 +61,40 @@ class SpotifyCanvasRepositoryImpl(
 
             // 1. Pesquisa o trackId na API interna Pathfinder do Spotify
             var trackId = searchSpotifyTrackId(cleanTitle, cleanArtist, accessToken, clientToken)
-            var canvasUrl = trackId?.let { fetchCanvasMp4(it) }
+            var fetchResult = trackId?.let { fetchCanvasWithStatus(it) }
 
             // 2. Fallback: se o título tiver sufixos entre parênteses como "(extended mix)" e não achou Canvas, tenta o título base
             val strippedTitle = stripParentheses(cleanTitle)
-            if (canvasUrl == null && strippedTitle.isNotBlank() && !strippedTitle.equals(cleanTitle, ignoreCase = true)) {
+            if ((fetchResult == null || fetchResult is CanvasStatus.NotFound) && strippedTitle.isNotBlank() && !strippedTitle.equals(cleanTitle, ignoreCase = true)) {
                 Log.i(TAG, "Tentando busca secundária sem parênteses: '$strippedTitle' por '$cleanArtist'")
                 val fallbackTrackId = searchSpotifyTrackId(strippedTitle, cleanArtist, accessToken, clientToken)
                 if (!fallbackTrackId.isNullOrBlank() && fallbackTrackId != trackId) {
                     trackId = fallbackTrackId
-                    canvasUrl = fetchCanvasMp4(fallbackTrackId)
+                    fetchResult = fetchCanvasWithStatus(fallbackTrackId)
                 }
             }
 
-            if (canvasUrl != null) {
-                canvasCache[cacheKey] = canvasUrl
-                Log.i(TAG, "Canvas MP4 obtido com sucesso para '$cleanTitle' (trackId=$trackId): $canvasUrl")
-            } else {
-                negativeCache[cacheKey] = true
-                Log.i(TAG, "Faixa '$cleanTitle' (trackId=$trackId) não possui Canvas associado no Spotify.")
+            when (fetchResult) {
+                is CanvasStatus.Success -> {
+                    canvasCache[cacheKey] = fetchResult.url
+                    Log.i(TAG, "Canvas MP4 obtido com sucesso para '$cleanTitle' (trackId=$trackId): ${fetchResult.url}")
+                    Result.success(fetchResult.url)
+                }
+                is CanvasStatus.NotFound -> {
+                    negativeCache[cacheKey] = true
+                    Log.i(TAG, "Faixa '$cleanTitle' (trackId=$trackId) confirmada sem Canvas no Spotify.")
+                    Result.success(null)
+                }
+                is CanvasStatus.ServerError -> {
+                    Log.w(TAG, "Falha de servidor ao resolver Canvas para '$cleanTitle' (trackId=$trackId): ${fetchResult.code}. Não adicionado ao cache negativo.")
+                    Result.success(null)
+                }
+                null -> {
+                    Log.i(TAG, "Faixa '$cleanTitle' não localizada no catálogo do Spotify.")
+                    negativeCache[cacheKey] = true
+                    Result.success(null)
+                }
             }
-
-            Result.success(canvasUrl)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao buscar Canvas para $cleanTitle - $cleanArtist: ${e.message}", e)
             Result.failure(e)
@@ -271,33 +283,53 @@ class SpotifyCanvasRepositoryImpl(
         }
     }
 
-    private fun fetchCanvasMp4(trackId: String): String? {
-        return try {
-            val url = "https://spotify-canva.vercel.app/api/canvas?trackId=$trackId"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", USER_AGENT)
-                .get()
-                .build()
+    private sealed class CanvasStatus {
+        data class Success(val url: String) : CanvasStatus()
+        object NotFound : CanvasStatus()
+        data class ServerError(val code: Int) : CanvasStatus()
+    }
 
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val bodyStr = response.body?.string() ?: return null
-                val json = JSONObject(bodyStr)
-                val canvasesList = json.optJSONArray("canvasesList") ?: return null
-                if (canvasesList.length() > 0) {
-                    val first = canvasesList.getJSONObject(0)
-                    val canvasUrl = first.optString("canvasUrl", "")
-                    if (canvasUrl.isNotBlank() && canvasUrl.startsWith("http")) {
-                        return canvasUrl
+    private fun fetchCanvasWithStatus(trackId: String): CanvasStatus {
+        var lastError: CanvasStatus = CanvasStatus.NotFound
+
+        for (endpointBase in CANVAS_ENDPOINTS) {
+            val url = "$endpointBase$trackId"
+            try {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", USER_AGENT)
+                    .get()
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bodyStr = response.body?.string()
+                        if (!bodyStr.isNullOrBlank()) {
+                            val json = JSONObject(bodyStr)
+                            val canvasesList = json.optJSONArray("canvasesList")
+                            if (canvasesList != null && canvasesList.length() > 0) {
+                                val first = canvasesList.getJSONObject(0)
+                                val canvasUrl = first.optString("canvasUrl", "")
+                                if (canvasUrl.isNotBlank() && canvasUrl.startsWith("http")) {
+                                    return CanvasStatus.Success(canvasUrl)
+                                }
+                            }
+                        }
+                        return CanvasStatus.NotFound
+                    } else if (response.code == 404) {
+                        lastError = CanvasStatus.NotFound
+                    } else {
+                        Log.w(TAG, "Endpoint $url retornou HTTP ${response.code}. Tentando fallback...")
+                        lastError = CanvasStatus.ServerError(response.code)
                     }
                 }
-                null
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha de conexão com $url: ${e.message}. Tentando fallback...")
+                lastError = CanvasStatus.ServerError(-1)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Erro ao consultar resolver de Canvas: ${e.message}")
-            null
         }
+
+        return lastError
     }
 
     private fun cleanTrackTitle(title: String): String {
@@ -324,5 +356,9 @@ class SpotifyCanvasRepositoryImpl(
     companion object {
         private const val TAG = "SpotifyCanvasRepository"
         private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        private val CANVAS_ENDPOINTS = listOf(
+            "https://nerf-canvas-api.vercel.app/api/canvas?trackId=",
+            "https://spotify-canva.vercel.app/api/canvas?trackId="
+        )
     }
 }
