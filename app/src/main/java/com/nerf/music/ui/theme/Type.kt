@@ -21,6 +21,17 @@ val YouTubeSansFontFamily = FontFamily(
     Font(R.font.yt_sans_bold, FontWeight.ExtraBold)
 )
 
+/**
+ * Família tipográfica oficial do Apple iOS / Apple Music (SF Pro Display).
+ */
+val SfProFontFamily = FontFamily(
+    Font(R.font.sf_pro_medium, FontWeight.Normal),
+    Font(R.font.sf_pro_medium, FontWeight.Medium),
+    Font(R.font.sf_pro_semibold, FontWeight.SemiBold),
+    Font(R.font.sf_pro_bold, FontWeight.Bold),
+    Font(R.font.sf_pro_bold, FontWeight.ExtraBold)
+)
+
 val YtmTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = YouTubeSansFontFamily,
