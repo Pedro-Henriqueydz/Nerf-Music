@@ -141,6 +141,12 @@ import com.nerf.music.ui.theme.YtmWhite
 import com.nerf.music.ui.theme.YtmTextSecondary
 import com.nerf.music.ui.theme.YtmIconInactive
 import com.nerf.music.ui.theme.OrangeSecondary
+import com.nerf.music.ui.components.AnimatedEqualizerBars
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.automirrored.filled.Subject
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import kotlinx.coroutines.Dispatchers
@@ -489,8 +495,26 @@ fun FullPlayerSheet(
         }
     }
 
+    val playerDismissOffsetY = remember { Animatable(0f) }
+    val dismissFraction = (playerDismissOffsetY.value / 800f).coerceIn(0f, 1f)
+    val dismissScale = 1f - (dismissFraction * 0.08f)
+    val dismissAlpha = (1f - dismissFraction * 0.35f).coerceIn(0f, 1f)
+    val dismissCornerRadius = (dismissFraction * 32f).dp
+
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationY = playerDismissOffsetY.value
+                scaleX = dismissScale
+                scaleY = dismissScale
+                alpha = dismissAlpha
+                shape = RoundedCornerShape(
+                    topStart = dismissCornerRadius,
+                    topEnd = dismissCornerRadius
+                )
+                clip = playerDismissOffsetY.value > 2f
+            },
         color = Color(0xFF0F0F0F)
     ) {
         Box(
@@ -634,6 +658,8 @@ fun FullPlayerSheet(
 
                 // Tamanho dinâmico da capa 1:1 sem lag (120Hz fluido)
                 val screenWidthDp = with(density) { constraints.maxWidth.toDp() }
+                val screenWidthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                val artworkOffsetX = remember { Animatable(0f) }
                 val maxArtworkSizeDp = (screenWidthDp - 48.dp).coerceIn(290.dp, 330.dp)
                 val minArtworkSizeDp = 135.dp
                 val currentArtworkSizeDp = maxArtworkSizeDp - ((maxArtworkSizeDp - minArtworkSizeDp) * halfExpansionFraction)
@@ -839,8 +865,26 @@ fun FullPlayerSheet(
                                         detectVerticalDragGestures(
                                             onDragStart = { totalDragY = 0f },
                                             onDragEnd = {
-                                                if (totalDragY > 120f) {
-                                                    onDismiss()
+                                                val dismissThreshold = 120.dp.toPx()
+                                                if (playerDismissOffsetY.value > dismissThreshold || totalDragY > 260f) {
+                                                    coroutineScope.launch {
+                                                        playerDismissOffsetY.animateTo(
+                                                            targetValue = totalHeightPx,
+                                                            animationSpec = tween(180, easing = FastOutLinearInEasing)
+                                                        )
+                                                        onDismiss()
+                                                        playerDismissOffsetY.snapTo(0f)
+                                                    }
+                                                } else if (playerDismissOffsetY.value > 0f) {
+                                                    coroutineScope.launch {
+                                                        playerDismissOffsetY.animateTo(
+                                                            targetValue = 0f,
+                                                            animationSpec = spring(
+                                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                                stiffness = 400f
+                                                            )
+                                                        )
+                                                    }
                                                 } else if (totalDragY < -50f) {
                                                     snapQueueSheet(-1000f)
                                                 } else {
@@ -859,6 +903,12 @@ fun FullPlayerSheet(
                                             onDragCancel = {
                                                 totalDragY = 0f
                                                 coroutineScope.launch {
+                                                    if (playerDismissOffsetY.value > 0f) {
+                                                        playerDismissOffsetY.animateTo(
+                                                            0f,
+                                                            spring(Spring.DampingRatioNoBouncy, 400f)
+                                                        )
+                                                    }
                                                     sheetOffsetY.animateTo(
                                                         anchorCollapsedY,
                                                         animationSpec = spring(
@@ -871,7 +921,17 @@ fun FullPlayerSheet(
                                             onVerticalDrag = { change, dragAmount ->
                                                 change.consume()
                                                 totalDragY += dragAmount
-                                                if (dragAmount < 0 || sheetOffsetY.value < anchorCollapsedY) {
+                                                if (dragAmount > 0f && sheetOffsetY.value >= anchorCollapsedY) {
+                                                    coroutineScope.launch {
+                                                        val nextDismissY = (playerDismissOffsetY.value + dragAmount).coerceAtLeast(0f)
+                                                        playerDismissOffsetY.snapTo(nextDismissY)
+                                                    }
+                                                } else if (playerDismissOffsetY.value > 0f) {
+                                                    coroutineScope.launch {
+                                                        val nextDismissY = (playerDismissOffsetY.value + dragAmount).coerceAtLeast(0f)
+                                                        playerDismissOffsetY.snapTo(nextDismissY)
+                                                    }
+                                                } else {
                                                     coroutineScope.launch {
                                                         val newY = (sheetOffsetY.value + dragAmount).coerceIn(anchorExpandedY, anchorCollapsedY)
                                                         sheetOffsetY.snapTo(newY)
@@ -883,15 +943,28 @@ fun FullPlayerSheet(
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // Cabeçalho Superior estilo YouTube Music
-                            Row(
+                            // Cabeçalho Superior estilo YouTube Music perfeitamente centralizado
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .height(52.dp)
+                                    .padding(top = 2.dp)
                             ) {
-                                IconButton(onClick = onDismiss) {
+                                IconButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            playerDismissOffsetY.animateTo(
+                                                targetValue = totalHeightPx,
+                                                animationSpec = tween(180, easing = FastOutLinearInEasing)
+                                            )
+                                            onDismiss()
+                                            playerDismissOffsetY.snapTo(0f)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.CenterStart)
+                                        .size(44.dp)
+                                ) {
                                     Icon(
                                         imageVector = Icons.Default.KeyboardArrowDown,
                                         contentDescription = stringResource(id = R.string.collapse_player),
@@ -900,11 +973,12 @@ fun FullPlayerSheet(
                                     )
                                 }
 
-                                // Segmented Pill: [ Música | Canva ]
+                                // Segmented Pill: [ Música | Canva ] matematicamente centralizado
                                 Surface(
                                     shape = RoundedCornerShape(50),
                                     color = Color(0xFF262626),
-                                    border = BorderStroke(0.5.dp, Color(0xFF383838))
+                                    border = BorderStroke(0.5.dp, Color(0xFF383838)),
+                                    modifier = Modifier.align(Alignment.Center)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(2.dp),
@@ -916,14 +990,14 @@ fun FullPlayerSheet(
                                             modifier = Modifier.clickable { isCanvaSelected = false }
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.MusicNote,
                                                     contentDescription = null,
                                                     tint = if (!isCanvasActive) Color.White else Color.White.copy(alpha = 0.55f),
-                                                    modifier = Modifier.size(15.dp)
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
@@ -942,14 +1016,14 @@ fun FullPlayerSheet(
                                             }
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.PlayArrow,
                                                     contentDescription = null,
                                                     tint = if (isCanvasActive) Color.White else Color.White.copy(alpha = if (hasCanva) 0.55f else 0.25f),
-                                                    modifier = Modifier.size(15.dp)
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
@@ -963,21 +1037,30 @@ fun FullPlayerSheet(
                                     }
                                 }
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(onClick = { /* Cast */ }) {
+                                Row(
+                                    modifier = Modifier.align(Alignment.CenterEnd),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = { /* Cast */ },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.Default.Cast,
                                             contentDescription = "Transmitir",
                                             tint = Color.White.copy(alpha = 0.90f),
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
-                                    IconButton(onClick = { showRelatedSheet = true }) {
+                                    IconButton(
+                                        onClick = { showRelatedSheet = true },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.Default.MoreVert,
                                             contentDescription = "Mais opções",
                                             tint = Color.White.copy(alpha = 0.90f),
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
                                 }
@@ -997,7 +1080,86 @@ fun FullPlayerSheet(
                                             clip = false
                                         )
                                         .clip(RoundedCornerShape(16.dp))
-                                        .background(Color(0xFF262626)),
+                                        .background(Color(0xFF262626))
+                                        .graphicsLayer {
+                                            translationX = artworkOffsetX.value
+                                            rotationZ = (artworkOffsetX.value / screenWidthPx) * 7f
+                                            alpha = (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
+                                        }
+                                        .pointerInput(track.id) {
+                                            var totalDragX = 0f
+                                            detectHorizontalDragGestures(
+                                                onDragStart = { totalDragX = 0f },
+                                                onDragEnd = {
+                                                    val swipeThreshold = 75.dp.toPx()
+                                                    if (totalDragX < -swipeThreshold) {
+                                                        // Swipe para a esquerda -> Próxima faixa
+                                                        coroutineScope.launch {
+                                                            artworkOffsetX.animateTo(
+                                                                targetValue = -screenWidthPx * 0.85f,
+                                                                animationSpec = tween(140, easing = FastOutLinearInEasing)
+                                                            )
+                                                            onSkipNext()
+                                                            artworkOffsetX.snapTo(screenWidthPx * 0.85f)
+                                                            artworkOffsetX.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = spring(
+                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                                    stiffness = 380f
+                                                                )
+                                                            )
+                                                        }
+                                                    } else if (totalDragX > swipeThreshold) {
+                                                        // Swipe para a direita -> Faixa anterior
+                                                        coroutineScope.launch {
+                                                            artworkOffsetX.animateTo(
+                                                                targetValue = screenWidthPx * 0.85f,
+                                                                animationSpec = tween(140, easing = FastOutLinearInEasing)
+                                                            )
+                                                            onSkipPrevious()
+                                                            artworkOffsetX.snapTo(-screenWidthPx * 0.85f)
+                                                            artworkOffsetX.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = spring(
+                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                                    stiffness = 380f
+                                                                )
+                                                            )
+                                                        }
+                                                    } else {
+                                                        coroutineScope.launch {
+                                                            artworkOffsetX.animateTo(
+                                                                targetValue = 0f,
+                                                                animationSpec = spring(
+                                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                                    stiffness = 380f
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                    totalDragX = 0f
+                                                },
+                                                onDragCancel = {
+                                                    totalDragX = 0f
+                                                    coroutineScope.launch {
+                                                        artworkOffsetX.animateTo(
+                                                            targetValue = 0f,
+                                                            animationSpec = spring(
+                                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                                stiffness = 380f
+                                                            )
+                                                        )
+                                                    }
+                                                },
+                                                onHorizontalDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    totalDragX += dragAmount
+                                                    coroutineScope.launch {
+                                                        artworkOffsetX.snapTo(artworkOffsetX.value + dragAmount)
+                                                    }
+                                                }
+                                            )
+                                        },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (!artworkUrl.isNullOrEmpty()) {
@@ -1103,14 +1265,23 @@ fun FullPlayerSheet(
                                                 .clickable { showRelatedSheet = true }
                                                 .padding(vertical = 2.dp)
                                         ) {
-                                            Text(
-                                                text = track.title,
-                                                fontSize = (if (isCanvasActive) 20f else (22f - (4f * halfExpansionFraction))).sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White,
-                                                maxLines = 1,
-                                                modifier = Modifier.basicMarquee()
-                                            )
+                                            AnimatedContent(
+                                                targetState = track.title,
+                                                transitionSpec = {
+                                                    (fadeIn(animationSpec = tween(220)) + slideInHorizontally(animationSpec = tween(220)) { it / 6 })
+                                                        .togetherWith(fadeOut(animationSpec = tween(160)) + slideOutHorizontally(animationSpec = tween(160)) { -it / 6 })
+                                                },
+                                                label = "TrackTitleTransition"
+                                            ) { currentTitle ->
+                                                Text(
+                                                    text = currentTitle,
+                                                    fontSize = (if (isCanvasActive) 20f else (22f - (4f * halfExpansionFraction))).sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    modifier = Modifier.basicMarquee()
+                                                )
+                                            }
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Icon(
                                                 imageVector = Icons.Default.ChevronRight,
@@ -1123,25 +1294,33 @@ fun FullPlayerSheet(
 
                                     Spacer(modifier = Modifier.height(2.dp))
 
-                                    Text(
-                                        text = track.artist,
-                                        fontSize = (15f - (2f * halfExpansionFraction)).sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color.White.copy(alpha = 0.72f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .clickable {
-                                                val bId = track.artistBrowseId
-                                                if (!bId.isNullOrBlank()) {
-                                                    onOpenArtist(bId)
-                                                } else {
-                                                    onOpenArtist(track.artist)
+                                    AnimatedContent(
+                                        targetState = track.artist,
+                                        transitionSpec = {
+                                            fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(160))
+                                        },
+                                        label = "TrackArtistTransition"
+                                    ) { currentArtist ->
+                                        Text(
+                                            text = currentArtist,
+                                            fontSize = (15f - (2f * halfExpansionFraction)).sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.White.copy(alpha = 0.72f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .clickable {
+                                                    val bId = track.artistBrowseId
+                                                    if (!bId.isNullOrBlank()) {
+                                                        onOpenArtist(bId)
+                                                    } else {
+                                                        onOpenArtist(track.artist)
+                                                    }
                                                 }
-                                            }
-                                            .padding(vertical = 2.dp)
-                                    )
+                                                .padding(vertical = 2.dp)
+                                        )
+                                    }
                                 }
                             }
 
@@ -1191,10 +1370,22 @@ fun FullPlayerSheet(
                                             modifier = Modifier.size(24.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
+                                            val thumbScale by animateFloatAsState(
+                                                targetValue = if (isDraggingSlider) 1.55f else 1.0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                    stiffness = 500f
+                                                ),
+                                                label = "ThumbScale"
+                                            )
                                             Box(
                                                 modifier = Modifier
-                                                    .size(if (isDraggingSlider) 13.dp else 9.dp)
-                                                    .shadow(elevation = 2.dp, shape = CircleShape, clip = false)
+                                                    .size(9.dp)
+                                                    .graphicsLayer {
+                                                        scaleX = thumbScale
+                                                        scaleY = thumbScale
+                                                    }
+                                                    .shadow(elevation = if (isDraggingSlider) 6.dp else 2.dp, shape = CircleShape, clip = false)
                                                     .clip(CircleShape)
                                                     .background(Color.White)
                                             )
@@ -1269,6 +1460,33 @@ fun FullPlayerSheet(
                             val sideButtonSize = (48f - (8f * halfExpansionFraction)).dp
                             val modeButtonSize = (40f - (6f * halfExpansionFraction)).dp
 
+                            val playInteractionSource = remember { MutableInteractionSource() }
+                            val isPlayPressed by playInteractionSource.collectIsPressedAsState()
+                            val playScale by animateFloatAsState(
+                                targetValue = if (isPlayPressed) 0.88f else 1.0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = 500f
+                                ),
+                                label = "PlayButtonScale"
+                            )
+
+                            val prevInteractionSource = remember { MutableInteractionSource() }
+                            val isPrevPressed by prevInteractionSource.collectIsPressedAsState()
+                            val prevScale by animateFloatAsState(
+                                targetValue = if (isPrevPressed) 0.88f else 1.0f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
+                                label = "PrevButtonScale"
+                            )
+
+                            val nextInteractionSource = remember { MutableInteractionSource() }
+                            val isNextPressed by nextInteractionSource.collectIsPressedAsState()
+                            val nextScale by animateFloatAsState(
+                                targetValue = if (isNextPressed) 0.88f else 1.0f,
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
+                                label = "NextButtonScale"
+                            )
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1294,7 +1512,13 @@ fun FullPlayerSheet(
                                 // 2. Anterior (SkipPrevious)
                                 FilledTonalIconButton(
                                     onClick = onSkipPrevious,
-                                    modifier = Modifier.size(sideButtonSize),
+                                    modifier = Modifier
+                                        .size(sideButtonSize)
+                                        .graphicsLayer {
+                                            scaleX = prevScale
+                                            scaleY = prevScale
+                                        },
+                                    interactionSource = prevInteractionSource,
                                     shape = CircleShape,
                                     colors = IconButtonDefaults.filledTonalIconButtonColors(
                                         containerColor = Color(0xFF262626),
@@ -1311,7 +1535,13 @@ fun FullPlayerSheet(
                                 // 3. Play/Pause (maior)
                                 Surface(
                                     onClick = onTogglePlay,
-                                    modifier = Modifier.size(mainPlayButtonSize),
+                                    modifier = Modifier
+                                        .size(mainPlayButtonSize)
+                                        .graphicsLayer {
+                                            scaleX = playScale
+                                            scaleY = playScale
+                                        },
+                                    interactionSource = playInteractionSource,
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.primary,
                                     shadowElevation = 8.dp
@@ -1341,7 +1571,13 @@ fun FullPlayerSheet(
                                 // 4. Próxima (SkipNext)
                                 FilledTonalIconButton(
                                     onClick = onSkipNext,
-                                    modifier = Modifier.size(sideButtonSize),
+                                    modifier = Modifier
+                                        .size(sideButtonSize)
+                                        .graphicsLayer {
+                                            scaleX = nextScale
+                                            scaleY = nextScale
+                                        },
+                                    interactionSource = nextInteractionSource,
                                     shape = CircleShape,
                                     colors = IconButtonDefaults.filledTonalIconButtonColors(
                                         containerColor = Color(0xFF262626),
@@ -2041,12 +2277,23 @@ private fun QueueTrackRow(
                             .background(Color.Black.copy(alpha = 0.55f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Equalizer else Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        if (isPlaying) {
+                            AnimatedEqualizerBars(
+                                isPlaying = true,
+                                barColor = Color.White,
+                                barCount = 3,
+                                barWidth = 2.5.dp,
+                                barSpacing = 2.dp,
+                                maxHeight = 16.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
