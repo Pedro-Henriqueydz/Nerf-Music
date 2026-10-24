@@ -226,7 +226,12 @@ class AudioPlayerService : MediaSessionService() {
         private val streamUrlCache = ConcurrentHashMap<String, CachedStreamUrl>()
         private val inFlightResolutions = ConcurrentHashMap<String, Deferred<String>>()
         private var serviceAppContext: Context? = null
-        private val globalStreamResolver: StreamResolver by lazy { NewPipeStreamResolver(serviceAppContext) }
+        private val globalStreamResolver: StreamResolver by lazy {
+            CompositeStreamResolver(
+                primary = InnerTubeStreamResolver(),
+                secondary = NewPipeStreamResolver(serviceAppContext)
+            )
+        }
         private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun isStreamCached(videoId: String): Boolean {

@@ -9,15 +9,17 @@ import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 /**
- * Orquestrador do feed dinâmico da Home do NERF Music.
+ * Orquestrador e Sintetizador do feed dinâmico da Home do NERF Music.
  *
- * Constrói a tela inicial viva nos moldes da versão oficial do YouTube Music 9.41:
- * 1. Speed Dial 3x3 paginado (9 itens por página com dots, playlists do usuário e curtidas).
- * 2. Seção contextual de dia e horário ("Churrasco & Fim de semana", "Energia", "Foco", "Relax").
- * 3. Your Downloads com os cartões gradientes oficiais (Liked Music, Offline Mix).
- * 4. Covers e remixes reais (versões slowed, sped-up, remixes e VIP edits).
- * 5. Hero Card "Your daily discover" com o selo "Sounds like X by Y".
- * 6. Carrosséis temáticos (Mixed for you, Novos álbuns e lançamentos).
+ * Constrói uma experiência viva, altamente personalizada e reativa ao DNA acústico do usuário:
+ * 1. Speed Dial 3x3 Paginado (Favoritos imediatos, playlists do usuário e faixas recentes).
+ * 2. "Seu Supermix" (Equilíbrio áureo: 40% favoritos conhecidos + 60% novidades contextuais).
+ * 3. Prateleiras Algorítmicas Dedicadas ("Porque você ouve [Artista]").
+ * 4. Seção Contextual de Horário ("Vibe Noturna", "Energia", "Para o Fim de Semana") adaptada ao gosto do usuário.
+ * 5. Your Downloads (Cartões com gradientes elegantes para reprodução offline imediata).
+ * 6. Covers e Remixes exclusivos (Slowed, Sped-up, VIP edits e versões alternativas).
+ * 7. Hero Card "Sua Descoberta Diária" ("Parecido com X de Y").
+ * 8. Suporte completo a Mood Chips (Energia, Relax, Foco, Treino) com filtragem de afinidade.
  */
 class HomeFeedSynthesizer(
     private val catalogClient: InnerTubeCatalogClient = InnerTubeCatalogClient()
@@ -41,6 +43,10 @@ class HomeFeedSynthesizer(
         val downloadedTracks = libraryRepo?.downloadedTracksFlow?.value.orEmpty()
         val topArtists = historyRepo?.getTopArtists(5).orEmpty()
         val favoriteSeedId = historyRepo?.getFavoriteSeedVideoId()
+            ?: userLiked.firstOrNull()?.id
+            ?: userRecent.firstOrNull()?.id
+
+        val primaryArtist = topArtists.firstOrNull() ?: userRecent.firstOrNull()?.artist
 
         // -----------------------------------------------------------------------------------------
         // 1. SPEED DIAL (Grade 3x3 Paginada - 9 itens por página, até 27 itens)
@@ -49,7 +55,7 @@ class HomeFeedSynthesizer(
             val speedDialItems = mutableListOf<Track>()
             val seenDialIds = mutableSetOf<String>()
 
-            // A. Atalho especial: Músicas Curtidas (se houver faixas curtidas)
+            // A. Atalho especial: Músicas Curtidas
             if (userLiked.isNotEmpty()) {
                 val likedShortcut = Track(
                     id = "shortcut_liked_music",
@@ -81,7 +87,7 @@ class HomeFeedSynthesizer(
                 }
             }
 
-            // C. Músicas recentes do histórico com alta afinidade
+            // C. Músicas recentes do histórico com alta afinidade (sem penalidade)
             userRecent.forEach { track ->
                 if (speedDialItems.size < 27 && track.id.isNotBlank() && seenDialIds.add(track.id)) {
                     if (affinityRepo?.isTrackPenalized(track.id) != true) {
@@ -90,7 +96,7 @@ class HomeFeedSynthesizer(
                 }
             }
 
-            // D. Fallback: Se o usuário for novo e tiver poucos itens, preenche até 9 com o catálogo
+            // D. Fallback: Se o usuário for novo, preenche até 9 com faixas do catálogo
             if (speedDialItems.size < 9) {
                 baseFeedData.sections.firstOrNull { it.items.isNotEmpty() }?.items?.forEach { track ->
                     if (speedDialItems.size < 9 && seenDialIds.add(track.id)) {
@@ -112,7 +118,74 @@ class HomeFeedSynthesizer(
         }
 
         // -----------------------------------------------------------------------------------------
-        // 2. SEÇÃO CONTEXTUAL DE HORÁRIO E FIM DE SEMANA ("Para Churrasco", "Energia", "Relax")
+        // 2. SEU SUPERMIX DIÁRIO (40% Favoritos Conhecidos + 60% Novidades Contextuais)
+        // -----------------------------------------------------------------------------------------
+        if (selectedChip == null && !favoriteSeedId.isNullOrBlank()) {
+            val supermixItems = mutableListOf<Track>()
+            val supermixSeenIds = mutableSetOf<String>()
+
+            // 40% Favoritas e Recentes
+            (userLiked + userRecent).filter { it.id.isNotBlank() }.distinctBy { it.id }.take(6).forEach {
+                if (supermixSeenIds.add(it.id)) {
+                    supermixItems.add(it)
+                }
+            }
+
+            // 60% Novidades da Rádio de Recomendações
+            try {
+                val radioResult = catalogClient.getUpNextRadio(favoriteSeedId).getOrNull()
+                radioResult?.tracks?.forEach { rec ->
+                    if (supermixItems.size < 16 && supermixSeenIds.add(rec.id)) {
+                        if (affinityRepo?.isTrackPenalized(rec.id) != true) {
+                            supermixItems.add(rec)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha ao gerar Supermix: ${e.message}")
+            }
+
+            if (supermixItems.size >= 6) {
+                syntheticSections.add(
+                    HomeSection(
+                        title = "Seu Supermix",
+                        strapline = "FAVORITOS E NOVAS DESCOBERTAS",
+                        items = supermixItems.take(16),
+                        style = HomeSectionStyle.QUICK_PICKS_GRID
+                    )
+                )
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // 3. PRATELEIRAS DEDICADAS POR ARTISTA ("Porque você ouve [Artista]")
+        // -----------------------------------------------------------------------------------------
+        if (selectedChip == null && topArtists.isNotEmpty()) {
+            for (artist in topArtists.take(2)) {
+                try {
+                    val artistTracksResult = catalogClient.search(artist, SearchFilter.SONGS).getOrNull()
+                    val artistSongs = artistTracksResult?.songs?.filter { track ->
+                        track.id.isNotBlank() && affinityRepo?.isTrackPenalized(track.id) != true
+                    }.orEmpty()
+
+                    if (artistSongs.isNotEmpty()) {
+                        syntheticSections.add(
+                            HomeSection(
+                                title = "Porque você ouve $artist",
+                                strapline = "COM BASE NAS SUAS PREFERÊNCIAS",
+                                items = artistSongs.take(12),
+                                style = HomeSectionStyle.TWO_ROW_CAROUSEL
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Falha ao buscar músicas do artista $artist: ${e.message}")
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // 4. SEÇÃO CONTEXTUAL DE HORÁRIO ADAPTADA AO GOSTO REAL DO USUÁRIO
         // -----------------------------------------------------------------------------------------
         if (selectedChip == null) {
             val cal = Calendar.getInstance()
@@ -126,45 +199,50 @@ class HomeFeedSynthesizer(
                 isWeekend -> Triple(
                     "Para o fim de semana",
                     "CHURRASCO, FESTA E DESCONTRAÇÃO",
-                    "churrasco sertanejo pagode festa funk"
+                    if (!primaryArtist.isNullOrBlank()) "$primaryArtist festa remix live" else "churrasco sertanejo pagode festa funk"
                 )
                 hourOfDay in 5..11 -> Triple(
                     "Energia para o seu dia",
                     "COMECE A MANHÃ NO RITMO CERTO",
-                    "energia treino motivacao pop rock"
+                    if (!primaryArtist.isNullOrBlank()) "$primaryArtist up tempo energia" else "energia treino motivacao pop rock"
                 )
                 hourOfDay in 12..17 -> Triple(
                     "Foco e ritmo",
                     "MÚSICA PARA ACOMPANHAR SUA TARDE",
-                    "foco trabalho ritmo pop indie"
+                    if (!primaryArtist.isNullOrBlank()) "$primaryArtist beat ritmo" else "foco trabalho ritmo pop indie"
                 )
                 hourOfDay in 18..23 -> Triple(
                     "Para desacelerar",
                     "VIBE NOTURNA E RELAX",
-                    "chill relax r&b phonk wave lofi"
+                    if (!primaryArtist.isNullOrBlank()) "$primaryArtist chill wave slowed" else "chill relax r&b phonk wave lofi"
                 )
                 else -> Triple(
                     "Madrugada calma",
                     "LO-FI, AMBIENTE E TRANQUILIDADE",
-                    "lofi sleep ambient calm instrumental"
+                    if (!primaryArtist.isNullOrBlank()) "$primaryArtist ambient lofi" else "lofi sleep ambient calm instrumental"
                 )
             }
 
             val contextSearchResult = catalogClient.search(timeQuery, SearchFilter.SONGS).getOrNull()
             if (contextSearchResult != null && contextSearchResult.songs.isNotEmpty()) {
-                syntheticSections.add(
-                    HomeSection(
-                        title = timeTitle,
-                        strapline = timeStrapline,
-                        items = contextSearchResult.songs.take(16),
-                        style = HomeSectionStyle.QUICK_PICKS_GRID
+                val filteredContext = contextSearchResult.songs.filter {
+                    affinityRepo?.isTrackPenalized(it.id) != true
+                }
+                if (filteredContext.isNotEmpty()) {
+                    syntheticSections.add(
+                        HomeSection(
+                            title = timeTitle,
+                            strapline = timeStrapline,
+                            items = filteredContext.take(16),
+                            style = HomeSectionStyle.QUICK_PICKS_GRID
+                        )
                     )
-                )
+                }
             }
         }
 
         // -----------------------------------------------------------------------------------------
-        // 3. YOUR DOWNLOADS (Dinâmico: aparece se houver downloads ou curtidas)
+        // 5. YOUR DOWNLOADS (Dinâmico: aparece se houver downloads ou curtidas)
         // -----------------------------------------------------------------------------------------
         if (selectedChip == null && (downloadedTracks.isNotEmpty() || userLiked.isNotEmpty())) {
             val downloadCards = mutableListOf<Track>()
@@ -207,73 +285,112 @@ class HomeFeedSynthesizer(
         }
 
         // -----------------------------------------------------------------------------------------
-        // 4. COVERS AND REMIXES (Foco estrito em versões Slowed, Sped Up, Remixes e VIP Edits)
+        // 6. COVERS AND REMIXES (Foco estrito em versões Slowed, Sped Up, Remixes e VIP Edits)
         // -----------------------------------------------------------------------------------------
-        val topArtistForRemix = topArtists.firstOrNull() ?: userRecent.firstOrNull()?.artist
-        val remixQuery = if (!topArtistForRemix.isNullOrBlank()) {
-            "$topArtistForRemix slowed remix vip cover"
-        } else {
-            "phonk slowed reverb remix"
-        }
-
-        val coversSearchResult = catalogClient.search(remixQuery, SearchFilter.SONGS).getOrNull()
-        if (coversSearchResult != null && coversSearchResult.songs.isNotEmpty()) {
-            // Filtra para garantir que sejam faixas alternativas/remixes
-            val filteredCovers = coversSearchResult.songs.filter { track ->
-                val t = track.title.lowercase()
-                t.contains("remix") || t.contains("slowed") || t.contains("sped") ||
-                        t.contains("cover") || t.contains("reverb") || t.contains("vip") ||
-                        t.contains("edit") || t.contains("version")
-            }.ifEmpty { coversSearchResult.songs }
-
-            syntheticSections.add(
-                HomeSection(
-                    title = "Covers e remixes",
-                    strapline = "VERSÕES ALTERNATIVAS E RELEITURAS",
-                    items = filteredCovers.take(16),
-                    style = HomeSectionStyle.QUICK_PICKS_GRID
-                )
-            )
-        }
-
-        // -----------------------------------------------------------------------------------------
-        // 5. YOUR DAILY DISCOVER (Hero Card nobre com a assinatura "Sounds like X by Y")
-        // -----------------------------------------------------------------------------------------
-        val favoriteTrack = userRecent.firstOrNull() ?: userLiked.firstOrNull()
-        if (favoriteTrack != null && favoriteSeedId != null) {
-            val radioRes = catalogClient.getUpNextRadio(favoriteSeedId).getOrNull()
-            val candidate = radioRes?.tracks?.firstOrNull { candidate ->
-                candidate.id != favoriteTrack.id &&
-                        userRecent.none { it.id == candidate.id } &&
-                        userLiked.none { it.id == candidate.id }
+        if (selectedChip == null) {
+            val topArtistForRemix = topArtists.firstOrNull() ?: userRecent.firstOrNull()?.artist
+            val remixQuery = if (!topArtistForRemix.isNullOrBlank()) {
+                "$topArtistForRemix slowed remix vip cover"
+            } else {
+                "phonk slowed reverb remix"
             }
 
-            if (candidate != null) {
+            val coversSearchResult = catalogClient.search(remixQuery, SearchFilter.SONGS).getOrNull()
+            if (coversSearchResult != null && coversSearchResult.songs.isNotEmpty()) {
+                val filteredCovers = coversSearchResult.songs.filter { track ->
+                    val t = track.title.lowercase()
+                    (t.contains("remix") || t.contains("slowed") || t.contains("sped") ||
+                            t.contains("cover") || t.contains("reverb") || t.contains("vip") ||
+                            t.contains("edit") || t.contains("version")) &&
+                            affinityRepo?.isTrackPenalized(track.id) != true
+                }.ifEmpty { coversSearchResult.songs }
+
                 syntheticSections.add(
                     HomeSection(
-                        title = "Sua descoberta diária",
-                        strapline = "ESCOLHA ESPECIAL DE HOJE",
-                        items = listOf(candidate),
-                        style = HomeSectionStyle.DAILY_DISCOVER,
-                        heroCategory = "NOVA DESCOBERTA",
-                        heroSubtitle = "Parecido com ${favoriteTrack.title} de ${favoriteTrack.artist}"
+                        title = "Covers e remixes",
+                        strapline = "VERSÕES ALTERNATIVAS E RELEITURAS",
+                        items = filteredCovers.take(16),
+                        style = HomeSectionStyle.QUICK_PICKS_GRID
                     )
                 )
             }
         }
 
         // -----------------------------------------------------------------------------------------
-        // 6. SEÇÕES DE CATÁLOGO DO YOUTUBE MUSIC (Novos Álbuns, Vídeos, Mixes, Comunidade)
+        // 7. YOUR DAILY DISCOVER (Hero Card com a assinatura "Parecido com X de Y")
+        // -----------------------------------------------------------------------------------------
+        if (selectedChip == null) {
+            val favoriteTrack = userRecent.firstOrNull() ?: userLiked.firstOrNull()
+            if (favoriteTrack != null && favoriteSeedId != null) {
+                val radioRes = catalogClient.getUpNextRadio(favoriteSeedId).getOrNull()
+                val candidate = radioRes?.tracks?.firstOrNull { candidate ->
+                    candidate.id != favoriteTrack.id &&
+                            userRecent.none { it.id == candidate.id } &&
+                            userLiked.none { it.id == candidate.id } &&
+                            affinityRepo?.isTrackPenalized(candidate.id) != true
+                }
+
+                if (candidate != null) {
+                    syntheticSections.add(
+                        HomeSection(
+                            title = "Sua descoberta diária",
+                            strapline = "ESCOLHA ESPECIAL DE HOJE",
+                            items = listOf(candidate),
+                            style = HomeSectionStyle.DAILY_DISCOVER,
+                            heroCategory = "NOVA DESCOBERTA",
+                            heroSubtitle = "Parecido com ${favoriteTrack.title} de ${favoriteTrack.artist}"
+                        )
+                    )
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // 8. MOOD CHIPS ATIVOS (Energia, Relax, Treino, Foco, etc.)
+        // -----------------------------------------------------------------------------------------
+        if (selectedChip != null) {
+            val moodQuery = if (!primaryArtist.isNullOrBlank()) {
+                "$primaryArtist ${selectedChip.title}"
+            } else {
+                "${selectedChip.title} music"
+            }
+
+            try {
+                val moodSearch = catalogClient.search(moodQuery, SearchFilter.SONGS).getOrNull()
+                val moodSongs = moodSearch?.songs?.filter {
+                    affinityRepo?.isTrackPenalized(it.id) != true
+                }.orEmpty()
+
+                if (moodSongs.isNotEmpty()) {
+                    syntheticSections.add(
+                        HomeSection(
+                            title = "Mix de ${selectedChip.title}",
+                            strapline = "PERSONALIZADO PARA O SEU MOMENTO",
+                            items = moodSongs.take(16),
+                            style = HomeSectionStyle.QUICK_PICKS_GRID
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha ao sintetizar seção do chip ${selectedChip.title}: ${e.message}")
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // 9. SEÇÕES DO CATÁLOGO ORIGINAL (Lançamentos, Álbuns, Comunidade)
         // -----------------------------------------------------------------------------------------
         baseFeedData.sections.forEach { section ->
-            // Evita duplicar seções que já sintetizamos no topo
             val titleLower = section.title.lowercase()
             val isDuplicate = titleLower.contains("escolha a dedo") ||
                     titleLower.contains("ouvir novamente") ||
-                    titleLower.contains("speed dial")
+                    titleLower.contains("speed dial") ||
+                    titleLower.contains("supermix")
 
             if (!isDuplicate && section.items.isNotEmpty()) {
-                syntheticSections.add(section)
+                val nonPenalized = section.items.filter { affinityRepo?.isTrackPenalized(it.id) != true }
+                if (nonPenalized.isNotEmpty()) {
+                    syntheticSections.add(section.copy(items = nonPenalized))
+                }
             }
         }
 

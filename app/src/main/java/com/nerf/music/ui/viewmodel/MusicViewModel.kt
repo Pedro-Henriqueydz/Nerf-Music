@@ -437,9 +437,16 @@ class MusicViewModel(
                 _isLoadingHome.value = false
                 historyRepo?.saveCachedHomeFeed(synthesizedFeed.sections)
 
-                // Pre-aquece a resolucao da primeira faixa da tela inicial para inicio instantaneo
-                synthesizedFeed.sections.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()?.let { firstTrack ->
-                    AudioPlayerService.prefetchTrack(firstTrack.id)
+                // Pré-aquecimento preditivo de streaming (Zero Latency Buffer):
+                // Pré-resolve em segundo plano as faixas prioritárias com maior probabilidade de clique
+                val topCandidates = synthesizedFeed.sections
+                    .flatMap { it.items }
+                    .filter { it.id.isNotBlank() && !it.id.startsWith("shortcut_") && !it.id.startsWith("downloads_") }
+                    .distinctBy { it.id }
+                    .take(4)
+
+                for (candidate in topCandidates) {
+                    AudioPlayerService.prefetchTrack(candidate.id)
                 }
             }.onFailure {
                 // Fallback com sintese local caso nao haja conexao com o catalogo
