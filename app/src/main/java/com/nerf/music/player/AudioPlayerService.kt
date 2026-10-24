@@ -21,12 +21,18 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.nerf.music.data.repository.UserSettingsRepository
+import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.IOException
@@ -41,22 +47,132 @@ import java.util.concurrent.ConcurrentHashMap
  *   e [NewPipeStreamResolver], permitindo que toda a fila resida nativamente no `currentTimeline` do ExoPlayer.
  * - Buffer de início ultrarrápido (250ms) via [DefaultLoadControl] para latência imperceptível em plays e skips.
  * - Pre-fetching cooperativo em background com cache e deduplicação de requisições.
+ * - Transições inteligentes de faixa no estilo Spotify (Gapless, Automix e Crossfade de 0s a 12s com curva equal-power).
  * - Notificação de mídia nativa no Android com controles (Play, Pause, Anterior, Próxima, Barra de Progresso).
  */
 class AudioPlayerService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
-    private lateinit var player: ExoPlayer
+    private lateinit var primaryPlayer: ExoPlayer
+    private var secondaryPlayer: ExoPlayer? = null
+    private lateinit var resolvingDataSourceFactory: ResolvingDataSource.Factory
+    private lateinit var audioAttributes: AudioAttributes
+    private lateinit var loadControl: DefaultLoadControl
+    private lateinit var settingsRepository: UserSettingsRepository
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var isCrossfading: Boolean = false
+    private var crossfadeJob: Job? = null
+    private var transitionMonitorJob: Job? = null
 
     private fun triggerPrefetchNextTrack() {
-        val nextIndex = player.nextMediaItemIndex
-        if (nextIndex == C.INDEX_UNSET || nextIndex >= player.mediaItemCount) return
-        val nextItem = player.getMediaItemAt(nextIndex)
+        val nextIndex = primaryPlayer.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET || nextIndex >= primaryPlayer.mediaItemCount) return
+        val nextItem = primaryPlayer.getMediaItemAt(nextIndex)
         val videoId = nextItem.mediaId.takeIf { it.isNotBlank() }
             ?: nextItem.localConfiguration?.uri?.lastPathSegment?.takeIf { it.isNotBlank() }
             ?: return
 
         prefetchTrack(videoId, filesDir)
+    }
+
+    private fun startTransitionMonitor() {
+        transitionMonitorJob?.cancel()
+        transitionMonitorJob = serviceScope.launch {
+            while (isActive) {
+                delay(150)
+                checkAndTriggerTransition()
+            }
+        }
+    }
+
+    private fun checkAndTriggerTransition() {
+        if (isCrossfading) return
+        if (!primaryPlayer.isPlaying) return
+
+        val duration = primaryPlayer.duration
+        val position = primaryPlayer.currentPosition
+        if (duration <= 0L || position <= 0L) return
+
+        val nextIndex = primaryPlayer.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET || nextIndex >= primaryPlayer.mediaItemCount) return
+
+        val crossfadeSec = settingsRepository.crossfadeSeconds.value
+        val automix = settingsRepository.isAutomixEnabled.value
+
+        val targetFadeMs = when {
+            crossfadeSec > 0 -> crossfadeSec * 1000L
+            automix -> 2000L // 2s de transição suave inteligente do Automix
+            else -> 0L
+        }
+
+        if (targetFadeMs <= 0L) return
+
+        // Limite de segurança: nunca cruzar mais de um terço da música
+        val effectiveFadeMs = targetFadeMs.coerceAtMost(duration / 3)
+        val remainingMs = duration - position
+
+        if (remainingMs in 100..effectiveFadeMs) {
+            executeCrossfade(nextIndex, remainingMs.coerceAtLeast(400L))
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun executeCrossfade(nextIndex: Int, fadeDurationMs: Long) {
+        if (isCrossfading) return
+        isCrossfading = true
+        Log.i(TAG, "Iniciando transição de faixa (Crossfade/Automix): ${fadeDurationMs}ms para o índice $nextIndex")
+
+        val secPlayer = secondaryPlayer ?: createExoPlayer().also { secondaryPlayer = it }
+
+        // Replica a fila completa para o secondaryPlayer a partir do nextIndex
+        val mediaItems = mutableListOf<MediaItem>()
+        for (i in 0 until primaryPlayer.mediaItemCount) {
+            mediaItems.add(primaryPlayer.getMediaItemAt(i))
+        }
+
+        secPlayer.volume = 0f
+        secPlayer.setMediaItems(mediaItems, nextIndex, 0L)
+        secPlayer.prepare()
+        secPlayer.play()
+
+        // Atualiza a MediaSession do sistema e a UI para a nova faixa em reprodução
+        mediaSession?.setPlayer(secPlayer)
+
+        crossfadeJob?.cancel()
+        crossfadeJob = serviceScope.launch {
+            val startTime = System.currentTimeMillis()
+            val fadePrim = primaryPlayer
+            val fadeSec = secPlayer
+
+            while (isActive) {
+                val elapsed = System.currentTimeMillis() - startTime
+                val progress = (elapsed.toFloat() / fadeDurationMs).coerceIn(0f, 1f)
+
+                // Curva equal-power idêntica ao Spotify liborbit (cos / sin)
+                val volPrim = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
+                val volSec = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
+
+                fadePrim.volume = volPrim
+                fadeSec.volume = volSec
+
+                if (progress >= 1f) break
+                delay(25)
+            }
+
+            fadePrim.pause()
+            fadePrim.clearMediaItems()
+            fadePrim.volume = 1f
+            fadeSec.volume = 1f
+
+            // Inverte as referências dos players para a próxima transição
+            primaryPlayer = fadeSec
+            secondaryPlayer = fadePrim
+
+            isCrossfading = false
+            triggerPrefetchNextTrack()
+            Log.i(TAG, "Transição de faixa concluída com sucesso. Novo activePlayer atualizado.")
+        }
     }
 
     companion object {
@@ -167,11 +283,105 @@ class AudioPlayerService : MediaSessionService() {
     }
 
     @OptIn(UnstableApi::class)
+    private fun createExoPlayer(): ExoPlayer {
+        val playerInstance = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(this).setDataSourceFactory(resolvingDataSourceFactory)
+            )
+            .setAudioAttributes(audioAttributes, true) // Tratamento automático de Audio Focus
+            .setHandleAudioBecomingNoisy(true)        // Pausa automática ao desconectar fone
+            .setWakeMode(C.WAKE_MODE_NETWORK)         // Mantém Wi-Fi acordado durante stream
+            .build()
+
+        playerInstance.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                val stateName = when (playbackState) {
+                    Player.STATE_IDLE -> "STATE_IDLE"
+                    Player.STATE_BUFFERING -> "STATE_BUFFERING"
+                    Player.STATE_READY -> "STATE_READY"
+                    Player.STATE_ENDED -> "STATE_ENDED"
+                    else -> "UNKNOWN($playbackState)"
+                }
+                Log.i(TAG, "ExoPlayer estado: $stateName (isPlaying=${playerInstance.isPlaying})")
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                Log.i(TAG, "ExoPlayer onIsPlayingChanged: isPlaying=$isPlaying, duration=${playerInstance.duration}ms")
+                if (playerInstance == primaryPlayer) {
+                    if (isPlaying) {
+                        startTransitionMonitor()
+                        triggerPrefetchNextTrack()
+                    } else if (!isCrossfading) {
+                        transitionMonitorJob?.cancel()
+                    }
+                }
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
+                if (playerInstance == primaryPlayer) {
+                    // Trata opção 'Sem pausas' (Gapless): se desativada, insere pausa entre faixas
+                    if (!settingsRepository.isGaplessEnabled.value &&
+                        !isCrossfading &&
+                        reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+                    ) {
+                        primaryPlayer.pause()
+                        serviceScope.launch {
+                            delay(1000)
+                            if (playerInstance == primaryPlayer && !primaryPlayer.isPlaying) {
+                                primaryPlayer.play()
+                            }
+                        }
+                    }
+                    triggerPrefetchNextTrack()
+                }
+            }
+
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                if (playerInstance == primaryPlayer) {
+                    triggerPrefetchNextTrack()
+                }
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK && isCrossfading) {
+                    // Se o usuário buscar na timeline durante um crossfade, cancela a transição e restaura volume
+                    crossfadeJob?.cancel()
+                    secondaryPlayer?.stop()
+                    secondaryPlayer?.clearMediaItems()
+                    primaryPlayer.volume = 1f
+                    mediaSession?.setPlayer(primaryPlayer)
+                    isCrossfading = false
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                // Caso ocorra erro 403/expiração, limpa o cache da faixa atual
+                playerInstance.currentMediaItem?.mediaId?.let { evictCache(it) }
+                Log.e(
+                    TAG,
+                    "ExoPlayer erro de reprodução [${error.errorCodeName}]: ${error.message}",
+                    error
+                )
+            }
+        })
+
+        return playerInstance
+    }
+
+    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
 
+        settingsRepository = UserSettingsRepositoryImpl(this)
+
         // Configuração de atributos de áudio para música
-        val audioAttributes = AudioAttributes.Builder()
+        audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
             .build()
@@ -185,7 +395,7 @@ class AudioPlayerService : MediaSessionService() {
 
         // ResolvingDataSource permite que a playlist inteira fique no currentTimeline do ExoPlayer
         // resolvendo a URL real do googlevideo sob demanda quando cada faixa começa a carregar.
-        val resolvingDataSourceFactory = ResolvingDataSource.Factory(
+        resolvingDataSourceFactory = ResolvingDataSource.Factory(
             DefaultDataSource.Factory(this, httpDataSourceFactory),
             ResolvingDataSource.Resolver { dataSpec: DataSpec ->
                 val uri = dataSpec.uri
@@ -209,10 +419,8 @@ class AudioPlayerService : MediaSessionService() {
             }
         )
 
-        // Configura LoadControl otimizado para streaming de áudio instantâneo:
-        // Padrão do ExoPlayer é bufferForPlaybackMs = 2500ms (2.5s!). Reduzimos para 250ms,
-        // permitindo que a música comece imediatamente ao receber o primeiro bloco de áudio.
-        val loadControl = DefaultLoadControl.Builder()
+        // Configura LoadControl otimizado para streaming de áudio instantâneo (250ms de buffer inicial)
+        loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 15_000,
                 /* maxBufferMs = */ 50_000,
@@ -222,54 +430,7 @@ class AudioPlayerService : MediaSessionService() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        player = ExoPlayer.Builder(this)
-            .setLoadControl(loadControl)
-            .setMediaSourceFactory(
-                DefaultMediaSourceFactory(this).setDataSourceFactory(resolvingDataSourceFactory)
-            )
-            .setAudioAttributes(audioAttributes, true) // Tratamento automático de Audio Focus
-            .setHandleAudioBecomingNoisy(true)        // Pausa automática ao desconectar fone
-            .setWakeMode(C.WAKE_MODE_NETWORK)         // Mantém Wi-Fi acordado durante stream
-            .build()
-
-        player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                val stateName = when (playbackState) {
-                    Player.STATE_IDLE -> "STATE_IDLE"
-                    Player.STATE_BUFFERING -> "STATE_BUFFERING"
-                    Player.STATE_READY -> "STATE_READY"
-                    Player.STATE_ENDED -> "STATE_ENDED"
-                    else -> "UNKNOWN($playbackState)"
-                }
-                Log.i(TAG, "ExoPlayer estado alterado: $stateName (isPlaying=${player.isPlaying})")
-            }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                Log.i(TAG, "ExoPlayer onIsPlayingChanged: isPlaying=$isPlaying, duration=${player.duration}ms")
-                if (isPlaying) {
-                    triggerPrefetchNextTrack()
-                }
-            }
-
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
-                triggerPrefetchNextTrack()
-            }
-
-            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-                triggerPrefetchNextTrack()
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                // Caso ocorra erro 403/expiração, limpa o cache da faixa atual
-                player.currentMediaItem?.mediaId?.let { evictCache(it) }
-                Log.e(
-                    TAG,
-                    "ExoPlayer erro de reprodução [${error.errorCodeName}]: ${error.message}",
-                    error
-                )
-            }
-        })
+        primaryPlayer = createExoPlayer()
 
         val sessionActivityPendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntent ->
             PendingIntent.getActivity(
@@ -280,7 +441,7 @@ class AudioPlayerService : MediaSessionService() {
             )
         }
 
-        mediaSession = MediaSession.Builder(this, player).apply {
+        mediaSession = MediaSession.Builder(this, primaryPlayer).apply {
             sessionActivityPendingIntent?.let { setSessionActivity(it) }
         }.build()
     }
@@ -300,6 +461,11 @@ class AudioPlayerService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
+        transitionMonitorJob?.cancel()
+        crossfadeJob?.cancel()
+        secondaryPlayer?.release()
+        secondaryPlayer = null
         mediaSession?.run {
             player.release()
             release()

@@ -8,9 +8,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.*
@@ -37,6 +40,9 @@ fun SettingsScreen(
     val isCanvasEnabled by viewModel.isCanvasEnabled.collectAsState()
     val isCanvasWifiOnly by viewModel.isCanvasWifiOnly.collectAsState()
     val isLyricsAboveTitleEnabled by viewModel.isLyricsAboveTitleEnabled.collectAsState()
+    val isGaplessEnabled by viewModel.isGaplessEnabled.collectAsState()
+    val isAutomixEnabled by viewModel.isAutomixEnabled.collectAsState()
+    val crossfadeSeconds by viewModel.crossfadeSeconds.collectAsState()
     val context = LocalContext.current
 
     Scaffold(
@@ -78,6 +84,41 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Seção Transições de Faixa (Track Transitions)
+            SettingsSectionHeader(title = "Transições de Faixa")
+
+            SettingsSwitchItem(
+                icon = Icons.Default.GraphicEq,
+                title = "Sem pausas",
+                subtitle = "Permite a reprodução contínua de músicas sem pausas intermediárias.",
+                checked = isGaplessEnabled,
+                onCheckedChange = { viewModel.setGaplessEnabled(it) }
+            )
+
+            SettingsSwitchItem(
+                icon = Icons.Default.AutoFixHigh,
+                title = "Automix",
+                subtitle = "Transições inteligentes e suaves entre faixas.",
+                checked = isAutomixEnabled,
+                onCheckedChange = { viewModel.setAutomixEnabled(it) }
+            )
+
+            SettingsSliderItem(
+                icon = Icons.Default.Tune,
+                title = "Crossfade",
+                subtitle = if (crossfadeSeconds == 0) "Desativado" else "${crossfadeSeconds}s",
+                value = crossfadeSeconds,
+                valueRange = 0f..12f,
+                steps = 11,
+                onValueChange = { viewModel.setCrossfadeSeconds(it) }
+            )
+
+            HorizontalDivider(
+                color = YtmDivider,
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
             // Seção Reprodução & Visual
             SettingsSectionHeader(title = "Reprodução e Visual")
 
@@ -200,6 +241,69 @@ private fun SettingsSwitchItem(
                 uncheckedThumbColor = YtmTextSecondary,
                 uncheckedTrackColor = YtmGrey11
             )
+        )
+    }
+}
+
+@Composable
+private fun SettingsSliderItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    value: Int,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    enabled: Boolean = true,
+    onValueChange: (Int) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp, horizontal = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (enabled) YtmWhite else YtmTextSecondary.copy(alpha = 0.4f),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = if (enabled) YtmWhite else YtmTextSecondary.copy(alpha = 0.5f)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontFamily = YouTubeSansFontFamily,
+                    fontSize = 12.sp,
+                    color = if (enabled) OrangePrimary else YtmTextSecondary.copy(alpha = 0.35f),
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onValueChange(it.toInt()) },
+            valueRange = valueRange,
+            steps = steps,
+            enabled = enabled,
+            colors = SliderDefaults.colors(
+                thumbColor = OrangePrimary,
+                activeTrackColor = OrangePrimary,
+                inactiveTrackColor = YtmGrey11
+            ),
+            modifier = Modifier.padding(start = 40.dp, end = 8.dp)
         )
     }
 }

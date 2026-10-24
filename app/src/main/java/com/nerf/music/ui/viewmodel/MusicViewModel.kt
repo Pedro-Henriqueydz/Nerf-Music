@@ -85,6 +85,15 @@ class MusicViewModel(
     private val _isLibraryGridView = MutableStateFlow(true)
     val isLibraryGridView: StateFlow<Boolean> = _isLibraryGridView.asStateFlow()
 
+    private val _isGaplessEnabled = MutableStateFlow(true)
+    val isGaplessEnabled: StateFlow<Boolean> = _isGaplessEnabled.asStateFlow()
+
+    private val _isAutomixEnabled = MutableStateFlow(true)
+    val isAutomixEnabled: StateFlow<Boolean> = _isAutomixEnabled.asStateFlow()
+
+    private val _crossfadeSeconds = MutableStateFlow(0)
+    val crossfadeSeconds: StateFlow<Int> = _crossfadeSeconds.asStateFlow()
+
     // URL do vídeo para o background do Player (Canvas)
     private val _canvasVideoUrl = MutableStateFlow<String?>(null)
     val canvasVideoUrl: StateFlow<String?> = _canvasVideoUrl.asStateFlow()
@@ -227,6 +236,9 @@ class MusicViewModel(
             _isCanvasWifiOnly.value = settingsRepo.isCanvasWifiOnly.value
             _isLyricsAboveTitleEnabled.value = settingsRepo.isLyricsAboveTitleEnabled.value
             _isLibraryGridView.value = settingsRepo.isLibraryGridView.value
+            _isGaplessEnabled.value = settingsRepo.isGaplessEnabled.value
+            _isAutomixEnabled.value = settingsRepo.isAutomixEnabled.value
+            _crossfadeSeconds.value = settingsRepo.crossfadeSeconds.value
         }
         if (userHistoryRepository == null) {
             val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
@@ -1488,6 +1500,22 @@ class MusicViewModel(
     fun setLibraryGridView(isGrid: Boolean) {
         _isLibraryGridView.value = isGrid
         userSettingsRepository?.setLibraryGridView(isGrid)
+    }
+
+    fun setGaplessEnabled(enabled: Boolean) {
+        _isGaplessEnabled.value = enabled
+        userSettingsRepository?.setGaplessEnabled(enabled)
+    }
+
+    fun setAutomixEnabled(enabled: Boolean) {
+        _isAutomixEnabled.value = enabled
+        userSettingsRepository?.setAutomixEnabled(enabled)
+    }
+
+    fun setCrossfadeSeconds(seconds: Int) {
+        val clamped = seconds.coerceIn(0, 12)
+        _crossfadeSeconds.value = clamped
+        userSettingsRepository?.setCrossfadeSeconds(clamped)
     }
 
     fun showChangeLogManually() {
