@@ -69,13 +69,15 @@ import com.nerf.music.data.repository.LibraryRepository
 import com.nerf.music.data.repository.LibraryRepositoryImpl
 import com.nerf.music.data.model.UserPlaylist
 import com.nerf.music.data.model.DownloadedTrack
+import com.nerf.music.data.repository.HomeFeedSynthesizer
 import kotlinx.coroutines.launch
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
     private val updateRepository: UpdateRepository = UpdateRepositoryImpl(),
     private val lyricsRepository: LyricsRepository = LyricsRepositoryImpl(),
-    private val spotifyCanvasRepository: SpotifyCanvasRepository = SpotifyCanvasRepositoryImpl()
+    private val spotifyCanvasRepository: SpotifyCanvasRepository = SpotifyCanvasRepositoryImpl(),
+    private val homeFeedSynthesizer: HomeFeedSynthesizer = HomeFeedSynthesizer()
 ) : ViewModel() {
 
     companion object {
@@ -375,20 +377,93 @@ class MusicViewModel(
             val topArtists = historyRepo?.getTopArtists(5) ?: emptyList()
 
             repository.getPersonalizedHomeFeedData(seedId, topArtists, params).onSuccess { feedData ->
-                if (feedData.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
-                    _homeChips.value = feedData.chips
+                val synthesizedFeed = homeFeedSynthesizer.synthesizeHomeFeed(
+                    baseFeedData = feedData,
+                    historyRepo = userHistoryRepository,
+                    libraryRepo = libraryRepository,
+                    affinityRepo = userAffinityRepository,
+                    selectedChip = _selectedHomeChip.value
+                )
+
+                if (synthesizedFeed.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
+                    _homeChips.value = synthesizedFeed.chips
                 }
-                _homeSections.value = feedData.sections
+                _homeSections.value = synthesizedFeed.sections
                 _isLoadingHome.value = false
-                historyRepo?.saveCachedHomeFeed(feedData.sections)
+                historyRepo?.saveCachedHomeFeed(synthesizedFeed.sections)
 
                 // Pre-aquece a resolucao da primeira faixa da tela inicial para inicio instantaneo
-                feedData.sections.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()?.let { firstTrack ->
+                synthesizedFeed.sections.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()?.let { firstTrack ->
                     AudioPlayerService.prefetchTrack(firstTrack.id)
                 }
             }.onFailure {
-                _homeError.value = "Não foi possível carregar o feed inicial."
-                _isLoadingHome.value = false
+                // Fallback com sintese local caso nao haja conexao com o catalogo
+                val fallbackSynthesized = homeFeedSynthesizer.synthesizeHomeFeed(
+                    baseFeedData = com.nerf.music.data.model.HomeFeedData(),
+                    historyRepo = userHistoryRepository,
+                    libraryRepo = libraryRepository,
+                    affinityRepo = userAffinityRepository,
+                    selectedChip = _selectedHomeChip.value
+                )
+                if (fallbackSynthesized.sections.isNotEmpty()) {
+                    _homeSections.value = fallbackSynthesized.sections
+                    _isLoadingHome.value = false
+                } else {
+                    _homeError.value = "Não foi possível carregar o feed inicial."
+                    _isLoadingHome.value = false
+                }
+            }
+        }
+    }
+
+    fun playLikedTracks(startIndex: Int = 0, isShuffle: Boolean = false) {
+        val likedTracks = libraryRepository?.likedTracksFlow?.value.orEmpty()
+        if (likedTracks.isEmpty()) return
+        playTrackList(
+            title = "Músicas Curtidas",
+            tracks = likedTracks,
+            startIndex = startIndex,
+            isShuffle = isShuffle
+        )
+    }
+
+    fun playDownloadedTracks(startIndex: Int = 0, isShuffle: Boolean = false) {
+        val downloaded = libraryRepository?.downloadedTracksFlow?.value.orEmpty().map { it.track }
+        val tracksToPlay = downloaded.ifEmpty { libraryRepository?.likedTracksFlow?.value.orEmpty() }
+        if (tracksToPlay.isEmpty()) return
+        playTrackList(
+            title = "Mix Offline",
+            tracks = tracksToPlay,
+            startIndex = startIndex,
+            isShuffle = isShuffle
+        )
+    }
+
+    fun handleHomeTrackClick(track: com.nerf.music.data.model.Track, parentSection: com.nerf.music.data.model.HomeSection? = null) {
+        when {
+            track.sourceIdentifier == "SHORTCUT_LIKED" || track.id == "downloads_liked_music" -> {
+                playLikedTracks()
+            }
+            track.sourceIdentifier == "DOWNLOADS_OFFLINE_MIX" || track.id == "downloads_offline_mix" -> {
+                playDownloadedTracks()
+            }
+            track.sourceIdentifier == "USER_PLAYLIST" -> {
+                val playlist = libraryRepository?.playlistsFlow?.value?.find { it.id == track.id }
+                if (playlist != null) {
+                    playUserPlaylist(playlist)
+                } else {
+                    playTrack(track)
+                }
+            }
+            parentSection != null && parentSection.style == com.nerf.music.data.model.HomeSectionStyle.SPEED_DIAL -> {
+                playTrack(track)
+            }
+            parentSection != null && parentSection.style == com.nerf.music.data.model.HomeSectionStyle.QUICK_PICKS_GRID -> {
+                val idx = parentSection.items.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                playSection(parentSection, startIndex = idx)
+            }
+            else -> {
+                playTrack(track)
             }
         }
     }
