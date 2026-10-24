@@ -4,7 +4,7 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
-## [1.7.0] - 2026-10-24
+## [1.1.0] - 2026-10-24
 
 ### Adicionado
 - **Home Dinâmica YouTube Music 9.41 (Paridade Visual e Comportamental):**
@@ -24,7 +24,7 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
-## [1.6.0] - 2026-10-24
+### Smart Radio & Algoritmo (Grupo 1)
 
 ### Adicionado
 - **Smart Radio Engine (Motor de Rádio e Fila Infinita Premium):**

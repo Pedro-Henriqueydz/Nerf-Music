@@ -524,23 +524,19 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            ✨ NOVA ABA BIBLIOTECA COMPLETA (ESTILO YTM):
-            • Suas playlists personalizadas, músicas salvas e faixas baixadas em um só lugar.
-            • Downloads rápidos em partes para reprodução offline (com indicador de progresso e badge nos cards).
-            • Alternância entre visualização em Lista e Grade persistente.
-            • Criação rápida de playlists com modal moderno e opções de edição/exclusão.
+            🔥 HOME DINÂMICA PREMIUM (ESTILO YOUTUBE MUSIC 9.41):
+            • Speed Dial 3x3 Paginado: Grade de 9 cartões por página com navegação fluida por swipe, dots indicadores e suporte às suas playlists e atalho de Músicas Curtidas.
+            • Feedback Visual Ativo: Borda branca no card em reprodução, equalizador animado no canto superior e barra de progresso vermelha na base da capa.
+            • Seções Contextuais por Horário: "Para o fim de semana / Churrasco", "Energia para o seu dia", "Foco e ritmo" e "Para desacelerar".
+            • Covers e Remixes: Prateleira dinâmica exclusiva de versões alternativas (Slowed, Sped Up, Remixes e VIP Edits).
+            • Seus Downloads: Cartões vibrantes com gradientes oficiais para Músicas Curtidas e Mix Offline com reprodução instantânea.
+            • Sua Descoberta Diária: Hero card nobre com o selo exclusivo "Parecido com [Música] de [Artista]".
 
-            🎤 LETRAS EM TELA CHEIA (ESTILO APPLE MUSIC):
-            • Experiência imersiva de letras sincronizadas linha por linha com fonte SF Pro.
-            • Fundo dinâmico com efeito Aurora Blur derivado das cores do álbum e do Canva.
-            • Cápsula de volume elástica e clique em qualquer verso para navegar no áudio.
-            • Integração com múltiplos provedores com fallback inteligente.
-
-            ⚡ GESTOS FLUIDOS & MOTION NO PLAYER (120Hz):
-            • Gesto 1:1 de arrastar para baixo: a capa encolhe continuamente até virar a miniatura do Mini Player.
-            • Barras de Equalizador Premium: animação refinada que pausa sincronizadamente com a música.
-            • Fila 'A Seguir' com 3 estágios por gesto e filtros rápidos de reprodução.
-            • Troca imediata de faixa por deslizamento lateral no player e no modo Canva.
+            🧠 SMART RADIO ENGINE & RECOMENDAÇÃO AVANÇADA:
+            • Rádio com Proporção Áurea: 60% novidade no mesmo cluster sonoro e 40% familiaridade do usuário.
+            • Skip Penalty & Afinidade Contínua: Músicas puladas rapidamente recebem menor probabilidade de repetição; músicas ouvidas até o fim ganham prioridade.
+            • Barreira Acústica Estrita: Isolamento de gênero para que faixas fora de contexto não vazem para a sua rádio.
+            • Durações Reais e Precisas: Correção definitiva de durações no catálogo, rádio e fila, eliminando qualquer marcador provisório.
         """.trimIndent()
     }
 
