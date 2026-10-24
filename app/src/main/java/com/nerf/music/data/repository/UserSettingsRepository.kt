@@ -52,6 +52,22 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
     private val _crossfadeSeconds = MutableStateFlow(prefs.getInt(KEY_CROSSFADE_SECONDS, 0))
     override val crossfadeSeconds: StateFlow<Int> = _crossfadeSeconds.asStateFlow()
 
+    private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            KEY_CANVAS_ENABLED -> _isCanvasEnabled.value = prefs.getBoolean(KEY_CANVAS_ENABLED, true)
+            KEY_CANVAS_WIFI_ONLY -> _isCanvasWifiOnly.value = prefs.getBoolean(KEY_CANVAS_WIFI_ONLY, true)
+            KEY_LYRICS_ABOVE_TITLE -> _isLyricsAboveTitleEnabled.value = prefs.getBoolean(KEY_LYRICS_ABOVE_TITLE, true)
+            KEY_LIBRARY_GRID_VIEW -> _isLibraryGridView.value = prefs.getBoolean(KEY_LIBRARY_GRID_VIEW, true)
+            KEY_GAPLESS_ENABLED -> _isGaplessEnabled.value = prefs.getBoolean(KEY_GAPLESS_ENABLED, true)
+            KEY_AUTOMIX_ENABLED -> _isAutomixEnabled.value = prefs.getBoolean(KEY_AUTOMIX_ENABLED, true)
+            KEY_CROSSFADE_SECONDS -> _crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE_SECONDS, 0)
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+    }
+
     override fun setCanvasEnabled(enabled: Boolean) {
         _isCanvasEnabled.value = enabled
         prefs.edit().putBoolean(KEY_CANVAS_ENABLED, enabled).apply()

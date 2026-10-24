@@ -1,6 +1,7 @@
 package com.nerf.music.player
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -47,7 +48,7 @@ import java.util.concurrent.ConcurrentHashMap
  *   e [NewPipeStreamResolver], permitindo que toda a fila resida nativamente no `currentTimeline` do ExoPlayer.
  * - Buffer de início ultrarrápido (250ms) via [DefaultLoadControl] independente para cada instância do ExoPlayer.
  * - Pre-fetching cooperativo em background com cache e deduplicação de requisições.
- * - Transições inteligentes de faixa no estilo Spotify (Gapless, Automix e Crossfade de 0s a 12s com curva equal-power).
+ * - Transições inteligentes de faixa em tempo real estilo Spotify (Gapless, Automix e Crossfade de 0s a 12s com curva equal-power).
  * - Notificação de mídia nativa no Android com controles (Play, Pause, Anterior, Próxima, Barra de Progresso).
  */
 class AudioPlayerService : MediaSessionService() {
@@ -66,6 +67,21 @@ class AudioPlayerService : MediaSessionService() {
     private var crossfadeJob: Job? = null
     private var transitionMonitorJob: Job? = null
 
+    private fun getCrossfadeSeconds(): Int {
+        val prefs = applicationContext.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
+        return prefs.getInt("key_crossfade_seconds", 0)
+    }
+
+    private fun isAutomixEnabled(): Boolean {
+        val prefs = applicationContext.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("key_automix_enabled", true)
+    }
+
+    private fun isGaplessEnabled(): Boolean {
+        val prefs = applicationContext.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("key_gapless_enabled", true)
+    }
+
     private fun triggerPrefetchNextTrack() {
         val nextIndex = activePlayer.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET || nextIndex >= activePlayer.mediaItemCount) return
@@ -81,7 +97,7 @@ class AudioPlayerService : MediaSessionService() {
         transitionMonitorJob?.cancel()
         transitionMonitorJob = serviceScope.launch {
             while (isActive) {
-                delay(150)
+                delay(120)
                 checkAndTriggerTransition()
             }
         }
@@ -98,8 +114,8 @@ class AudioPlayerService : MediaSessionService() {
         val nextIndex = activePlayer.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET || nextIndex >= activePlayer.mediaItemCount) return
 
-        val crossfadeSec = settingsRepository.crossfadeSeconds.value
-        val automix = settingsRepository.isAutomixEnabled.value
+        val crossfadeSec = getCrossfadeSeconds()
+        val automix = isAutomixEnabled()
 
         val targetFadeMs = when {
             crossfadeSec > 0 -> crossfadeSec * 1000L
@@ -112,9 +128,10 @@ class AudioPlayerService : MediaSessionService() {
         // Limite de segurança: nunca cruzar mais de um terço da música
         val effectiveFadeMs = targetFadeMs.coerceAtMost(duration / 3)
         val remainingMs = duration - position
+        val triggerThresholdMs = effectiveFadeMs + 600L
 
-        if (remainingMs in 100..effectiveFadeMs) {
-            executeCrossfade(nextIndex, remainingMs.coerceAtLeast(400L))
+        if (remainingMs in 100..triggerThresholdMs) {
+            executeCrossfade(nextIndex, effectiveFadeMs)
         }
     }
 
@@ -122,16 +139,15 @@ class AudioPlayerService : MediaSessionService() {
     private fun executeCrossfade(nextIndex: Int, fadeDurationMs: Long) {
         if (isCrossfading) return
         isCrossfading = true
-        Log.i(TAG, "Iniciando transição de faixa (Crossfade/Automix): ${fadeDurationMs}ms para o índice $nextIndex")
+        Log.i(TAG, "Iniciando Crossfade dinâmico em tempo real: ${fadeDurationMs}ms para o índice $nextIndex")
 
         try {
             val outgoingPlayer = activePlayer
             val incomingPlayer = auxiliaryPlayer ?: createExoPlayer(handleAudioFocus = false).also { auxiliaryPlayer = it }
 
-            // Garante que o player que está entrando NÃO requisite foco de áudio para não pausar o atual
+            // Garante que o player secundário NÃO dispute foco de áudio
             incomingPlayer.setAudioAttributes(audioAttributes, false)
 
-            // Replica a fila completa para o incomingPlayer a partir do nextIndex
             val mediaItems = mutableListOf<MediaItem>()
             for (i in 0 until outgoingPlayer.mediaItemCount) {
                 mediaItems.add(outgoingPlayer.getMediaItemAt(i))
@@ -142,20 +158,26 @@ class AudioPlayerService : MediaSessionService() {
             incomingPlayer.prepare()
             incomingPlayer.play()
 
-            // Atualiza activePlayer e MediaSession para a nova faixa
-            fadingPlayer = outgoingPlayer
-            activePlayer = incomingPlayer
-            mediaSession?.setPlayer(activePlayer)
-
             crossfadeJob?.cancel()
             crossfadeJob = serviceScope.launch {
-                val startTime = System.currentTimeMillis()
+                // Aguarda o incomingPlayer atingir STATE_READY para que o áudio de ambos toque junto sem corte
+                var waitTime = 0
+                while (incomingPlayer.playbackState != Player.STATE_READY && waitTime < 2500) {
+                    delay(35)
+                    waitTime += 35
+                }
 
+                // Agora que ambos os streams estão ativos e decodificando áudio, atualiza a MediaSession
+                fadingPlayer = outgoingPlayer
+                activePlayer = incomingPlayer
+                mediaSession?.setPlayer(activePlayer)
+
+                val startTime = System.currentTimeMillis()
                 while (isActive) {
                     val elapsed = System.currentTimeMillis() - startTime
                     val progress = (elapsed.toFloat() / fadeDurationMs).coerceIn(0f, 1f)
 
-                    // Curva equal-power idêntica ao Spotify liborbit (cos / sin)
+                    // Curva equal-power do Spotify: cos(t * PI/2) e sin(t * PI/2)
                     val volOut = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
                     val volIn = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
 
@@ -170,7 +192,7 @@ class AudioPlayerService : MediaSessionService() {
                 outgoingPlayer.volume = 1f
                 incomingPlayer.volume = 1f
 
-                // Agora que o anterior parou, o novo player assume a gestão oficial do foco de áudio
+                // Assume o foco oficial do sistema para o player ativo
                 incomingPlayer.setAudioAttributes(audioAttributes, true)
 
                 auxiliaryPlayer = outgoingPlayer
@@ -178,7 +200,7 @@ class AudioPlayerService : MediaSessionService() {
                 isCrossfading = false
 
                 triggerPrefetchNextTrack()
-                Log.i(TAG, "Transição de faixa concluída com sucesso. Ambos os streams sincronizados.")
+                Log.i(TAG, "Crossfade de ${fadeDurationMs}ms concluído com sucesso. Transição suave finalizada.")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao iniciar crossfade: ${e.message}", e)
@@ -350,7 +372,7 @@ class AudioPlayerService : MediaSessionService() {
                 if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
                 // Trata opção 'Sem pausas' (Gapless): se desativada, insere pausa entre faixas
-                if (!settingsRepository.isGaplessEnabled.value &&
+                if (!isGaplessEnabled() &&
                     !isCrossfading &&
                     reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
                 ) {
