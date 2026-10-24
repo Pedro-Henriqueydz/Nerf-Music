@@ -69,6 +69,15 @@ object SmartRadioEngine {
                 (candidate.artist.trim().lowercase() == seedArtist || clusterArtists.contains(candidate.artist.trim().lowercase()))
             }
             .distinctBy { it.id }
+            .map { track ->
+                // Se a faixa familiar do historico tiver duracao desconhecida (--:--), mas a radio do YouTube tiver a duracao real, adota a duracao real
+                val match = validClusterCandidates.firstOrNull { it.id == track.id }
+                if (match != null && (track.durationText == "--:--" || track.durationSeconds <= 0L) && match.durationText != "--:--") {
+                    track.copy(durationText = match.durationText, durationSeconds = match.durationSeconds)
+                } else {
+                    track
+                }
+            }
 
         // 5. Calcula pontuação de afinidade contextual para cada faixa do cluster
         data class ScoredTrack(val track: Track, val score: Float, val isFamiliar: Boolean)
@@ -87,7 +96,19 @@ object SmartRadioEngine {
 
         // Adiciona os candidatos do cluster do YouTube Music
         validClusterCandidates.forEachIndexed { index, track ->
-            if (scoredTracks.none { it.track.id == track.id }) {
+            val existingIndex = scoredTracks.indexOfFirst { it.track.id == track.id }
+            if (existingIndex >= 0) {
+                // Se ja existia em scoredTracks vindo do historico mas com duracao vazia/--:--, atualiza com a duracao fresca do cluster!
+                val existing = scoredTracks[existingIndex]
+                if ((existing.track.durationText == "--:--" || existing.track.durationSeconds <= 0L) && track.durationText != "--:--") {
+                    scoredTracks[existingIndex] = existing.copy(
+                        track = existing.track.copy(
+                            durationText = track.durationText,
+                            durationSeconds = track.durationSeconds
+                        )
+                    )
+                }
+            } else {
                 // Pontuação baseada no rank original do YouTube (quanto mais cedo, mais relevante ao cluster)
                 val rankScore = (validClusterCandidates.size - index).toFloat()
                 val trackAffinity = affinityRepo.getTrackAffinity(track.id)

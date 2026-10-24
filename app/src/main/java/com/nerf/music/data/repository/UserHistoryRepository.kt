@@ -27,6 +27,7 @@ interface UserHistoryRepository {
     fun clearHistory()
     fun getLastSeenVersion(): String?
     fun setLastSeenVersion(version: String)
+    fun updateTrackDuration(trackId: String, durationText: String, durationSeconds: Long)
 }
 
 /**
@@ -79,9 +80,15 @@ class UserHistoryRepositoryImpl(
         if (track.id.isBlank() || track.isAlbumOrPlaylist) return
 
         try {
-            // 1. Atualiza lista de ouvidas recentemente (deduplica e insere no topo)
+            // 1. Atualiza lista de ouvidas recentemente (deduplica, preserva duracao valida e insere no topo)
+            val existing = getRecentlyPlayed().firstOrNull { it.id == track.id }
+            val mergedTrack = if ((track.durationText == "--:--" || track.durationSeconds <= 0L) && existing != null && existing.durationText != "--:--") {
+                track.copy(durationText = existing.durationText, durationSeconds = existing.durationSeconds)
+            } else {
+                track
+            }
             val current = getRecentlyPlayed().filterNot { it.id == track.id }.toMutableList()
-            current.add(0, track)
+            current.add(0, mergedTrack)
             val trimmed = current.take(MAX_RECENT_TRACKS)
             prefs.edit().putString(KEY_RECENTLY_PLAYED, json.encodeToString(trimmed)).apply()
 
@@ -209,6 +216,24 @@ class UserHistoryRepositoryImpl(
             prefs.edit().putString(KEY_ARTIST_COUNTS, serialized).apply()
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao salvar contadores de artistas: ${e.message}")
+        }
+    }
+    override fun updateTrackDuration(trackId: String, durationText: String, durationSeconds: Long) {
+        if (trackId.isBlank() || durationText.isBlank() || durationText == "--:--") return
+        try {
+            val current = getRecentlyPlayed().toMutableList()
+            var modified = false
+            for (i in 0 until current.size) {
+                if (current[i].id == trackId && (current[i].durationText == "--:--" || current[i].durationSeconds <= 0L)) {
+                    current[i] = current[i].copy(durationText = durationText, durationSeconds = durationSeconds)
+                    modified = true
+                }
+            }
+            if (modified) {
+                prefs.edit().putString(KEY_RECENTLY_PLAYED, json.encodeToString(current)).apply()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Erro ao atualizar duracao da faixa $trackId: ${e.message}")
         }
     }
 }

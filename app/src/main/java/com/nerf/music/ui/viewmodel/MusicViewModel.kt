@@ -932,7 +932,15 @@ class MusicViewModel(
         radioFetchJob = viewModelScope.launch {
             val radioResult = repository.getUpNextRadio(videoId = track.id, params = null)
             radioResult.onSuccess { upNext ->
-                upNext.tracks.forEach { trackMetadataMap[it.id] = it }
+                upNext.tracks.forEach { freshTrack ->
+                    val existing = trackMetadataMap[freshTrack.id]
+                    if (existing == null || (existing.durationText == "--:--" && freshTrack.durationText != "--:--")) {
+                        trackMetadataMap[freshTrack.id] = freshTrack
+                    }
+                    if (freshTrack.durationText != "--:--") {
+                        userHistoryRepository?.updateTrackDuration(freshTrack.id, freshTrack.durationText, freshTrack.durationSeconds)
+                    }
+                }
 
                 val affinityRepo = userAffinityRepository 
                     ?: applicationContext?.let { UserAffinityRepositoryImpl(it) }
