@@ -313,6 +313,11 @@ class MusicViewModel(
                 _homeSections.value = feedData.sections
                 _isLoadingHome.value = false
                 historyRepo?.saveCachedHomeFeed(feedData.sections)
+
+                // Pre-aquece a resolucao da primeira faixa da tela inicial para inicio instantaneo
+                feedData.sections.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()?.let { firstTrack ->
+                    AudioPlayerService.prefetchTrack(firstTrack.id)
+                }
             }.onFailure {
                 _homeError.value = "Não foi possível carregar o feed inicial."
                 _isLoadingHome.value = false
@@ -817,6 +822,8 @@ class MusicViewModel(
                     val radioMediaItems = radioTracks.map { trackToMediaItem(it) }
                     activeController.addMediaItems(radioMediaItems)
                     syncTimelineState(activeController)
+
+                    AudioPlayerService.prefetchTrack(radioTracks.first().id)
                 }
 
                 val selectedParams = upNext.chips.firstOrNull { it.isSelected }?.params
@@ -1262,6 +1269,10 @@ class MusicViewModel(
         controller.setMediaItems(mediaItems, targetIndex, 0L)
         controller.prepare()
         controller.play()
+        val nextTrack = effectiveTracks.getOrNull(targetIndex + 1)
+        if (nextTrack != null) {
+            AudioPlayerService.prefetchTrack(nextTrack.id)
+        }
     }
 
     fun downloadAll(tracks: List<Track>) {

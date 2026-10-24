@@ -7,26 +7,28 @@ import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Timeline
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -37,18 +39,14 @@ import java.util.concurrent.ConcurrentHashMap
  * - Reprodução em segundo plano garantida via Foreground Service do sistema.
  * - Resolução sob demanda (Just-In-Time) de URIs `nerfmusic://track/{videoId}` via [ResolvingDataSource]
  *   e [NewPipeStreamResolver], permitindo que toda a fila resida nativamente no `currentTimeline` do ExoPlayer.
+ * - Buffer de início ultrarrápido (250ms) via [DefaultLoadControl] para latência imperceptível em plays e skips.
+ * - Pre-fetching cooperativo em background com cache e deduplicação de requisições.
  * - Notificação de mídia nativa no Android com controles (Play, Pause, Anterior, Próxima, Barra de Progresso).
  */
 class AudioPlayerService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private lateinit var player: ExoPlayer
-    private val streamResolver: StreamResolver = NewPipeStreamResolver()
-
-    private data class CachedStreamUrl(val url: String, val timestampMs: Long)
-    private val streamUrlCache = ConcurrentHashMap<String, CachedStreamUrl>()
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var prefetchJob: Job? = null
 
     private fun triggerPrefetchNextTrack() {
         val nextIndex = player.nextMediaItemIndex
@@ -58,27 +56,7 @@ class AudioPlayerService : MediaSessionService() {
             ?: nextItem.localConfiguration?.uri?.lastPathSegment?.takeIf { it.isNotBlank() }
             ?: return
 
-        val offlineFile = java.io.File(filesDir, "offline_audio/$videoId.opus")
-        if (offlineFile.exists() && offlineFile.length() > 0) return
-
-        val now = System.currentTimeMillis()
-        val cached = streamUrlCache[videoId]
-        if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) return
-
-        prefetchJob?.cancel()
-        prefetchJob = serviceScope.launch(Dispatchers.IO) {
-            try {
-                Log.i(TAG, "Pre-fetching stream URL em background para proxima faixa: $videoId")
-                val result = streamResolver.resolveStreamUrl(videoId)
-                val url = result.getOrNull()
-                if (!url.isNullOrBlank()) {
-                    streamUrlCache[videoId] = CachedStreamUrl(url, System.currentTimeMillis())
-                    Log.i(TAG, "Pre-fetch de audio concluido com sucesso para: $videoId")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Falha no pre-fetch de stream para $videoId: ${e.message}")
-            }
-        }
+        prefetchTrack(videoId, filesDir)
     }
 
     companion object {
@@ -89,6 +67,103 @@ class AudioPlayerService : MediaSessionService() {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
         fun buildTrackUri(videoId: String): Uri = Uri.parse("$NERF_URI_SCHEME://track/$videoId")
+
+        private data class CachedStreamUrl(val url: String, val timestampMs: Long)
+        private val streamUrlCache = ConcurrentHashMap<String, CachedStreamUrl>()
+        private val inFlightResolutions = ConcurrentHashMap<String, Deferred<String>>()
+        private val globalStreamResolver: StreamResolver by lazy { NewPipeStreamResolver() }
+        private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        fun isStreamCached(videoId: String): Boolean {
+            val cached = streamUrlCache[videoId] ?: return false
+            return (System.currentTimeMillis() - cached.timestampMs) < CACHE_TTL_MS
+        }
+
+        /**
+         * Pre-busca a URL do fluxo de áudio de forma assíncrona sem interromper operações em andamento.
+         */
+        fun prefetchTrack(videoId: String, offlineCheckDir: File? = null) {
+            if (videoId.isBlank()) return
+            if (offlineCheckDir != null) {
+                val offlineFile = File(offlineCheckDir, "offline_audio/$videoId.opus")
+                if (offlineFile.exists() && offlineFile.length() > 0) return
+            }
+
+            val now = System.currentTimeMillis()
+            val cached = streamUrlCache[videoId]
+            if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) return
+
+            val existing = inFlightResolutions[videoId]
+            if (existing != null && existing.isActive) return
+
+            val deferred = prefetchScope.async {
+                try {
+                    Log.i(TAG, "Pre-fetching stream URL em background para: $videoId")
+                    val result = globalStreamResolver.resolveStreamUrl(videoId)
+                    val url = result.getOrNull()
+                    if (!url.isNullOrBlank()) {
+                        streamUrlCache[videoId] = CachedStreamUrl(url, System.currentTimeMillis())
+                        Log.i(TAG, "Pre-fetch de áudio concluído com sucesso para: $videoId")
+                        url
+                    } else {
+                        throw IOException("URL vazia retornada para $videoId")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Falha no pre-fetch de stream para $videoId: ${e.message}")
+                    throw e
+                } finally {
+                    inFlightResolutions.remove(videoId)
+                }
+            }
+            inFlightResolutions[videoId] = deferred
+        }
+
+        /**
+         * Resolve a URL de streaming ou aguarda uma pre-busca já em andamento, garantindo 0 requisições duplicadas.
+         */
+        fun resolveOrAwaitStreamUrl(videoId: String): String {
+            val now = System.currentTimeMillis()
+            val cached = streamUrlCache[videoId]
+            if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) {
+                Log.i(TAG, "Stream URL obtida diretamente do cache instantâneo para: $videoId")
+                return cached.url
+            }
+
+            val existing = inFlightResolutions[videoId]
+            if (existing != null && existing.isActive) {
+                Log.i(TAG, "Aguardando pre-fetch em voo para: $videoId")
+                return runBlocking {
+                    try {
+                        existing.await()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Pre-fetch em voo falhou, re-tentando JIT: ${e.message}")
+                        val retryUrl = globalStreamResolver.resolveStreamUrl(videoId).getOrThrow()
+                        streamUrlCache[videoId] = CachedStreamUrl(retryUrl, System.currentTimeMillis())
+                        retryUrl
+                    }
+                }
+            }
+
+            val deferred = prefetchScope.async {
+                Log.i(TAG, "Resolvendo URL de stream JIT para: $videoId")
+                val result = globalStreamResolver.resolveStreamUrl(videoId).getOrThrow()
+                streamUrlCache[videoId] = CachedStreamUrl(result, System.currentTimeMillis())
+                result
+            }
+            inFlightResolutions[videoId] = deferred
+            return runBlocking {
+                try {
+                    deferred.await()
+                } finally {
+                    inFlightResolutions.remove(videoId)
+                }
+            }
+        }
+
+        fun evictCache(videoId: String) {
+            streamUrlCache.remove(videoId)
+            inFlightResolutions.remove(videoId)?.cancel()
+        }
     }
 
     @OptIn(UnstableApi::class)
@@ -120,24 +195,13 @@ class AudioPlayerService : MediaSessionService() {
                         ?: throw IOException("VideoId ausente na URI: $uri")
 
                     // 1. Verifica se a faixa já foi baixada offline no disco
-                    val offlineFile = java.io.File(filesDir, "offline_audio/$videoId.opus")
+                    val offlineFile = File(filesDir, "offline_audio/$videoId.opus")
                     if (offlineFile.exists() && offlineFile.length() > 0) {
                         Log.i(TAG, "Reproduzindo faixa offline local: ${offlineFile.absolutePath}")
                         return@Resolver dataSpec.buildUpon().setUri(Uri.fromFile(offlineFile)).build()
                     }
 
-                    val now = System.currentTimeMillis()
-                    val cached = streamUrlCache[videoId]
-                    val resolvedUrl = if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) {
-                        cached.url
-                    } else {
-                        Log.i(TAG, "Resolvendo URL de stream JIT para videoId=$videoId")
-                        val url = runBlocking {
-                            streamResolver.resolveStreamUrl(videoId).getOrThrow()
-                        }
-                        streamUrlCache[videoId] = CachedStreamUrl(url, now)
-                        url
-                    }
+                    val resolvedUrl = resolveOrAwaitStreamUrl(videoId)
                     dataSpec.buildUpon().setUri(Uri.parse(resolvedUrl)).build()
                 } else {
                     dataSpec
@@ -145,7 +209,21 @@ class AudioPlayerService : MediaSessionService() {
             }
         )
 
+        // Configura LoadControl otimizado para streaming de áudio instantâneo:
+        // Padrão do ExoPlayer é bufferForPlaybackMs = 2500ms (2.5s!). Reduzimos para 250ms,
+        // permitindo que a música comece imediatamente ao receber o primeiro bloco de áudio.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 250,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         player = ExoPlayer.Builder(this)
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(this).setDataSourceFactory(resolvingDataSourceFactory)
             )
@@ -184,7 +262,7 @@ class AudioPlayerService : MediaSessionService() {
 
             override fun onPlayerError(error: PlaybackException) {
                 // Caso ocorra erro 403/expiração, limpa o cache da faixa atual
-                player.currentMediaItem?.mediaId?.let { streamUrlCache.remove(it) }
+                player.currentMediaItem?.mediaId?.let { evictCache(it) }
                 Log.e(
                     TAG,
                     "ExoPlayer erro de reprodução [${error.errorCodeName}]: ${error.message}",
@@ -222,8 +300,6 @@ class AudioPlayerService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        serviceScope.cancel()
-        prefetchJob?.cancel()
         mediaSession?.run {
             player.release()
             release()
