@@ -43,6 +43,10 @@ import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import com.nerf.music.data.repository.DataSaverMode
 import com.nerf.music.data.repository.AudioQuality
+import com.nerf.music.data.repository.UserAffinityRepository
+import com.nerf.music.data.repository.UserAffinityRepositoryImpl
+import com.nerf.music.player.SmartRadioEngine
+import com.nerf.music.player.RadioTuningMode
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.util.NetworkUtils
 import android.content.ActivityNotFoundException
@@ -240,6 +244,12 @@ class MusicViewModel(
     private var hasCheckedForUpdates = false
     private var userHistoryRepository: UserHistoryRepository? = null
     private var libraryRepository: LibraryRepository? = null
+    private var userAffinityRepository: UserAffinityRepository? = null
+    private var currentTrackPlayStartTime = 0L
+    private var activeTrackId: String? = null
+    private var isLoadingMoreQueue = false
+    private val _currentRadioTuningMode = MutableStateFlow(RadioTuningMode.BALANCED)
+    val currentRadioTuningMode: StateFlow<RadioTuningMode> = _currentRadioTuningMode.asStateFlow()
 
     private val _likedTracks = MutableStateFlow<List<Track>>(emptyList())
     val likedTracks: StateFlow<List<Track>> = _likedTracks.asStateFlow()
@@ -286,6 +296,9 @@ class MusicViewModel(
             }
             _searchHistory.value = historyRepo.getSearchHistory()
             checkPostUpdateChangelog(historyRepo)
+        }
+        if (userAffinityRepository == null) {
+            userAffinityRepository = UserAffinityRepositoryImpl(context.applicationContext)
         }
 
         if (libraryRepository == null) {
@@ -612,12 +625,27 @@ class MusicViewModel(
                 if (mediaItem != null) {
                     _loadingTrackId.value = mediaItem.mediaId
                 }
+                val prevId = activeTrackId
+                if (!prevId.isNullOrBlank()) {
+                    val prevTrack = trackMetadataMap[prevId]
+                    if (prevTrack != null) {
+                        val elapsed = System.currentTimeMillis() - currentTrackPlayStartTime
+                        val dur = _playbackState.value.durationMs
+                        val wasSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK || 
+                                         (elapsed < 30_000L && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+                        userAffinityRepository?.recordTrackEnded(prevTrack, elapsed, dur, wasSkipped)
+                    }
+                }
+                activeTrackId = mediaItem?.mediaId
+                currentTrackPlayStartTime = System.currentTimeMillis()
+
                 if (_sleepTimerAtEndOfTrack.value && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                     _sleepTimerAtEndOfTrack.value = false
                     player.pause()
                     _userMessage.value = "Temporizador de sono: reprodução pausada ao final da música."
                 }
                 syncTimelineState(player)
+                checkAndLoadMoreQueue(player)
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -863,9 +891,22 @@ class MusicViewModel(
             radioResult.onSuccess { upNext ->
                 upNext.tracks.forEach { trackMetadataMap[it.id] = it }
 
-                val seenIds = mutableSetOf(track.id)
-                val radioTracks = upNext.tracks.filter { seenIds.add(it.id) }
-                val fullQueue = listOf(track) + radioTracks
+                val affinityRepo = userAffinityRepository 
+                    ?: applicationContext?.let { UserAffinityRepositoryImpl(it) }
+                val smartQueue = if (affinityRepo != null) {
+                    SmartRadioEngine.buildSmartQueue(
+                        seedTrack = track,
+                        rawCandidates = upNext.tracks,
+                        userLikedTracks = _likedTracks.value,
+                        userRecentTracks = _recentlyPlayed.value,
+                        affinityRepo = affinityRepo,
+                        tuningMode = _currentRadioTuningMode.value
+                    )
+                } else {
+                    listOf(track) + upNext.tracks
+                }
+                val radioTracks = smartQueue.drop(1)
+                val fullQueue = smartQueue
 
                 val activeController = mediaController
                 if (activeController != null && radioTracks.isNotEmpty()) {
@@ -1131,6 +1172,11 @@ class MusicViewModel(
         val libRepo = libraryRepository
         if (targetTrack != null && libRepo != null) {
             val added = libRepo.toggleFavorite(targetTrack)
+            if (added) {
+                userAffinityRepository?.recordTrackLiked(targetTrack)
+            } else {
+                userAffinityRepository?.recordTrackUnliked(targetTrack)
+            }
             _userMessage.value = if (added) "Adicionada às Músicas Curtidas" else "Removida das Músicas Curtidas"
         } else {
             val currentFavs = _playbackState.value.favoriteTrackIds.toMutableSet()
@@ -1630,6 +1676,91 @@ class MusicViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val breakdown = StorageUtils.getStorageBreakdown(context)
             _storageBreakdown.value = breakdown
+        }
+    }
+
+    fun setRadioTuningMode(mode: RadioTuningMode) {
+        _currentRadioTuningMode.value = mode
+        val current = _playbackState.value.currentTrack
+        if (current != null) {
+            refreshRadioWithMode(current, mode)
+        }
+    }
+
+    private fun refreshRadioWithMode(seedTrack: Track, mode: RadioTuningMode) {
+        radioFetchJob?.cancel()
+        radioFetchJob = viewModelScope.launch {
+            _playbackState.value = _playbackState.value.copy(isLoadingQueueRadio = true)
+            val result = repository.getUpNextRadio(videoId = seedTrack.id, params = null)
+            result.onSuccess { upNext ->
+                upNext.tracks.forEach { trackMetadataMap[it.id] = it }
+                val affinityRepo = userAffinityRepository ?: applicationContext?.let { UserAffinityRepositoryImpl(it) }
+                val smartQueue = if (affinityRepo != null) {
+                    SmartRadioEngine.buildSmartQueue(
+                        seedTrack = seedTrack,
+                        rawCandidates = upNext.tracks,
+                        userLikedTracks = _likedTracks.value,
+                        userRecentTracks = _recentlyPlayed.value,
+                        affinityRepo = affinityRepo,
+                        tuningMode = mode
+                    )
+                } else {
+                    listOf(seedTrack) + upNext.tracks
+                }
+
+                val controller = mediaController
+                if (controller != null && controller.mediaItemCount > 0) {
+                    val currentIdx = controller.currentMediaItemIndex.coerceAtLeast(0)
+                    if (controller.mediaItemCount > currentIdx + 1) {
+                        controller.removeMediaItems(currentIdx + 1, controller.mediaItemCount)
+                    }
+                    val upcoming = smartQueue.drop(1)
+                    if (upcoming.isNotEmpty()) {
+                        controller.addMediaItems(upcoming.map { trackToMediaItem(it) })
+                    }
+                    syncTimelineState(controller)
+                }
+                _playbackState.value = _playbackState.value.copy(
+                    queue = smartQueue,
+                    isLoadingQueueRadio = false
+                )
+            }.onFailure {
+                _playbackState.value = _playbackState.value.copy(isLoadingQueueRadio = false)
+            }
+        }
+    }
+
+    private fun checkAndLoadMoreQueue(player: Player) {
+        if (isLoadingMoreQueue) return
+        val currentIdx = player.currentMediaItemIndex
+        val totalItems = player.mediaItemCount
+        if (totalItems > 0 && currentIdx >= totalItems - 4) {
+            val lastMediaId = player.getMediaItemAt(totalItems - 1).mediaId
+            if (lastMediaId.isNotBlank()) {
+                isLoadingMoreQueue = true
+                viewModelScope.launch {
+                    try {
+                        val result = repository.getUpNextRadio(videoId = lastMediaId, params = null)
+                        result.onSuccess { moreUpNext ->
+                            val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
+                            val affinityRepo = userAffinityRepository ?: applicationContext?.let { UserAffinityRepositoryImpl(it) }
+                            val newTracks = moreUpNext.tracks.filter {
+                                !existingIds.contains(it.id) && affinityRepo?.isTrackPenalized(it.id) != true
+                            }
+                            if (newTracks.isNotEmpty()) {
+                                newTracks.forEach { trackMetadataMap[it.id] = it }
+                                player.addMediaItems(newTracks.map { trackToMediaItem(it) })
+                                syncTimelineState(player)
+                                Log.i("MusicViewModel", "Continuation da rádio carregada: +${newTracks.size} faixas.")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("MusicViewModel", "Falha ao carregar continuação da rádio: ${e.message}")
+                    } finally {
+                        isLoadingMoreQueue = false
+                    }
+                }
+            }
         }
     }
 
