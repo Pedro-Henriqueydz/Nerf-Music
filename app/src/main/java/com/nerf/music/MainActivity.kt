@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
 
         // Inicializa canal de notificação e agenda verificação em segundo plano via WorkManager
         UpdateNotificationHelper.createNotificationChannel(this)
+        com.nerf.music.util.SmartDownloadNotificationHelper.createNotificationChannel(this)
         UpdateCheckWorker.schedule(this)
         SmartDownloadWorker.schedule(this)
 

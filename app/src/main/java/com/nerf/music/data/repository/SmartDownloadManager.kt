@@ -5,6 +5,7 @@ import android.util.Log
 import com.nerf.music.data.model.DownloadedTrack
 import com.nerf.music.data.model.Track
 import com.nerf.music.util.NetworkUtils
+import com.nerf.music.util.SmartDownloadNotificationHelper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -98,11 +99,13 @@ class SmartDownloadManager(
                 val msg = "Smart Downloads pausado: aguardando conexão Wi-Fi."
                 Log.i(TAG, msg)
                 _syncState.value = _syncState.value.copy(lastErrorMessage = msg)
+                SmartDownloadNotificationHelper.showPausedNotification(context, "Aguardando conexão Wi-Fi")
                 return@withContext Result.failure(IllegalStateException(msg))
             } else if (!isWifi && !allowCellular) {
                 val msg = "Smart Downloads pausado: downloads via dados móveis desativados."
                 Log.i(TAG, msg)
                 _syncState.value = _syncState.value.copy(lastErrorMessage = msg)
+                SmartDownloadNotificationHelper.showPausedNotification(context, "Downloads via dados móveis desativados")
                 return@withContext Result.failure(IllegalStateException(msg))
             }
 
@@ -147,15 +150,41 @@ class SmartDownloadManager(
 
             // 3. Seleciona faixas que ainda não foram baixadas
             val toDownload = candidates.filter { !existingIds.contains(it.id) }.take(availableQuota)
+            val initialSmartCount = smartDownloadsToKeep.size
             var downloadedCount = 0
 
-            Log.i(TAG, "Iniciando download de ${toDownload.size} faixas para Smart Downloads (Cota: $targetQuota)...")
+            if (toDownload.isEmpty()) {
+                Log.i(TAG, "Todas as faixas de Smart Downloads ($initialSmartCount/$targetQuota) já estão baixadas.")
+                SmartDownloadNotificationHelper.showCompletedNotification(context, initialSmartCount.coerceAtMost(targetQuota))
+                _syncState.value = _syncState.value.copy(
+                    isSyncing = false,
+                    lastSyncTimestamp = System.currentTimeMillis()
+                )
+                return@withContext Result.success(0)
+            }
+
+            Log.i(TAG, "Iniciando download de ${toDownload.size} faixas para Smart Downloads (Cota: $targetQuota, já existentes: $initialSmartCount)...")
+            SmartDownloadNotificationHelper.showProgressNotification(
+                context = context,
+                currentCount = initialSmartCount,
+                targetQuota = targetQuota,
+                trackTitle = toDownload.firstOrNull()?.title
+            )
 
             for ((index, track) in toDownload.withIndex()) {
                 if (!userSettingsRepository.isSmartDownloadsEnabled.value) {
                     Log.i(TAG, "Sincronização interrompida: usuário desativou Smart Downloads.")
+                    SmartDownloadNotificationHelper.cancelNotification(context)
                     break
                 }
+
+                val currentDisplayCount = (initialSmartCount + downloadedCount).coerceIn(0, targetQuota)
+                SmartDownloadNotificationHelper.showProgressNotification(
+                    context = context,
+                    currentCount = currentDisplayCount,
+                    targetQuota = targetQuota,
+                    trackTitle = track.title
+                )
 
                 _syncState.value = _syncState.value.copy(
                     currentTrackTitle = track.title,
@@ -174,11 +203,21 @@ class SmartDownloadManager(
 
                 if (result.isSuccess) {
                     downloadedCount++
+                    val updatedCount = (initialSmartCount + downloadedCount).coerceIn(0, targetQuota)
+                    SmartDownloadNotificationHelper.showProgressNotification(
+                        context = context,
+                        currentCount = updatedCount,
+                        targetQuota = targetQuota,
+                        trackTitle = track.title
+                    )
                     Log.d(TAG, "Smart Download concluído (${index + 1}/${toDownload.size}): ${track.title}")
                 } else {
                     Log.w(TAG, "Falha ao baixar faixa inteligente ${track.title}: ${result.exceptionOrNull()?.message}")
                 }
             }
+
+            val finalCount = (initialSmartCount + downloadedCount).coerceAtMost(targetQuota)
+            SmartDownloadNotificationHelper.showCompletedNotification(context, finalCount)
 
             _syncState.value = _syncState.value.copy(
                 isSyncing = false,
@@ -190,6 +229,7 @@ class SmartDownloadManager(
             Result.success(downloadedCount)
         } catch (e: CancellationException) {
             _syncState.value = _syncState.value.copy(isSyncing = false)
+            SmartDownloadNotificationHelper.cancelNotification(context)
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Erro durante Smart Downloads sync: ${e.message}", e)
@@ -197,6 +237,7 @@ class SmartDownloadManager(
                 isSyncing = false,
                 lastErrorMessage = e.message
             )
+            SmartDownloadNotificationHelper.cancelNotification(context)
             Result.failure(e)
         } finally {
             globalSyncMutex.unlock()
