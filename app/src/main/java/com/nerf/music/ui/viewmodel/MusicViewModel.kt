@@ -1,5 +1,7 @@
 ﻿package com.nerf.music.ui.viewmodel
 
+import java.util.Locale
+
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
@@ -190,7 +192,15 @@ class MusicViewModel(
     private val _postUpdateChangelog = MutableStateFlow<String?>(null)
     val postUpdateChangelog: StateFlow<String?> = _postUpdateChangelog.asStateFlow()
 
-    private val _homeChips = MutableStateFlow<List<HomeChip>>(emptyList())
+    private val defaultChips = listOf(
+        HomeChip("Energia", "ggNCSgQIDhABSgQIDBADSgQICRABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Relax", "ggNCSgQIBxABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIAxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Para treinar", "ggNCSgQIBBABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Foco", "ggNCSgQIChABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIBBABSgQIBhABSgQIBRAB"),
+        HomeChip("Festa", "ggNCSgQICRABSgQIDBADSgQIDhABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Romance", "ggNCSgQIAxABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIBxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB")
+    )
+    private val _homeChips = MutableStateFlow<List<HomeChip>>(defaultChips)
     val homeChips: StateFlow<List<HomeChip>> = _homeChips.asStateFlow()
 
     private val _selectedHomeChip = MutableStateFlow<HomeChip?>(null)
@@ -288,7 +298,7 @@ class MusicViewModel(
             userHistoryRepository = historyRepo
             val recents = historyRepo.getRecentlyPlayed()
             if (recents.isNotEmpty()) {
-                _recentlyPlayed.value = recents.take(5)
+                _recentlyPlayed.value = recents.take(15)
             }
             val cachedHome = historyRepo.getCachedHomeFeed()
             if (cachedHome.isNotEmpty() && _homeSections.value.isEmpty()) {
@@ -559,17 +569,36 @@ class MusicViewModel(
         }
         val currentIdx = player.currentMediaItemIndex.coerceIn(0, queueTracks.lastIndex)
         val activeTrack = queueTracks.getOrNull(currentIdx)
-        if (activeTrack != null && _selectedTrack.value?.id != activeTrack.id) {
-            loadLyrics(activeTrack)
-            loadCanvasVideo(activeTrack)
+
+        val resolvedTrack = if (activeTrack != null && effectiveDuration > 0L && (activeTrack.durationText == "--:--" || activeTrack.durationSeconds == 0L)) {
+            val totalSeconds = effectiveDuration / 1000L
+            val mins = totalSeconds / 60
+            val secs = totalSeconds % 60
+            val formatted = String.format(Locale.US, "%02d:%02d", mins, secs)
+            val updated = activeTrack.copy(durationText = formatted, durationSeconds = totalSeconds)
+            trackMetadataMap[activeTrack.id] = updated
+            updated
+        } else {
+            activeTrack
+        }
+
+        val finalQueue = if (resolvedTrack != null && resolvedTrack !== activeTrack) {
+            queueTracks.map { if (it.id == resolvedTrack.id) resolvedTrack else it }
+        } else {
+            queueTracks
+        }
+
+        if (resolvedTrack != null && _selectedTrack.value?.id != resolvedTrack.id) {
+            loadLyrics(resolvedTrack)
+            loadCanvasVideo(resolvedTrack)
         } else {
             prefetchNextCanvas()
         }
-        _selectedTrack.value = activeTrack
+        _selectedTrack.value = resolvedTrack
 
         _playbackState.value = _playbackState.value.copy(
-            currentTrack = activeTrack,
-            queue = queueTracks,
+            currentTrack = resolvedTrack,
+            queue = finalQueue,
             currentQueueIndex = currentIdx,
             isPlaying = isCurrentlyPlaying,
             isBuffering = isBuffering,
@@ -710,9 +739,23 @@ class MusicViewModel(
                 mediaController?.let { controller ->
                     if (controller.isPlaying) {
                         val pos = controller.currentPosition.coerceAtLeast(0L)
+                        val dur = resolveEffectiveDuration(controller)
+                        val curTrack = _playbackState.value.currentTrack
+                        val updatedTrack = if (curTrack != null && dur > 0L && (curTrack.durationText == "--:--" || curTrack.durationSeconds == 0L)) {
+                            val totalSec = dur / 1000L
+                            val m = totalSec / 60
+                            val s = totalSec % 60
+                            val fDur = String.format(Locale.US, "%02d:%02d", m, s)
+                            val t = curTrack.copy(durationText = fDur, durationSeconds = totalSec)
+                            trackMetadataMap[curTrack.id] = t
+                            t
+                        } else null
+
                         _playbackState.value = _playbackState.value.copy(
                             currentPositionMs = pos,
-                            durationMs = resolveEffectiveDuration(controller)
+                            durationMs = dur,
+                            currentTrack = updatedTrack ?: curTrack,
+                            queue = if (updatedTrack != null) _playbackState.value.queue.map { if (it.id == updatedTrack.id) updatedTrack else it } else _playbackState.value.queue
                         )
                         updateCurrentLyricsLine(pos)
                     }
@@ -813,8 +856,8 @@ class MusicViewModel(
 
         // Registra no histórico persistente do usuário (sobrevive a fechamento do app)
         userHistoryRepository?.recordTrackPlayed(track)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(track) + _recentlyPlayed.value.filterNot { it.id == track.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(track) + _recentlyPlayed.value.filterNot { it.id == track.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         val initialQueue = listOf(track)
@@ -1290,8 +1333,8 @@ class MusicViewModel(
         seedVideoId = targetTrack.id
 
         userHistoryRepository?.recordTrackPlayed(targetTrack)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         effectiveTracks.forEach { trackMetadataMap[it.id] = it }
@@ -1335,8 +1378,8 @@ class MusicViewModel(
         seedVideoId = targetTrack.id
 
         userHistoryRepository?.recordTrackPlayed(targetTrack)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         effectiveTracks.forEach { trackMetadataMap[it.id] = it }
@@ -1454,8 +1497,8 @@ class MusicViewModel(
         seedVideoId = targetTrack.id
 
         userHistoryRepository?.recordTrackPlayed(targetTrack)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         album.tracks.forEach { trackMetadataMap[it.id] = it }

@@ -2477,8 +2477,9 @@ private fun QueueTrackRow(
                     isHistory -> "${stringResource(id = R.string.queue_history_badge)} • "
                     else -> ""
                 }
+                val durationPart = if (track.durationText.isNotBlank() && track.durationText != "--:--") " • ${track.durationText}" else ""
                 Text(
-                    text = "$statusPrefix${track.artist} • ${track.durationText}",
+                    text = "$statusPrefix${track.artist}$durationPart",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

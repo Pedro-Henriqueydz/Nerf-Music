@@ -616,13 +616,13 @@ fun HomeSongCard(
 ) {
     Column(
         modifier = modifier
-            .width(155.dp)
+            .width(116.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
-                .size(155.dp)
+                .size(116.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(YtmGrey11)
         ) {
@@ -640,7 +640,7 @@ fun HomeSongCard(
                     contentDescription = null,
                     tint = YtmIconInactive,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(36.dp)
                         .align(Alignment.Center)
                 )
             }
@@ -649,8 +649,8 @@ fun HomeSongCard(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(8.dp)
-                    .size(32.dp)
+                    .padding(6.dp)
+                    .size(28.dp)
                     .clip(CircleShape)
                     .background(Color(0xCC000000)),
                 contentAlignment = Alignment.Center
@@ -660,29 +660,29 @@ fun HomeSongCard(
                         isPlaying = isPlaying,
                         barColor = YtmWhite,
                         barCount = 3,
-                        barWidth = 2.5.dp,
-                        barSpacing = 1.5.dp,
-                        maxHeight = 14.dp
+                        barWidth = 2.dp,
+                        barSpacing = 1.dp,
+                        maxHeight = 12.dp
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = YtmWhite,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
             text = track.title,
             fontFamily = YouTubeSansFontFamily,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
-            color = if (isCurrentTrack) OrangeSecondary else YtmWhite,
+            fontSize = 13.sp,
+            color = YtmWhite,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -693,7 +693,7 @@ fun HomeSongCard(
             text = track.artist,
             fontFamily = YouTubeSansFontFamily,
             fontWeight = FontWeight.Normal,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             color = YtmTextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
