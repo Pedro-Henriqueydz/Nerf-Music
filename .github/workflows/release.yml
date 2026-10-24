@@ -38,25 +38,5 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: nerf-music-${{ github.ref_name }}.apk
-          body: |
-            # 🚀 Nerf Music ${{ github.ref_name }} — O Maior Salto de Experiência e Fluidez!
-
-            ### 📚 Nova Aba Biblioteca Completa (YouTube Music Style)
-            - **Playlists e Coleção Pessoal:** Crie, edite e organize suas próprias playlists com modal nativo e menu contextual de opções.
-            - **Downloads Rápidos & Reprodução Offline:** Sistema de download multi-partes paralelo de alto desempenho com indicador circular de progresso e badge dedicado em músicas baixadas.
-            - **Visualização Flexível:** Alterne livremente entre exibição em Grade (Grid) ou Lista de forma persistente.
-            - **Capas Dinâmicas de Playlists:** Grade de capas 1 a 4 faixas com gradientes dinâmicos e badge de fixação.
-
-            ### 🎤 Letras em Tela Cheia Imersivas (Apple Music Aurora Style)
-            - **Karaokê Sincronizado Linha por Linha:** Renderização rica com tipografia SF Pro e rolagem automática suave com destaque da estrofe ativa.
-            - **Efeito Aurora Blur Dinâmico:** Fundo fluido com desfoque profundo adaptado em tempo real à paleta do álbum e do Canva.
-            - **Cápsula de Volume Interativa:** Controle elástico de volume do sistema diretamente na tela de letras.
-            - **Navegação Rápida:** Toque em qualquer linha da letra para saltar imediatamente a reprodução para aquele trecho.
-            - **Fallback Inteligente:** Integração com múltiplos provedores de letras e atribuição transparente.
-
-            ### ⚡ Motion, Gestos 1:1 e Equalizador Premium (120Hz)
-            - **Gesto de Fechamento do Player 1:1:** O Full Player agora desce diretamente com o dedo e a capa sofre *morphing* contínuo de 300dp para 46dp, ancorando com precisão milimétrica na barra do Mini Player.
-            - **Barras Equalizadoras Refinadas:** Equalizador de áudio orgânico, premium e responsivo, que pausa imediatamente quando a reprodução é pausada.
-            - **Fila "A Seguir" com 3 Estágios:** Deslize vertical para navegar entre estados Oculto, Meio Expandido e Tela Cheia, com chips de filtro dinâmicos e rolagem aninhada suave.
-            - **Troca Instantânea de Faixas:** Gesto lateral no player para avançar/voltar imediatamente, com animação de mini capa e suporte completo ao modo Spotify Canvas.
+          body_path: RELEASE_NOTES.md
           generate_release_notes: false

@@ -14,6 +14,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
@@ -193,19 +195,28 @@ fun MainScreen(
                         fontSize = 14.sp,
                         color = YtmWhite
                     )
+                    val changelogScrollState = rememberScrollState()
                     Surface(
                         color = YtmGrey11,
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 380.dp)
                     ) {
-                        Text(
-                            text = changelog,
-                            fontFamily = YouTubeSansFontFamily,
-                            fontSize = 12.5.sp,
-                            color = YtmTextSecondary,
-                            lineHeight = 18.sp,
-                            modifier = Modifier.padding(12.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(changelogScrollState)
+                                .padding(14.dp)
+                        ) {
+                            Text(
+                                text = changelog,
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 13.sp,
+                                color = YtmTextSecondary,
+                                lineHeight = 19.sp
+                            )
+                        }
                     }
                 }
             },

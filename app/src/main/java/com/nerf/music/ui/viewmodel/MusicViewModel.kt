@@ -524,19 +524,19 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🔥 HOME DINÂMICA PREMIUM (ESTILO YOUTUBE MUSIC 9.41):
-            • Speed Dial 3x3 Paginado: Grade de 9 cartões por página com navegação fluida por swipe, dots indicadores e suporte às suas playlists e atalho de Músicas Curtidas.
-            • Feedback Visual Ativo: Borda branca no card em reprodução, equalizador animado no canto superior e barra de progresso vermelha na base da capa.
-            • Seções Contextuais por Horário: "Para o fim de semana / Churrasco", "Energia para o seu dia", "Foco e ritmo" e "Para desacelerar".
-            • Covers e Remixes: Prateleira dinâmica exclusiva de versões alternativas (Slowed, Sped Up, Remixes e VIP Edits).
-            • Seus Downloads: Cartões vibrantes com gradientes oficiais para Músicas Curtidas e Mix Offline com reprodução instantânea.
-            • Sua Descoberta Diária: Hero card nobre com o selo exclusivo "Parecido com [Música] de [Artista]".
+            🚀 NOVA TELA INICIAL (ESTILO YOUTUBE MUSIC):
+            • Início 3x3 com Swipe: Navegue com facilidade pelas suas músicas recentes, playlists pessoais e atalho de Músicas Curtidas em uma grade prática e dinâmica.
+            • Capas Vivas: Acompanhe a reprodução com borda iluminada, equalizador em tempo real e barra de progresso na própria capa.
+            • Músicas para o Seu Momento: Recomendações automáticas que mudam com o seu dia — como faixas para Churrasco no fim de semana, energia de manhã e relax à noite.
+            • Covers e Remixes: Suas versões slowed, sped up e edits preferidos reunidos em uma prateleira exclusiva.
+            • Seus Downloads: Acesse suas músicas curtidas e faixas offline com um único toque.
+            • Descoberta do Dia: Uma recomendação especial diária feita sob medida para o seu gosto.
 
-            🧠 SMART RADIO ENGINE & RECOMENDAÇÃO AVANÇADA:
-            • Rádio com Proporção Áurea: 60% novidade no mesmo cluster sonoro e 40% familiaridade do usuário.
-            • Skip Penalty & Afinidade Contínua: Músicas puladas rapidamente recebem menor probabilidade de repetição; músicas ouvidas até o fim ganham prioridade.
-            • Barreira Acústica Estrita: Isolamento de gênero para que faixas fora de contexto não vazem para a sua rádio.
-            • Durações Reais e Precisas: Correção definitiva de durações no catálogo, rádio e fila, eliminando qualquer marcador provisório.
+            📻 RÁDIO E RECOMENDAÇÕES MUITO MAIS INTELIGENTES:
+            • Rádio sem Repetições Chatas: O algoritmo agora equilibra novidades com faixas que você curte, sem ficar repetindo o mesmo artista seguidas vezes.
+            • Respeito ao que Você Ouve: Músicas que você pula com frequência deixam de tocar; músicas que você escuta até o fim ganham prioridade máxima.
+            • Foco no Seu Gênero: Nada de estilos desconexos misturados na sua rádio favorita.
+            • Durações Reais: Tempo de música sempre preciso e visível na fila e no player.
         """.trimIndent()
     }
 
