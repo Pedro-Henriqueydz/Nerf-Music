@@ -16,6 +16,7 @@ import java.util.regex.Pattern
 
 interface SpotifyCanvasRepository {
     suspend fun getCanvasUrl(title: String, artist: String): Result<String?>
+    fun getCachedCanvasUrl(title: String, artist: String): String?
 }
 
 class SpotifyCanvasRepositoryImpl(
@@ -35,6 +36,13 @@ class SpotifyCanvasRepositoryImpl(
     // Cache em memória (ConcurrentHashMap não aceita valores null)
     private val canvasCache = ConcurrentHashMap<String, String>()
     private val negativeCache = ConcurrentHashMap<String, Boolean>()
+
+    override fun getCachedCanvasUrl(title: String, artist: String): String? {
+        val cleanTitle = cleanTrackTitle(title)
+        val cleanArtist = cleanArtistName(artist)
+        val cacheKey = "$cleanTitle|$cleanArtist".lowercase()
+        return canvasCache[cacheKey]
+    }
 
     override suspend fun getCanvasUrl(title: String, artist: String): Result<String?> = withContext(Dispatchers.IO) {
         val cleanTitle = cleanTrackTitle(title)

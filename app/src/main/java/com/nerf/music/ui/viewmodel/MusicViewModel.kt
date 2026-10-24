@@ -43,6 +43,7 @@ import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.util.NetworkUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -312,6 +313,11 @@ class MusicViewModel(
                 _homeSections.value = feedData.sections
                 _isLoadingHome.value = false
                 historyRepo?.saveCachedHomeFeed(feedData.sections)
+
+                // Pre-aquece a resolucao da primeira faixa da tela inicial para inicio instantaneo
+                feedData.sections.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()?.let { firstTrack ->
+                    AudioPlayerService.prefetchTrack(firstTrack.id)
+                }
             }.onFailure {
                 _homeError.value = "Não foi possível carregar o feed inicial."
                 _isLoadingHome.value = false
@@ -498,6 +504,8 @@ class MusicViewModel(
         if (activeTrack != null && _selectedTrack.value?.id != activeTrack.id) {
             loadLyrics(activeTrack)
             loadCanvasVideo(activeTrack)
+        } else {
+            prefetchNextCanvas()
         }
         _selectedTrack.value = activeTrack
 
@@ -814,6 +822,8 @@ class MusicViewModel(
                     val radioMediaItems = radioTracks.map { trackToMediaItem(it) }
                     activeController.addMediaItems(radioMediaItems)
                     syncTimelineState(activeController)
+
+                    AudioPlayerService.prefetchTrack(radioTracks.first().id)
                 }
 
                 val selectedParams = upNext.chips.firstOrNull { it.isSelected }?.params
@@ -1259,6 +1269,10 @@ class MusicViewModel(
         controller.setMediaItems(mediaItems, targetIndex, 0L)
         controller.prepare()
         controller.play()
+        val nextTrack = effectiveTracks.getOrNull(targetIndex + 1)
+        if (nextTrack != null) {
+            AudioPlayerService.prefetchTrack(nextTrack.id)
+        }
     }
 
     fun downloadAll(tracks: List<Track>) {
@@ -1499,7 +1513,13 @@ class MusicViewModel(
         }
         lastCanvasTrackId = track.id
         canvasFetchJob?.cancel()
-        _canvasVideoUrl.value = null
+
+        val cachedUrl = spotifyCanvasRepository.getCachedCanvasUrl(track.title, track.artist)
+        if (cachedUrl != null) {
+            _canvasVideoUrl.value = cachedUrl
+        } else {
+            _canvasVideoUrl.value = null
+        }
 
         val settings = userSettingsRepository
         val isEnabled = settings?.isCanvasEnabled?.value ?: _isCanvasEnabled.value
@@ -1528,6 +1548,25 @@ class MusicViewModel(
             } finally {
                 _isLoadingCanvasVideo.value = false
             }
+            prefetchNextCanvas()
+        }
+    }
+
+    private fun prefetchNextCanvas() {
+        val settings = userSettingsRepository
+        val isEnabled = settings?.isCanvasEnabled?.value ?: _isCanvasEnabled.value
+        if (!isEnabled) return
+
+        val isWifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        val context = applicationContext
+        if (isWifiOnly && context != null && !NetworkUtils.isConnectedToWifi(context)) return
+
+        val currentIdx = _playbackState.value.currentQueueIndex
+        val nextTrack = _playbackState.value.queue.getOrNull(currentIdx + 1) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                spotifyCanvasRepository.getCanvasUrl(nextTrack.title, nextTrack.artist)
+            } catch (_: Exception) {}
         }
     }
 

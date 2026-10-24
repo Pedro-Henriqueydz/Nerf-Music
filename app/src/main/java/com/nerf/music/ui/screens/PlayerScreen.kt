@@ -466,6 +466,7 @@ fun FullPlayerSheet(
     )
 
     var canvasPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    var isCanvasFirstFrameRendered by remember(canvasVideoUrl) { mutableStateOf(false) }
 
     DisposableEffect(canvasVideoUrl) {
         if (!canvasVideoUrl.isNullOrBlank()) {
@@ -476,13 +477,20 @@ fun FullPlayerSheet(
                 setMediaItem(mediaItem)
                 prepare()
                 playWhenReady = true
+                addListener(object : Player.Listener {
+                    override fun onRenderedFirstFrame() {
+                        isCanvasFirstFrameRendered = true
+                    }
+                })
             }
             canvasPlayer = player
             onDispose {
+                isCanvasFirstFrameRendered = false
                 player.release()
                 canvasPlayer = null
             }
         } else {
+            isCanvasFirstFrameRendered = false
             onDispose {
                 canvasPlayer?.release()
                 canvasPlayer = null
@@ -495,6 +503,11 @@ fun FullPlayerSheet(
         mutableStateOf(hasCanva)
     }
     val isCanvasActive = hasCanva && isCanvaSelected
+    val canvasAlpha by animateFloatAsState(
+        targetValue = if (isCanvasActive && isCanvasFirstFrameRendered) 1f else 0f,
+        animationSpec = tween(durationMillis = 400),
+        label = "canvasAlpha"
+    )
 
     LaunchedEffect(state.isPlaying, isCanvasActive) {
         canvasPlayer?.let { cp ->
@@ -533,6 +546,34 @@ fun FullPlayerSheet(
                     .fillMaxSize()
                     .blur(if (isFullscreenLyricsActive) 55.dp else 0.dp)
             ) {
+                // Camada 1: Capa estática de fundo com gradiente escuro sempre presente (evita tela preta ou piscar)
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (!artworkUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = artworkUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .scale(1.25f)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        animatedTopColor.copy(alpha = 0.70f),
+                                        Color(0xFF141414).copy(alpha = 0.85f),
+                                        Color(0xFF0F0F0F)
+                                    )
+                                )
+                            )
+                    )
+                }
+
+                // Camada 2: Vídeo Canvas em looping suave com fade-in progressivo (alpha 0f -> 1f)
                 if (isCanvasActive && canvasPlayer != null) {
                     key(canvasVideoUrl) {
                         AndroidView(
@@ -546,12 +587,15 @@ fun FullPlayerSheet(
                                     playerView.player = canvasPlayer
                                 }
                             },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = canvasAlpha }
                         )
                     }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .graphicsLayer { alpha = canvasAlpha }
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
@@ -563,32 +607,6 @@ fun FullPlayerSheet(
                                 )
                             )
                     )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        if (!artworkUrl.isNullOrEmpty()) {
-                            AsyncImage(
-                                model = artworkUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .scale(1.25f)
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            animatedTopColor.copy(alpha = 0.70f),
-                                            Color(0xFF141414).copy(alpha = 0.85f),
-                                            Color(0xFF0F0F0F)
-                                        )
-                                    )
-                                )
-                        )
-                    }
                 }
             }
 

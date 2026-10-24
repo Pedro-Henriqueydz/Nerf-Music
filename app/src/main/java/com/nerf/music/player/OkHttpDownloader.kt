@@ -1,5 +1,6 @@
 package com.nerf.music.player
 
+import okhttp3.ConnectionPool
 import okhttp3.Headers.Companion.toHeaders
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -15,12 +16,18 @@ import java.util.concurrent.TimeUnit
  * Gerencia requisições de rede, cookies e extração de páginas do YouTube de forma eficiente.
  */
 class OkHttpDownloader(
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient = sharedClient
 ) : Downloader() {
 
+    companion object {
+        val sharedClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+        }
+    }
     @Throws(IOException::class)
     override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): Response {
         val httpMethod = request.httpMethod()
