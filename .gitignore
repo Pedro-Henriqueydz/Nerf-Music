@@ -1,6 +1,8 @@
 *.iml
 .gradle
 /local.properties
+.kotlin/
+.agents/
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
@@ -14,3 +16,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+.kotlin/
+.agents/

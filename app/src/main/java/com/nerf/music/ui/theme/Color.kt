@@ -17,7 +17,9 @@ val YtmTextSecondary = Color(0xFFAAAAAA)   // ytm_color_grey_05
 val YtmWhite = Color(0xFFFFFFFF)           // ytm_color_white
 val YtmWhite10Pct = Color(0x1AFFFFFF)      // ytm_color_white_at_10pct (fundo de chip inativo)
 val YtmWhite20Pct = Color(0x33FFFFFF)      // ytm_color_white_at_20pct
+val YtmWhite30Pct = Color(0x4DFFFFFF)      // ytm_color_white_at_30pct
 val YtmDivider = Color(0x14FFFFFF)         // ytm_color_white_at_8pct
+val YtmRed = Color(0xFFFF0000)
 
 val DarkBackground = YtmBlack
 val DarkSurface = YtmPivotBarBg

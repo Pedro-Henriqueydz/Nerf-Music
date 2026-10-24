@@ -60,7 +60,11 @@ class InnerTubeCatalogClient(
         private val DURATION_INLINE_REGEX = Pattern.compile("\\b(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})\\b")
         private val YEAR_REGEX = Pattern.compile("^\\d{4}$")
         private val ACCESSIBILITY_DURATION_REGEX = Pattern.compile(
-            "(\\d{1,2})\\s*minutos?\\s*e\\s*(\\d{1,2})\\s*segundos?",
+            "(\\d{1,2})\\s*(?:minutos?|minutes?|mins?)(?:\\s*(?:e|and|,)?\\s*(\\d{1,2})\\s*(?:segundos?|seconds?|secs?))?",
+            Pattern.CASE_INSENSITIVE
+        )
+        private val ACCESSIBILITY_SECONDS_ONLY_REGEX = Pattern.compile(
+            "(\\d{1,2})\\s*(?:segundos?|seconds?|secs?)",
             Pattern.CASE_INSENSITIVE
         )
 
@@ -442,9 +446,12 @@ class InnerTubeCatalogClient(
                 val radioRes = getUpNextRadio(seedVideoId)
                 radioRes.getOrNull()?.let { upNext ->
                     if (upNext.tracks.isNotEmpty()) {
+                        // Anti-duplicacao: Remove a faixa que ja esta tocando ou em destaque para diversificar o grid
+                        val filteredTracks = upNext.tracks.filterNot { it.id == seedVideoId }
+                        val finalTracks = if (filteredTracks.size >= 8) filteredTracks else upNext.tracks
                         val quickPicks = HomeSection(
                             title = "Escolha a dedo",
-                            items = upNext.tracks.take(16),
+                            items = finalTracks.take(16),
                             style = HomeSectionStyle.QUICK_PICKS_GRID
                         )
                         sections.removeAll { it.style == HomeSectionStyle.QUICK_PICKS_GRID }
@@ -756,9 +763,17 @@ class InnerTubeCatalogClient(
         val artistName = filteredByline.firstOrNull() ?: "Artista Desconhecido"
         val albumName = filteredByline.getOrNull(1)
 
-        val lengthRuns = renderer.optJSONObject("lengthText")?.optJSONArray("runs")
-        val rawLength = extractSegmentsFromRuns(lengthRuns).firstOrNull() ?: ""
-        val durationText = extractDurationFromSegment(rawLength) ?: "--:--"
+        val lengthObj = renderer.optJSONObject("lengthText")
+        val rawLength = lengthObj?.optString("simpleText")?.takeIf { it.isNotBlank() }
+            ?: extractSegmentsFromRuns(lengthObj?.optJSONArray("runs")).firstOrNull()
+            ?: lengthObj?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label")
+            ?: ""
+        var durationText = extractDurationFromSegment(rawLength)
+        if (durationText == null) {
+            durationText = bylineSegments.firstNotNullOfOrNull { extractDurationFromSegment(it) }
+        }
+        val finalDuration = durationText ?: "--:--"
+        val durationSeconds = parseDurationToSeconds(finalDuration)
 
         val thumbnailUrl = getBestThumbnailUrl(
             renderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
@@ -780,7 +795,8 @@ class InnerTubeCatalogClient(
             artist = artistName,
             album = albumName,
             thumbnailUrl = thumbnailUrl,
-            durationText = durationText,
+            durationText = finalDuration,
+            durationSeconds = durationSeconds,
             sourceIdentifier = "INNERTUBE_NEXT_RADIO",
             artistBrowseId = artistBrowseId
         )
@@ -1332,8 +1348,19 @@ class InnerTubeCatalogClient(
             return normalizeDurationText(cleaned)
         }
         val inlineMatcher = DURATION_INLINE_REGEX.matcher(cleaned)
-        if (inlineMatcher.matches()) {
-            return normalizeDurationText(cleaned)
+        if (inlineMatcher.find()) {
+            return normalizeDurationText(inlineMatcher.group(0) ?: cleaned)
+        }
+        val accessMatcher = ACCESSIBILITY_DURATION_REGEX.matcher(cleaned)
+        if (accessMatcher.find()) {
+            val min = accessMatcher.group(1)?.toIntOrNull() ?: 0
+            val sec = accessMatcher.group(2)?.toIntOrNull() ?: 0
+            return String.format(Locale.US, "%02d:%02d", min, sec)
+        }
+        val secMatcher = ACCESSIBILITY_SECONDS_ONLY_REGEX.matcher(cleaned)
+        if (secMatcher.find()) {
+            val sec = secMatcher.group(1)?.toIntOrNull() ?: 0
+            return String.format(Locale.US, "00:%02d", sec)
         }
         return null
     }
@@ -2036,12 +2063,24 @@ class InnerTubeCatalogClient(
 
         val subtitleRuns = item.optJSONObject("subtitle")?.optJSONArray("runs")
         val subtitleBuilder = StringBuilder()
+        var extractedDuration: String? = null
         if (subtitleRuns != null) {
             for (r in 0 until subtitleRuns.length()) {
-                subtitleBuilder.append(subtitleRuns.optJSONObject(r)?.optString("text").orEmpty())
+                val runObj = subtitleRuns.optJSONObject(r) ?: continue
+                val text = runObj.optString("text").orEmpty()
+                subtitleBuilder.append(text)
+                if (extractedDuration == null) {
+                    extractedDuration = extractDurationFromSegment(text)
+                }
             }
         }
-        val artist = subtitleBuilder.toString().trim().ifEmpty { "YouTube Music" }
+        val fullSubtitle = subtitleBuilder.toString().trim()
+        if (extractedDuration == null && fullSubtitle.isNotBlank()) {
+            extractedDuration = extractDurationFromSegment(fullSubtitle)
+        }
+        val artist = fullSubtitle.ifEmpty { "YouTube Music" }
+        val finalDuration = extractedDuration ?: "--:--"
+        val durationSeconds = parseDurationToSeconds(finalDuration)
 
         val thumbnails = item.optJSONObject("thumbnailRenderer")
             ?.optJSONObject("musicThumbnailRenderer")
@@ -2060,7 +2099,8 @@ class InnerTubeCatalogClient(
             artist = artist,
             album = null,
             thumbnailUrl = thumbnailUrl,
-            durationText = "--:--",
+            durationText = finalDuration,
+            durationSeconds = durationSeconds,
             sourceIdentifier = "INNERTUBE_WEB_REMIX",
             playlistId = playlistId.ifEmpty { null },
             browseId = browseId

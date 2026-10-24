@@ -1,5 +1,7 @@
 ﻿package com.nerf.music.ui.viewmodel
 
+import java.util.Locale
+
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
@@ -43,6 +45,10 @@ import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import com.nerf.music.data.repository.DataSaverMode
 import com.nerf.music.data.repository.AudioQuality
+import com.nerf.music.data.repository.UserAffinityRepository
+import com.nerf.music.data.repository.UserAffinityRepositoryImpl
+import com.nerf.music.player.SmartRadioEngine
+import com.nerf.music.player.RadioTuningMode
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.util.NetworkUtils
 import android.content.ActivityNotFoundException
@@ -63,13 +69,15 @@ import com.nerf.music.data.repository.LibraryRepository
 import com.nerf.music.data.repository.LibraryRepositoryImpl
 import com.nerf.music.data.model.UserPlaylist
 import com.nerf.music.data.model.DownloadedTrack
+import com.nerf.music.data.repository.HomeFeedSynthesizer
 import kotlinx.coroutines.launch
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
     private val updateRepository: UpdateRepository = UpdateRepositoryImpl(),
     private val lyricsRepository: LyricsRepository = LyricsRepositoryImpl(),
-    private val spotifyCanvasRepository: SpotifyCanvasRepository = SpotifyCanvasRepositoryImpl()
+    private val spotifyCanvasRepository: SpotifyCanvasRepository = SpotifyCanvasRepositoryImpl(),
+    private val homeFeedSynthesizer: HomeFeedSynthesizer = HomeFeedSynthesizer()
 ) : ViewModel() {
 
     companion object {
@@ -186,7 +194,15 @@ class MusicViewModel(
     private val _postUpdateChangelog = MutableStateFlow<String?>(null)
     val postUpdateChangelog: StateFlow<String?> = _postUpdateChangelog.asStateFlow()
 
-    private val _homeChips = MutableStateFlow<List<HomeChip>>(emptyList())
+    private val defaultChips = listOf(
+        HomeChip("Energia", "ggNCSgQIDhABSgQIDBADSgQICRABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Relax", "ggNCSgQIBxABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIAxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Para treinar", "ggNCSgQIBBABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Foco", "ggNCSgQIChABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIBBABSgQIBhABSgQIBRAB"),
+        HomeChip("Festa", "ggNCSgQICRABSgQIDBADSgQIDhABSgQIDRABSgQIAxABSgQIBxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB"),
+        HomeChip("Romance", "ggNCSgQIAxABSgQIDBADSgQIDhABSgQICRABSgQIDRABSgQIBxABSgQICBABSgQIBBABSgQIChABSgQIBhABSgQIBRAB")
+    )
+    private val _homeChips = MutableStateFlow<List<HomeChip>>(defaultChips)
     val homeChips: StateFlow<List<HomeChip>> = _homeChips.asStateFlow()
 
     private val _selectedHomeChip = MutableStateFlow<HomeChip?>(null)
@@ -240,6 +256,12 @@ class MusicViewModel(
     private var hasCheckedForUpdates = false
     private var userHistoryRepository: UserHistoryRepository? = null
     private var libraryRepository: LibraryRepository? = null
+    private var userAffinityRepository: UserAffinityRepository? = null
+    private var currentTrackPlayStartTime = 0L
+    private var activeTrackId: String? = null
+    private var isLoadingMoreQueue = false
+    private val _currentRadioTuningMode = MutableStateFlow(RadioTuningMode.BALANCED)
+    val currentRadioTuningMode: StateFlow<RadioTuningMode> = _currentRadioTuningMode.asStateFlow()
 
     private val _likedTracks = MutableStateFlow<List<Track>>(emptyList())
     val likedTracks: StateFlow<List<Track>> = _likedTracks.asStateFlow()
@@ -278,7 +300,7 @@ class MusicViewModel(
             userHistoryRepository = historyRepo
             val recents = historyRepo.getRecentlyPlayed()
             if (recents.isNotEmpty()) {
-                _recentlyPlayed.value = recents.take(5)
+                _recentlyPlayed.value = recents.take(15)
             }
             val cachedHome = historyRepo.getCachedHomeFeed()
             if (cachedHome.isNotEmpty() && _homeSections.value.isEmpty()) {
@@ -286,6 +308,9 @@ class MusicViewModel(
             }
             _searchHistory.value = historyRepo.getSearchHistory()
             checkPostUpdateChangelog(historyRepo)
+        }
+        if (userAffinityRepository == null) {
+            userAffinityRepository = UserAffinityRepositoryImpl(context.applicationContext)
         }
 
         if (libraryRepository == null) {
@@ -352,20 +377,93 @@ class MusicViewModel(
             val topArtists = historyRepo?.getTopArtists(5) ?: emptyList()
 
             repository.getPersonalizedHomeFeedData(seedId, topArtists, params).onSuccess { feedData ->
-                if (feedData.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
-                    _homeChips.value = feedData.chips
+                val synthesizedFeed = homeFeedSynthesizer.synthesizeHomeFeed(
+                    baseFeedData = feedData,
+                    historyRepo = userHistoryRepository,
+                    libraryRepo = libraryRepository,
+                    affinityRepo = userAffinityRepository,
+                    selectedChip = _selectedHomeChip.value
+                )
+
+                if (synthesizedFeed.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
+                    _homeChips.value = synthesizedFeed.chips
                 }
-                _homeSections.value = feedData.sections
+                _homeSections.value = synthesizedFeed.sections
                 _isLoadingHome.value = false
-                historyRepo?.saveCachedHomeFeed(feedData.sections)
+                historyRepo?.saveCachedHomeFeed(synthesizedFeed.sections)
 
                 // Pre-aquece a resolucao da primeira faixa da tela inicial para inicio instantaneo
-                feedData.sections.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()?.let { firstTrack ->
+                synthesizedFeed.sections.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()?.let { firstTrack ->
                     AudioPlayerService.prefetchTrack(firstTrack.id)
                 }
             }.onFailure {
-                _homeError.value = "Não foi possível carregar o feed inicial."
-                _isLoadingHome.value = false
+                // Fallback com sintese local caso nao haja conexao com o catalogo
+                val fallbackSynthesized = homeFeedSynthesizer.synthesizeHomeFeed(
+                    baseFeedData = com.nerf.music.data.model.HomeFeedData(),
+                    historyRepo = userHistoryRepository,
+                    libraryRepo = libraryRepository,
+                    affinityRepo = userAffinityRepository,
+                    selectedChip = _selectedHomeChip.value
+                )
+                if (fallbackSynthesized.sections.isNotEmpty()) {
+                    _homeSections.value = fallbackSynthesized.sections
+                    _isLoadingHome.value = false
+                } else {
+                    _homeError.value = "Não foi possível carregar o feed inicial."
+                    _isLoadingHome.value = false
+                }
+            }
+        }
+    }
+
+    fun playLikedTracks(startIndex: Int = 0, isShuffle: Boolean = false) {
+        val likedTracks = libraryRepository?.likedTracksFlow?.value.orEmpty()
+        if (likedTracks.isEmpty()) return
+        playTrackList(
+            title = "Músicas Curtidas",
+            tracks = likedTracks,
+            startIndex = startIndex,
+            isShuffle = isShuffle
+        )
+    }
+
+    fun playDownloadedTracks(startIndex: Int = 0, isShuffle: Boolean = false) {
+        val downloaded = libraryRepository?.downloadedTracksFlow?.value.orEmpty().map { it.track }
+        val tracksToPlay = downloaded.ifEmpty { libraryRepository?.likedTracksFlow?.value.orEmpty() }
+        if (tracksToPlay.isEmpty()) return
+        playTrackList(
+            title = "Mix Offline",
+            tracks = tracksToPlay,
+            startIndex = startIndex,
+            isShuffle = isShuffle
+        )
+    }
+
+    fun handleHomeTrackClick(track: com.nerf.music.data.model.Track, parentSection: com.nerf.music.data.model.HomeSection? = null) {
+        when {
+            track.sourceIdentifier == "SHORTCUT_LIKED" || track.id == "downloads_liked_music" -> {
+                playLikedTracks()
+            }
+            track.sourceIdentifier == "DOWNLOADS_OFFLINE_MIX" || track.id == "downloads_offline_mix" -> {
+                playDownloadedTracks()
+            }
+            track.sourceIdentifier == "USER_PLAYLIST" -> {
+                val playlist = libraryRepository?.playlistsFlow?.value?.find { it.id == track.id }
+                if (playlist != null) {
+                    playUserPlaylist(playlist)
+                } else {
+                    playTrack(track)
+                }
+            }
+            parentSection != null && parentSection.style == com.nerf.music.data.model.HomeSectionStyle.SPEED_DIAL -> {
+                playTrack(track)
+            }
+            parentSection != null && parentSection.style == com.nerf.music.data.model.HomeSectionStyle.QUICK_PICKS_GRID -> {
+                val idx = parentSection.items.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                playSection(parentSection, startIndex = idx)
+            }
+            else -> {
+                playTrack(track)
             }
         }
     }
@@ -546,17 +644,36 @@ class MusicViewModel(
         }
         val currentIdx = player.currentMediaItemIndex.coerceIn(0, queueTracks.lastIndex)
         val activeTrack = queueTracks.getOrNull(currentIdx)
-        if (activeTrack != null && _selectedTrack.value?.id != activeTrack.id) {
-            loadLyrics(activeTrack)
-            loadCanvasVideo(activeTrack)
+
+        val resolvedTrack = if (activeTrack != null && effectiveDuration > 0L && (activeTrack.durationText == "--:--" || activeTrack.durationSeconds == 0L)) {
+            val totalSeconds = effectiveDuration / 1000L
+            val mins = totalSeconds / 60
+            val secs = totalSeconds % 60
+            val formatted = String.format(Locale.US, "%02d:%02d", mins, secs)
+            val updated = activeTrack.copy(durationText = formatted, durationSeconds = totalSeconds)
+            trackMetadataMap[activeTrack.id] = updated
+            updated
+        } else {
+            activeTrack
+        }
+
+        val finalQueue = if (resolvedTrack != null && resolvedTrack !== activeTrack) {
+            queueTracks.map { if (it.id == resolvedTrack.id) resolvedTrack else it }
+        } else {
+            queueTracks
+        }
+
+        if (resolvedTrack != null && _selectedTrack.value?.id != resolvedTrack.id) {
+            loadLyrics(resolvedTrack)
+            loadCanvasVideo(resolvedTrack)
         } else {
             prefetchNextCanvas()
         }
-        _selectedTrack.value = activeTrack
+        _selectedTrack.value = resolvedTrack
 
         _playbackState.value = _playbackState.value.copy(
-            currentTrack = activeTrack,
-            queue = queueTracks,
+            currentTrack = resolvedTrack,
+            queue = finalQueue,
             currentQueueIndex = currentIdx,
             isPlaying = isCurrentlyPlaying,
             isBuffering = isBuffering,
@@ -612,12 +729,27 @@ class MusicViewModel(
                 if (mediaItem != null) {
                     _loadingTrackId.value = mediaItem.mediaId
                 }
+                val prevId = activeTrackId
+                if (!prevId.isNullOrBlank()) {
+                    val prevTrack = trackMetadataMap[prevId]
+                    if (prevTrack != null) {
+                        val elapsed = System.currentTimeMillis() - currentTrackPlayStartTime
+                        val dur = _playbackState.value.durationMs
+                        val wasSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK || 
+                                         (elapsed < 30_000L && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+                        userAffinityRepository?.recordTrackEnded(prevTrack, elapsed, dur, wasSkipped)
+                    }
+                }
+                activeTrackId = mediaItem?.mediaId
+                currentTrackPlayStartTime = System.currentTimeMillis()
+
                 if (_sleepTimerAtEndOfTrack.value && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                     _sleepTimerAtEndOfTrack.value = false
                     player.pause()
                     _userMessage.value = "Temporizador de sono: reprodução pausada ao final da música."
                 }
                 syncTimelineState(player)
+                checkAndLoadMoreQueue(player)
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -682,9 +814,23 @@ class MusicViewModel(
                 mediaController?.let { controller ->
                     if (controller.isPlaying) {
                         val pos = controller.currentPosition.coerceAtLeast(0L)
+                        val dur = resolveEffectiveDuration(controller)
+                        val curTrack = _playbackState.value.currentTrack
+                        val updatedTrack = if (curTrack != null && dur > 0L && (curTrack.durationText == "--:--" || curTrack.durationSeconds == 0L)) {
+                            val totalSec = dur / 1000L
+                            val m = totalSec / 60
+                            val s = totalSec % 60
+                            val fDur = String.format(Locale.US, "%02d:%02d", m, s)
+                            val t = curTrack.copy(durationText = fDur, durationSeconds = totalSec)
+                            trackMetadataMap[curTrack.id] = t
+                            t
+                        } else null
+
                         _playbackState.value = _playbackState.value.copy(
                             currentPositionMs = pos,
-                            durationMs = resolveEffectiveDuration(controller)
+                            durationMs = dur,
+                            currentTrack = updatedTrack ?: curTrack,
+                            queue = if (updatedTrack != null) _playbackState.value.queue.map { if (it.id == updatedTrack.id) updatedTrack else it } else _playbackState.value.queue
                         )
                         updateCurrentLyricsLine(pos)
                     }
@@ -785,8 +931,8 @@ class MusicViewModel(
 
         // Registra no histórico persistente do usuário (sobrevive a fechamento do app)
         userHistoryRepository?.recordTrackPlayed(track)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(track) + _recentlyPlayed.value.filterNot { it.id == track.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(track) + _recentlyPlayed.value.filterNot { it.id == track.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         val initialQueue = listOf(track)
@@ -861,11 +1007,32 @@ class MusicViewModel(
         radioFetchJob = viewModelScope.launch {
             val radioResult = repository.getUpNextRadio(videoId = track.id, params = null)
             radioResult.onSuccess { upNext ->
-                upNext.tracks.forEach { trackMetadataMap[it.id] = it }
+                upNext.tracks.forEach { freshTrack ->
+                    val existing = trackMetadataMap[freshTrack.id]
+                    if (existing == null || (existing.durationText == "--:--" && freshTrack.durationText != "--:--")) {
+                        trackMetadataMap[freshTrack.id] = freshTrack
+                    }
+                    if (freshTrack.durationText != "--:--") {
+                        userHistoryRepository?.updateTrackDuration(freshTrack.id, freshTrack.durationText, freshTrack.durationSeconds)
+                    }
+                }
 
-                val seenIds = mutableSetOf(track.id)
-                val radioTracks = upNext.tracks.filter { seenIds.add(it.id) }
-                val fullQueue = listOf(track) + radioTracks
+                val affinityRepo = userAffinityRepository 
+                    ?: applicationContext?.let { UserAffinityRepositoryImpl(it) }
+                val smartQueue = if (affinityRepo != null) {
+                    SmartRadioEngine.buildSmartQueue(
+                        seedTrack = track,
+                        rawCandidates = upNext.tracks,
+                        userLikedTracks = _likedTracks.value,
+                        userRecentTracks = _recentlyPlayed.value,
+                        affinityRepo = affinityRepo,
+                        tuningMode = _currentRadioTuningMode.value
+                    )
+                } else {
+                    listOf(track) + upNext.tracks
+                }
+                val radioTracks = smartQueue.drop(1)
+                val fullQueue = smartQueue
 
                 val activeController = mediaController
                 if (activeController != null && radioTracks.isNotEmpty()) {
@@ -1131,6 +1298,11 @@ class MusicViewModel(
         val libRepo = libraryRepository
         if (targetTrack != null && libRepo != null) {
             val added = libRepo.toggleFavorite(targetTrack)
+            if (added) {
+                userAffinityRepository?.recordTrackLiked(targetTrack)
+            } else {
+                userAffinityRepository?.recordTrackUnliked(targetTrack)
+            }
             _userMessage.value = if (added) "Adicionada às Músicas Curtidas" else "Removida das Músicas Curtidas"
         } else {
             val currentFavs = _playbackState.value.favoriteTrackIds.toMutableSet()
@@ -1244,8 +1416,8 @@ class MusicViewModel(
         seedVideoId = targetTrack.id
 
         userHistoryRepository?.recordTrackPlayed(targetTrack)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         effectiveTracks.forEach { trackMetadataMap[it.id] = it }
@@ -1289,8 +1461,8 @@ class MusicViewModel(
         seedVideoId = targetTrack.id
 
         userHistoryRepository?.recordTrackPlayed(targetTrack)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         effectiveTracks.forEach { trackMetadataMap[it.id] = it }
@@ -1408,8 +1580,8 @@ class MusicViewModel(
         seedVideoId = targetTrack.id
 
         userHistoryRepository?.recordTrackPlayed(targetTrack)
-        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(5)
-            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(5)
+        val updatedRecent = userHistoryRepository?.getRecentlyPlayed()?.take(15)
+            ?: (listOf(targetTrack) + _recentlyPlayed.value.filterNot { it.id == targetTrack.id }).take(15)
         _recentlyPlayed.value = updatedRecent
 
         album.tracks.forEach { trackMetadataMap[it.id] = it }
@@ -1630,6 +1802,91 @@ class MusicViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val breakdown = StorageUtils.getStorageBreakdown(context)
             _storageBreakdown.value = breakdown
+        }
+    }
+
+    fun setRadioTuningMode(mode: RadioTuningMode) {
+        _currentRadioTuningMode.value = mode
+        val current = _playbackState.value.currentTrack
+        if (current != null) {
+            refreshRadioWithMode(current, mode)
+        }
+    }
+
+    private fun refreshRadioWithMode(seedTrack: Track, mode: RadioTuningMode) {
+        radioFetchJob?.cancel()
+        radioFetchJob = viewModelScope.launch {
+            _playbackState.value = _playbackState.value.copy(isLoadingQueueRadio = true)
+            val result = repository.getUpNextRadio(videoId = seedTrack.id, params = null)
+            result.onSuccess { upNext ->
+                upNext.tracks.forEach { trackMetadataMap[it.id] = it }
+                val affinityRepo = userAffinityRepository ?: applicationContext?.let { UserAffinityRepositoryImpl(it) }
+                val smartQueue = if (affinityRepo != null) {
+                    SmartRadioEngine.buildSmartQueue(
+                        seedTrack = seedTrack,
+                        rawCandidates = upNext.tracks,
+                        userLikedTracks = _likedTracks.value,
+                        userRecentTracks = _recentlyPlayed.value,
+                        affinityRepo = affinityRepo,
+                        tuningMode = mode
+                    )
+                } else {
+                    listOf(seedTrack) + upNext.tracks
+                }
+
+                val controller = mediaController
+                if (controller != null && controller.mediaItemCount > 0) {
+                    val currentIdx = controller.currentMediaItemIndex.coerceAtLeast(0)
+                    if (controller.mediaItemCount > currentIdx + 1) {
+                        controller.removeMediaItems(currentIdx + 1, controller.mediaItemCount)
+                    }
+                    val upcoming = smartQueue.drop(1)
+                    if (upcoming.isNotEmpty()) {
+                        controller.addMediaItems(upcoming.map { trackToMediaItem(it) })
+                    }
+                    syncTimelineState(controller)
+                }
+                _playbackState.value = _playbackState.value.copy(
+                    queue = smartQueue,
+                    isLoadingQueueRadio = false
+                )
+            }.onFailure {
+                _playbackState.value = _playbackState.value.copy(isLoadingQueueRadio = false)
+            }
+        }
+    }
+
+    private fun checkAndLoadMoreQueue(player: Player) {
+        if (isLoadingMoreQueue) return
+        val currentIdx = player.currentMediaItemIndex
+        val totalItems = player.mediaItemCount
+        if (totalItems > 0 && currentIdx >= totalItems - 4) {
+            val lastMediaId = player.getMediaItemAt(totalItems - 1).mediaId
+            if (lastMediaId.isNotBlank()) {
+                isLoadingMoreQueue = true
+                viewModelScope.launch {
+                    try {
+                        val result = repository.getUpNextRadio(videoId = lastMediaId, params = null)
+                        result.onSuccess { moreUpNext ->
+                            val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
+                            val affinityRepo = userAffinityRepository ?: applicationContext?.let { UserAffinityRepositoryImpl(it) }
+                            val newTracks = moreUpNext.tracks.filter {
+                                !existingIds.contains(it.id) && affinityRepo?.isTrackPenalized(it.id) != true
+                            }
+                            if (newTracks.isNotEmpty()) {
+                                newTracks.forEach { trackMetadataMap[it.id] = it }
+                                player.addMediaItems(newTracks.map { trackToMediaItem(it) })
+                                syncTimelineState(player)
+                                Log.i("MusicViewModel", "Continuation da rádio carregada: +${newTracks.size} faixas.")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("MusicViewModel", "Falha ao carregar continuação da rádio: ${e.message}")
+                    } finally {
+                        isLoadingMoreQueue = false
+                    }
+                }
+            }
         }
     }
 
