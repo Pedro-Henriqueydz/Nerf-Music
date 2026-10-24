@@ -149,7 +149,7 @@ class InnerTubeCatalogClient(
                         val songsById = primary.songs.associateBy { it.id }
                         for (track in allData.songs) {
                             val enriched = songsById[track.id] ?: track
-                            if (enriched.durationText != "--:--" && mergedSongs.none { it.id == enriched.id }) {
+                            if (mergedSongs.none { it.id == enriched.id }) {
                                 mergedSongs.add(enriched)
                             }
                         }
@@ -917,12 +917,7 @@ class InnerTubeCatalogClient(
             }
         }
 
-        val hasValidDurations = mergedSongs.any { it.durationText != "--:--" }
-        val finalSongs = if (hasValidDurations) {
-            mergedSongs.filter { it.durationText != "--:--" }
-        } else {
-            mergedSongs
-        }
+        val finalSongs = mergedSongs.sortedBy { if (it.durationText != "--:--") 0 else 1 }
 
         return SearchResult(
             songs = finalSongs,

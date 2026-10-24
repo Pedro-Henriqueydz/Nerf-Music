@@ -1,4 +1,4 @@
-﻿package com.nerf.music.ui.viewmodel
+package com.nerf.music.ui.viewmodel
 
 import java.util.Locale
 
@@ -1971,8 +1971,27 @@ class MusicViewModel(
 
     fun syncYouTubeMusicAccount() {
         viewModelScope.launch {
-            _userMessage.value = "Conta do YouTube Music sincronizada com sucesso!"
-            loadHomeFeed()
+            _migrationProgress.value = MigrationProgressState(
+                isImporting = true,
+                current = 0,
+                total = 1,
+                currentTrackTitle = "Iniciando sincronização com YouTube Music..."
+            )
+            val result = migrationManager?.syncYouTubeMusicAccount { current, total, trackTitle ->
+                _migrationProgress.value = MigrationProgressState(
+                    isImporting = true,
+                    current = current,
+                    total = total,
+                    currentTrackTitle = trackTitle
+                )
+            }
+            _migrationProgress.value = MigrationProgressState(isImporting = false)
+            result?.onSuccess { count ->
+                _userMessage.value = "YouTube Music sincronizado com sucesso! $count faixas atualizadas."
+                loadHomeFeed()
+            }?.onFailure { error ->
+                _userMessage.value = "Erro ao sincronizar YouTube Music: ${error.message}"
+            }
         }
     }
 
@@ -1991,8 +2010,27 @@ class MusicViewModel(
 
     fun syncSpotifyAccount() {
         viewModelScope.launch {
-            _userMessage.value = "Conta do Spotify sincronizada com sucesso!"
-            loadHomeFeed()
+            _migrationProgress.value = MigrationProgressState(
+                isImporting = true,
+                current = 0,
+                total = 1,
+                currentTrackTitle = "Iniciando sincronização com Spotify..."
+            )
+            val result = migrationManager?.syncSpotifyAccount { current, total, trackTitle ->
+                _migrationProgress.value = MigrationProgressState(
+                    isImporting = true,
+                    current = current,
+                    total = total,
+                    currentTrackTitle = trackTitle
+                )
+            }
+            _migrationProgress.value = MigrationProgressState(isImporting = false)
+            result?.onSuccess { count ->
+                _userMessage.value = "Spotify sincronizado com sucesso! $count faixas atualizadas."
+                loadHomeFeed()
+            }?.onFailure { error ->
+                _userMessage.value = "Erro ao sincronizar Spotify: ${error.message}"
+            }
         }
     }
 
