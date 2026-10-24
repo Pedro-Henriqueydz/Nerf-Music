@@ -41,6 +41,8 @@ import com.nerf.music.data.repository.LyricsRepository
 import com.nerf.music.data.repository.LyricsRepositoryImpl
 import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
+import com.nerf.music.data.repository.DataSaverMode
+import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +95,18 @@ class MusicViewModel(
 
     private val _crossfadeSeconds = MutableStateFlow(0)
     val crossfadeSeconds: StateFlow<Int> = _crossfadeSeconds.asStateFlow()
+
+    private val _dataSaverMode = MutableStateFlow(DataSaverMode.ALWAYS_OFF)
+    val dataSaverMode: StateFlow<DataSaverMode> = _dataSaverMode.asStateFlow()
+
+    private val _isDownloadOverCellular = MutableStateFlow(false)
+    val isDownloadOverCellular: StateFlow<Boolean> = _isDownloadOverCellular.asStateFlow()
+
+    private val _wifiAudioQuality = MutableStateFlow(AudioQuality.HIGH)
+    val wifiAudioQuality: StateFlow<AudioQuality> = _wifiAudioQuality.asStateFlow()
+
+    private val _cellularAudioQuality = MutableStateFlow(AudioQuality.AUTOMATIC)
+    val cellularAudioQuality: StateFlow<AudioQuality> = _cellularAudioQuality.asStateFlow()
 
     // URL do vídeo para o background do Player (Canvas)
     private val _canvasVideoUrl = MutableStateFlow<String?>(null)
@@ -239,6 +253,10 @@ class MusicViewModel(
             _isGaplessEnabled.value = settingsRepo.isGaplessEnabled.value
             _isAutomixEnabled.value = settingsRepo.isAutomixEnabled.value
             _crossfadeSeconds.value = settingsRepo.crossfadeSeconds.value
+            _dataSaverMode.value = settingsRepo.dataSaverMode.value
+            _isDownloadOverCellular.value = settingsRepo.isDownloadOverCellular.value
+            _wifiAudioQuality.value = settingsRepo.wifiAudioQuality.value
+            _cellularAudioQuality.value = settingsRepo.cellularAudioQuality.value
         }
         if (userHistoryRepository == null) {
             val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
@@ -1516,6 +1534,26 @@ class MusicViewModel(
         val clamped = seconds.coerceIn(0, 12)
         _crossfadeSeconds.value = clamped
         userSettingsRepository?.setCrossfadeSeconds(clamped)
+    }
+
+    fun setDataSaverMode(mode: DataSaverMode) {
+        _dataSaverMode.value = mode
+        userSettingsRepository?.setDataSaverMode(mode)
+    }
+
+    fun setDownloadOverCellular(enabled: Boolean) {
+        _isDownloadOverCellular.value = enabled
+        userSettingsRepository?.setDownloadOverCellular(enabled)
+    }
+
+    fun setWifiAudioQuality(quality: AudioQuality) {
+        _wifiAudioQuality.value = quality
+        userSettingsRepository?.setWifiAudioQuality(quality)
+    }
+
+    fun setCellularAudioQuality(quality: AudioQuality) {
+        _cellularAudioQuality.value = quality
+        userSettingsRepository?.setCellularAudioQuality(quality)
     }
 
     fun showChangeLogManually() {

@@ -7,6 +7,7 @@ import com.nerf.music.data.model.Track
 import com.nerf.music.data.model.UserPlaylist
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.player.StreamResolver
+import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,7 +49,7 @@ interface LibraryRepository {
 
 class LibraryRepositoryImpl(
     private val context: Context,
-    private val streamResolver: StreamResolver = NewPipeStreamResolver(),
+    private val streamResolver: StreamResolver = NewPipeStreamResolver(context),
     private val httpClient: OkHttpClient = OkHttpClient()
 ) : LibraryRepository {
 
@@ -155,6 +156,15 @@ class LibraryRepositoryImpl(
         onProgress: (Float) -> Unit
     ): Result<DownloadedTrack> = withContext(Dispatchers.IO) {
         if (track.id.isBlank()) return@withContext Result.failure(IllegalArgumentException("TrackId vazio"))
+
+        val isWifi = NetworkUtils.isConnectedToWifi(context)
+        val settingsPrefs = context.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
+        val allowCellular = settingsPrefs.getBoolean("key_download_over_cellular", false)
+        if (!isWifi && !allowCellular) {
+            return@withContext Result.failure(
+                IllegalStateException("Download pausado: 'Downloads via dados móveis' está desativado nas configurações.")
+            )
+        }
 
         try {
             // 1. Resolve URL de áudio JIT via NewPipe
