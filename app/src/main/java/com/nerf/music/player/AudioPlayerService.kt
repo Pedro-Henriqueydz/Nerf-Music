@@ -53,8 +53,10 @@ import java.util.concurrent.ConcurrentHashMap
 class AudioPlayerService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
-    private lateinit var primaryPlayer: ExoPlayer
-    private var secondaryPlayer: ExoPlayer? = null
+    private lateinit var activePlayer: ExoPlayer
+    private var auxiliaryPlayer: ExoPlayer? = null
+    private var fadingPlayer: ExoPlayer? = null
+
     private lateinit var resolvingDataSourceFactory: ResolvingDataSource.Factory
     private lateinit var audioAttributes: AudioAttributes
     private lateinit var settingsRepository: UserSettingsRepository
@@ -65,9 +67,9 @@ class AudioPlayerService : MediaSessionService() {
     private var transitionMonitorJob: Job? = null
 
     private fun triggerPrefetchNextTrack() {
-        val nextIndex = primaryPlayer.nextMediaItemIndex
-        if (nextIndex == C.INDEX_UNSET || nextIndex >= primaryPlayer.mediaItemCount) return
-        val nextItem = primaryPlayer.getMediaItemAt(nextIndex)
+        val nextIndex = activePlayer.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET || nextIndex >= activePlayer.mediaItemCount) return
+        val nextItem = activePlayer.getMediaItemAt(nextIndex)
         val videoId = nextItem.mediaId.takeIf { it.isNotBlank() }
             ?: nextItem.localConfiguration?.uri?.lastPathSegment?.takeIf { it.isNotBlank() }
             ?: return
@@ -87,14 +89,14 @@ class AudioPlayerService : MediaSessionService() {
 
     private fun checkAndTriggerTransition() {
         if (isCrossfading) return
-        if (!primaryPlayer.isPlaying) return
+        if (!activePlayer.isPlaying) return
 
-        val duration = primaryPlayer.duration
-        val position = primaryPlayer.currentPosition
+        val duration = activePlayer.duration
+        val position = activePlayer.currentPosition
         if (duration <= 0L || position <= 0L) return
 
-        val nextIndex = primaryPlayer.nextMediaItemIndex
-        if (nextIndex == C.INDEX_UNSET || nextIndex >= primaryPlayer.mediaItemCount) return
+        val nextIndex = activePlayer.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET || nextIndex >= activePlayer.mediaItemCount) return
 
         val crossfadeSec = settingsRepository.crossfadeSeconds.value
         val automix = settingsRepository.isAutomixEnabled.value
@@ -123,60 +125,68 @@ class AudioPlayerService : MediaSessionService() {
         Log.i(TAG, "Iniciando transição de faixa (Crossfade/Automix): ${fadeDurationMs}ms para o índice $nextIndex")
 
         try {
-            val secPlayer = secondaryPlayer ?: createExoPlayer().also { secondaryPlayer = it }
+            val outgoingPlayer = activePlayer
+            val incomingPlayer = auxiliaryPlayer ?: createExoPlayer(handleAudioFocus = false).also { auxiliaryPlayer = it }
 
-            // Replica a fila completa para o secondaryPlayer a partir do nextIndex
+            // Garante que o player que está entrando NÃO requisite foco de áudio para não pausar o atual
+            incomingPlayer.setAudioAttributes(audioAttributes, false)
+
+            // Replica a fila completa para o incomingPlayer a partir do nextIndex
             val mediaItems = mutableListOf<MediaItem>()
-            for (i in 0 until primaryPlayer.mediaItemCount) {
-                mediaItems.add(primaryPlayer.getMediaItemAt(i))
+            for (i in 0 until outgoingPlayer.mediaItemCount) {
+                mediaItems.add(outgoingPlayer.getMediaItemAt(i))
             }
 
-            secPlayer.volume = 0f
-            secPlayer.setMediaItems(mediaItems, nextIndex, 0L)
-            secPlayer.prepare()
-            secPlayer.play()
+            incomingPlayer.volume = 0f
+            incomingPlayer.setMediaItems(mediaItems, nextIndex, 0L)
+            incomingPlayer.prepare()
+            incomingPlayer.play()
 
-            // Atualiza a MediaSession do sistema e a UI para a nova faixa em reprodução
-            mediaSession?.setPlayer(secPlayer)
+            // Atualiza activePlayer e MediaSession para a nova faixa
+            fadingPlayer = outgoingPlayer
+            activePlayer = incomingPlayer
+            mediaSession?.setPlayer(activePlayer)
 
             crossfadeJob?.cancel()
             crossfadeJob = serviceScope.launch {
                 val startTime = System.currentTimeMillis()
-                val fadePrim = primaryPlayer
-                val fadeSec = secPlayer
 
                 while (isActive) {
                     val elapsed = System.currentTimeMillis() - startTime
                     val progress = (elapsed.toFloat() / fadeDurationMs).coerceIn(0f, 1f)
 
                     // Curva equal-power idêntica ao Spotify liborbit (cos / sin)
-                    val volPrim = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
-                    val volSec = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
+                    val volOut = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
+                    val volIn = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
 
-                    fadePrim.volume = volPrim
-                    fadeSec.volume = volSec
+                    outgoingPlayer.volume = volOut
+                    incomingPlayer.volume = volIn
 
                     if (progress >= 1f) break
-                    delay(25)
+                    delay(20)
                 }
 
-                fadePrim.stop()
-                fadePrim.volume = 1f
-                fadeSec.volume = 1f
+                outgoingPlayer.stop()
+                outgoingPlayer.volume = 1f
+                incomingPlayer.volume = 1f
 
-                // Inverte as referências dos players para a próxima transição
-                primaryPlayer = fadeSec
-                secondaryPlayer = fadePrim
+                // Agora que o anterior parou, o novo player assume a gestão oficial do foco de áudio
+                incomingPlayer.setAudioAttributes(audioAttributes, true)
 
+                auxiliaryPlayer = outgoingPlayer
+                fadingPlayer = null
                 isCrossfading = false
+
                 triggerPrefetchNextTrack()
-                Log.i(TAG, "Transição de faixa concluída com sucesso. Novo activePlayer atualizado.")
+                Log.i(TAG, "Transição de faixa concluída com sucesso. Ambos os streams sincronizados.")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Falha ao iniciar crossfade, revertendo para player primário: ${e.message}", e)
+            Log.e(TAG, "Falha ao iniciar crossfade: ${e.message}", e)
             isCrossfading = false
-            primaryPlayer.volume = 1f
-            mediaSession?.setPlayer(primaryPlayer)
+            activePlayer.volume = 1f
+            fadingPlayer?.stop()
+            fadingPlayer = null
+            mediaSession?.setPlayer(activePlayer)
         }
     }
 
@@ -301,20 +311,20 @@ class AudioPlayerService : MediaSessionService() {
     }
 
     @OptIn(UnstableApi::class)
-    private fun createExoPlayer(): ExoPlayer {
+    private fun createExoPlayer(handleAudioFocus: Boolean = true): ExoPlayer {
         val playerInstance = ExoPlayer.Builder(this)
             .setLoadControl(buildLoadControl())
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(this).setDataSourceFactory(resolvingDataSourceFactory)
             )
-            .setAudioAttributes(audioAttributes, true) // Tratamento automático de Audio Focus
-            .setHandleAudioBecomingNoisy(true)        // Pausa automática ao desconectar fone
-            .setWakeMode(C.WAKE_MODE_NETWORK)         // Mantém Wi-Fi acordado durante stream
+            .setAudioAttributes(audioAttributes, handleAudioFocus) // Controla Audio Focus
+            .setHandleAudioBecomingNoisy(handleAudioFocus)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
         playerInstance.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playerInstance != primaryPlayer) return
+                if (playerInstance != activePlayer) return
                 val stateName = when (playbackState) {
                     Player.STATE_IDLE -> "STATE_IDLE"
                     Player.STATE_BUFFERING -> "STATE_BUFFERING"
@@ -326,7 +336,7 @@ class AudioPlayerService : MediaSessionService() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (playerInstance != primaryPlayer) return
+                if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onIsPlayingChanged: isPlaying=$isPlaying, duration=${playerInstance.duration}ms")
                 if (isPlaying) {
                     startTransitionMonitor()
@@ -337,18 +347,18 @@ class AudioPlayerService : MediaSessionService() {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                if (playerInstance != primaryPlayer) return
+                if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
                 // Trata opção 'Sem pausas' (Gapless): se desativada, insere pausa entre faixas
                 if (!settingsRepository.isGaplessEnabled.value &&
                     !isCrossfading &&
                     reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
                 ) {
-                    primaryPlayer.pause()
+                    activePlayer.pause()
                     serviceScope.launch {
                         delay(1000)
-                        if (playerInstance == primaryPlayer && !primaryPlayer.isPlaying) {
-                            primaryPlayer.play()
+                        if (playerInstance == activePlayer && !activePlayer.isPlaying) {
+                            activePlayer.play()
                         }
                     }
                 }
@@ -356,7 +366,7 @@ class AudioPlayerService : MediaSessionService() {
             }
 
             override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-                if (playerInstance != primaryPlayer) return
+                if (playerInstance != activePlayer) return
                 triggerPrefetchNextTrack()
             }
 
@@ -368,16 +378,16 @@ class AudioPlayerService : MediaSessionService() {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK && isCrossfading) {
                     // Se o usuário buscar na timeline durante um crossfade, cancela a transição e restaura volume
                     crossfadeJob?.cancel()
-                    secondaryPlayer?.stop()
-                    primaryPlayer.volume = 1f
-                    mediaSession?.setPlayer(primaryPlayer)
+                    fadingPlayer?.stop()
+                    fadingPlayer = null
+                    activePlayer.volume = 1f
                     isCrossfading = false
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                if (playerInstance != primaryPlayer) {
-                    Log.w(TAG, "Erro no player secundário ignorado: ${error.message}")
+                if (playerInstance != activePlayer) {
+                    Log.w(TAG, "Erro no player auxiliar ignorado: ${error.message}")
                     return
                 }
                 playerInstance.currentMediaItem?.mediaId?.let { evictCache(it) }
@@ -437,7 +447,7 @@ class AudioPlayerService : MediaSessionService() {
             }
         )
 
-        primaryPlayer = createExoPlayer()
+        activePlayer = createExoPlayer(handleAudioFocus = true)
 
         val sessionActivityPendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntent ->
             PendingIntent.getActivity(
@@ -448,7 +458,7 @@ class AudioPlayerService : MediaSessionService() {
             )
         }
 
-        mediaSession = MediaSession.Builder(this, primaryPlayer).apply {
+        mediaSession = MediaSession.Builder(this, activePlayer).apply {
             sessionActivityPendingIntent?.let { setSessionActivity(it) }
         }.build()
     }
@@ -471,8 +481,10 @@ class AudioPlayerService : MediaSessionService() {
         serviceScope.cancel()
         transitionMonitorJob?.cancel()
         crossfadeJob?.cancel()
-        secondaryPlayer?.release()
-        secondaryPlayer = null
+        fadingPlayer?.release()
+        fadingPlayer = null
+        auxiliaryPlayer?.release()
+        auxiliaryPlayer = null
         mediaSession?.run {
             player.release()
             release()
