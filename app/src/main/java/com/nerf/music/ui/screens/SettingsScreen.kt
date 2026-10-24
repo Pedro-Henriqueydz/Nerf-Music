@@ -30,6 +30,13 @@ import com.nerf.music.BuildConfig
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
 
+/**
+ * Tela de Configurações do Nerf Music projetada segundo o padrão e linguagem visual do Spotify.
+ *
+ * Seções estruturadas:
+ * - Reprodução (Crossfade com slider e min/max, Reprodução sem pausas, Automix, Canvas, Canvas no Wi-Fi, Letras)
+ * - Sobre o App (Versão do aplicativo e Change Log de novidades)
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -82,14 +89,26 @@ fun SettingsScreen(
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Seção Transições de Faixa (Track Transitions)
-            SettingsSectionHeader(title = "Transições de Faixa")
+            // Seção Reprodução (Playback) - Padrão Spotify
+            SettingsSectionHeader(title = "Reprodução")
+
+            SettingsSliderItem(
+                icon = Icons.Default.Tune,
+                title = "Crossfade",
+                subtitle = "Permite fazer crossfade entre músicas",
+                value = crossfadeSeconds,
+                valueRange = 0f..12f,
+                steps = 11,
+                minLabel = "0s",
+                maxLabel = "12s",
+                onValueChange = { viewModel.setCrossfadeSeconds(it) }
+            )
 
             SettingsSwitchItem(
                 icon = Icons.Default.GraphicEq,
-                title = "Sem pausas",
+                title = "Reprodução sem pausas",
                 subtitle = "Permite a reprodução contínua de músicas sem pausas intermediárias.",
                 checked = isGaplessEnabled,
                 onCheckedChange = { viewModel.setGaplessEnabled(it) }
@@ -98,34 +117,15 @@ fun SettingsScreen(
             SettingsSwitchItem(
                 icon = Icons.Default.AutoFixHigh,
                 title = "Automix",
-                subtitle = "Transições inteligentes e suaves entre faixas.",
+                subtitle = "Permite transições fluidas entre as músicas de playlists.",
                 checked = isAutomixEnabled,
                 onCheckedChange = { viewModel.setAutomixEnabled(it) }
             )
 
-            SettingsSliderItem(
-                icon = Icons.Default.Tune,
-                title = "Crossfade",
-                subtitle = if (crossfadeSeconds == 0) "Desativado" else "${crossfadeSeconds}s",
-                value = crossfadeSeconds,
-                valueRange = 0f..12f,
-                steps = 11,
-                onValueChange = { viewModel.setCrossfadeSeconds(it) }
-            )
-
-            HorizontalDivider(
-                color = YtmDivider,
-                thickness = 0.5.dp,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            // Seção Reprodução & Visual
-            SettingsSectionHeader(title = "Reprodução e Visual")
-
             SettingsSwitchItem(
                 icon = Icons.Default.VideoLibrary,
-                title = "Vídeo em segundo plano (Canvas)",
-                subtitle = "Exibe o visualizer ou videoclipe no fundo do player expandido estilo Spotify Canvas",
+                title = "Canvas",
+                subtitle = "Exibe efeitos visuais curtos em loop nas músicas.",
                 checked = isCanvasEnabled,
                 onCheckedChange = { viewModel.setCanvasEnabled(it) }
             )
@@ -133,7 +133,7 @@ fun SettingsScreen(
             SettingsSwitchItem(
                 icon = Icons.Default.Wifi,
                 title = "Canvas apenas no Wi-Fi",
-                subtitle = "Economiza dados móveis reproduzindo o vídeo de fundo somente conectado ao Wi-Fi",
+                subtitle = "Economiza dados móveis reproduzindo o Canvas somente conectado ao Wi-Fi.",
                 checked = isCanvasWifiOnly,
                 enabled = isCanvasEnabled,
                 onCheckedChange = { viewModel.setCanvasWifiOnly(it) }
@@ -142,7 +142,7 @@ fun SettingsScreen(
             SettingsSwitchItem(
                 icon = Icons.Default.Subtitles,
                 title = "Letras sincronizadas no Player",
-                subtitle = "Exibe a frase da letra em tempo real logo acima do título da faixa",
+                subtitle = "Exibe a frase da letra em tempo real logo acima do título da faixa.",
                 checked = isLyricsAboveTitleEnabled,
                 onCheckedChange = { viewModel.setLyricsAboveTitleEnabled(it) }
             )
@@ -150,11 +150,11 @@ fun SettingsScreen(
             HorizontalDivider(
                 color = YtmDivider,
                 thickness = 0.5.dp,
-                modifier = Modifier.padding(vertical = 8.dp)
+                modifier = Modifier.padding(vertical = 12.dp)
             )
 
-            // Seção Sobre & Atualizações
-            SettingsSectionHeader(title = "Sobre o App")
+            // Seção Sobre o App (About) - Padrão Spotify
+            SettingsSectionHeader(title = "Sobre")
 
             SettingsActionItem(
                 icon = Icons.Default.SystemUpdate,
@@ -167,12 +167,14 @@ fun SettingsScreen(
 
             SettingsActionItem(
                 icon = Icons.Default.Palette,
-                title = "Ver novidades da versão (Change Log)",
+                title = "Novidades da versão (Change Log)",
                 subtitle = "Relembre os novos recursos adicionados nesta versão",
                 onClick = {
                     viewModel.showChangeLogManually()
                 }
             )
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -180,13 +182,12 @@ fun SettingsScreen(
 @Composable
 private fun SettingsSectionHeader(title: String) {
     Text(
-        text = title.uppercase(),
+        text = title,
         fontFamily = YouTubeSansFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 12.sp,
-        color = OrangePrimary,
-        letterSpacing = 1.sp,
-        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
+        fontSize = 16.sp,
+        color = YtmWhite,
+        modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp)
     )
 }
 
@@ -203,7 +204,7 @@ private fun SettingsSwitchItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(vertical = 8.dp, horizontal = 4.dp),
+            .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -225,9 +226,9 @@ private fun SettingsSwitchItem(
             Text(
                 text = subtitle,
                 fontFamily = YouTubeSansFontFamily,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = if (enabled) YtmTextSecondary else YtmTextSecondary.copy(alpha = 0.35f),
-                lineHeight = 16.sp
+                lineHeight = 17.sp
             )
         }
         Spacer(modifier = Modifier.width(12.dp))
@@ -253,13 +254,15 @@ private fun SettingsSliderItem(
     value: Int,
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
+    minLabel: String = "0s",
+    maxLabel: String = "12s",
     enabled: Boolean = true,
     onValueChange: (Int) -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp, horizontal = 4.dp)
+            .padding(vertical = 10.dp, horizontal = 4.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -284,14 +287,21 @@ private fun SettingsSliderItem(
                 Text(
                     text = subtitle,
                     fontFamily = YouTubeSansFontFamily,
-                    fontSize = 12.sp,
-                    color = if (enabled) OrangePrimary else YtmTextSecondary.copy(alpha = 0.35f),
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 16.sp
+                    fontSize = 13.sp,
+                    color = if (enabled) YtmTextSecondary else YtmTextSecondary.copy(alpha = 0.35f),
+                    lineHeight = 17.sp
                 )
             }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (value == 0) "Desativado" else "${value}s",
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = if (value > 0) OrangePrimary else YtmTextSecondary
+            )
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Slider(
             value = value.toFloat(),
             onValueChange = { onValueChange(it.toInt()) },
@@ -303,8 +313,27 @@ private fun SettingsSliderItem(
                 activeTrackColor = OrangePrimary,
                 inactiveTrackColor = YtmGrey11
             ),
-            modifier = Modifier.padding(start = 40.dp, end = 8.dp)
+            modifier = Modifier.padding(start = 36.dp, end = 4.dp)
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 44.dp, end = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = minLabel,
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 11.sp,
+                color = YtmTextSecondary.copy(alpha = 0.6f)
+            )
+            Text(
+                text = maxLabel,
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 11.sp,
+                color = YtmTextSecondary.copy(alpha = 0.6f)
+            )
+        }
     }
 }
 
@@ -319,7 +348,7 @@ private fun SettingsActionItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
+            .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -341,9 +370,9 @@ private fun SettingsActionItem(
             Text(
                 text = subtitle,
                 fontFamily = YouTubeSansFontFamily,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 color = YtmTextSecondary,
-                lineHeight = 16.sp
+                lineHeight = 17.sp
             )
         }
     }
