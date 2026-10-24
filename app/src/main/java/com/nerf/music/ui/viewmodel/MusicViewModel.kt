@@ -43,6 +43,7 @@ import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.util.NetworkUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -498,6 +499,8 @@ class MusicViewModel(
         if (activeTrack != null && _selectedTrack.value?.id != activeTrack.id) {
             loadLyrics(activeTrack)
             loadCanvasVideo(activeTrack)
+        } else {
+            prefetchNextCanvas()
         }
         _selectedTrack.value = activeTrack
 
@@ -1499,7 +1502,13 @@ class MusicViewModel(
         }
         lastCanvasTrackId = track.id
         canvasFetchJob?.cancel()
-        _canvasVideoUrl.value = null
+
+        val cachedUrl = spotifyCanvasRepository.getCachedCanvasUrl(track.title, track.artist)
+        if (cachedUrl != null) {
+            _canvasVideoUrl.value = cachedUrl
+        } else {
+            _canvasVideoUrl.value = null
+        }
 
         val settings = userSettingsRepository
         val isEnabled = settings?.isCanvasEnabled?.value ?: _isCanvasEnabled.value
@@ -1528,6 +1537,25 @@ class MusicViewModel(
             } finally {
                 _isLoadingCanvasVideo.value = false
             }
+            prefetchNextCanvas()
+        }
+    }
+
+    private fun prefetchNextCanvas() {
+        val settings = userSettingsRepository
+        val isEnabled = settings?.isCanvasEnabled?.value ?: _isCanvasEnabled.value
+        if (!isEnabled) return
+
+        val isWifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        val context = applicationContext
+        if (isWifiOnly && context != null && !NetworkUtils.isConnectedToWifi(context)) return
+
+        val currentIdx = _playbackState.value.currentQueueIndex
+        val nextTrack = _playbackState.value.queue.getOrNull(currentIdx + 1) ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                spotifyCanvasRepository.getCanvasUrl(nextTrack.title, nextTrack.artist)
+            } catch (_: Exception) {}
         }
     }
 

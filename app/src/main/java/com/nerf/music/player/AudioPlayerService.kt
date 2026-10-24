@@ -18,6 +18,14 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Timeline
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -39,6 +47,39 @@ class AudioPlayerService : MediaSessionService() {
 
     private data class CachedStreamUrl(val url: String, val timestampMs: Long)
     private val streamUrlCache = ConcurrentHashMap<String, CachedStreamUrl>()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var prefetchJob: Job? = null
+
+    private fun triggerPrefetchNextTrack() {
+        val nextIndex = player.nextMediaItemIndex
+        if (nextIndex == C.INDEX_UNSET || nextIndex >= player.mediaItemCount) return
+        val nextItem = player.getMediaItemAt(nextIndex)
+        val videoId = nextItem.mediaId.takeIf { it.isNotBlank() }
+            ?: nextItem.localConfiguration?.uri?.lastPathSegment?.takeIf { it.isNotBlank() }
+            ?: return
+
+        val offlineFile = java.io.File(filesDir, "offline_audio/$videoId.opus")
+        if (offlineFile.exists() && offlineFile.length() > 0) return
+
+        val now = System.currentTimeMillis()
+        val cached = streamUrlCache[videoId]
+        if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) return
+
+        prefetchJob?.cancel()
+        prefetchJob = serviceScope.launch(Dispatchers.IO) {
+            try {
+                Log.i(TAG, "Pre-fetching stream URL em background para proxima faixa: $videoId")
+                val result = streamResolver.resolveStreamUrl(videoId)
+                val url = result.getOrNull()
+                if (!url.isNullOrBlank()) {
+                    streamUrlCache[videoId] = CachedStreamUrl(url, System.currentTimeMillis())
+                    Log.i(TAG, "Pre-fetch de audio concluido com sucesso para: $videoId")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha no pre-fetch de stream para $videoId: ${e.message}")
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "AudioPlayerService"
@@ -127,6 +168,18 @@ class AudioPlayerService : MediaSessionService() {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 Log.i(TAG, "ExoPlayer onIsPlayingChanged: isPlaying=$isPlaying, duration=${player.duration}ms")
+                if (isPlaying) {
+                    triggerPrefetchNextTrack()
+                }
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
+                triggerPrefetchNextTrack()
+            }
+
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                triggerPrefetchNextTrack()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -169,6 +222,8 @@ class AudioPlayerService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
+        prefetchJob?.cancel()
         mediaSession?.run {
             player.release()
             release()
