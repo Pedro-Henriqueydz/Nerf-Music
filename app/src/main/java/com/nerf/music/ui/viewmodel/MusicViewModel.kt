@@ -569,6 +569,12 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
+            🔧 NOVIDADES DA VERSÃO 1.2.1:
+            • Notificação de Progresso em Tempo Real: Agora você pode acompanhar o download das músicas inteligentes direto na barra de status do celular! Uma notificação dinâmica mostra o progresso aumentando faixa a faixa (ex: 23 de 100) com o nome de cada música sendo baixada.
+            • Cota Completa Garantida: Corrigido o comportamento que baixava menos faixas do que o selecionado (ex: apenas 23 músicas para quem tinha poucas curtidas). O app agora busca recomendações exclusivas baseadas nos seus artistas favoritos para preencher 100% da sua cota escolhida!
+            • Conclusão Silenciosa e Limpa: Notificações sem alertas sonoros repetitivos a cada música baixada, finalizando com um aviso discreto de que suas músicas estão prontas para ouvir sem internet.
+            • Mais Estabilidade: Correção de concorrência que impedia o download manual de travar quando o sistema em segundo plano já estava ativo.
+
             ⚡ SMART DOWNLOADS (DOWNLOADS INTELIGENTES):
             • Músicas Offline Automáticas: O Nerf Music agora cuida dos seus downloads por você! Suas músicas favoritas e novidades semanais são salvas automaticamente no aparelho.
             • Cota Flexível (50 a 500 Músicas): Escolha manter 50, 100, 250 ou até 500 faixas offline com estimativa em tempo real de espaço em disco.

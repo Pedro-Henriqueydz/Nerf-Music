@@ -1,52 +1,37 @@
-# ⚡ NERF Music v1.2.0 — Smart Downloads & Lossless Audio Quality
+# ⚡ NERF Music v1.2.1 — Smart Downloads Quota Fulfillment & Real-Time Progress Notifications
 
-Esta versão introduz a arquitetura de **Smart Downloads (Downloads Inteligentes)** com paridade total à experiência do YouTube Music, somada ao suporte nativo de **Qualidade de Mídia dos Downloads com padrão Lossless / Máxima Fidelidade**.
-
----
-
-### ⚡ 1. Arquitetura de Smart Downloads (`SmartDownloadManager` & `SmartDownloadWorker`)
-- **Orquestração em Segundo Plano via Android WorkManager:**
-  - `SmartDownloadWorker` (`CoroutineWorker`) agendado com políticas periódicas de 24 horas (`ExistingPeriodicWorkPolicy.UPDATE`) e disparos imediatos sob demanda via `OneTimeWorkRequestBuilder`.
-  - Restrições estritas de ambiente configuráveis:
-    - Rede não tarifada (`NetworkType.UNMETERED`) para sincronização exclusiva em Wi-Fi (configuração padrão ativada).
-    - Preservação energética do dispositivo com `setRequiresBatteryNotLow(true)`.
-- **Heurística de Síntese Ponderada de Candidatos:**
-  - **40% Familiaridade Imediata:** Músicas favoritadas (`likedTracksFlow`) e histórico recente de alta afinidade (`userHistoryRepository.getRecentlyPlayed()`).
-  - **30% Coleções do Usuário:** Músicas presentes nas playlists criadas pelo usuário (`playlistsFlow`).
-  - **30% Descoberta & Afinidade Acústica:** Recomendações e faixas correlacionadas pelo `SmartRadioEngine`.
-- **Política de Rotação Automática de Quotas:**
-  - Cotas selecionáveis: **50, 100, 250 ou 500 músicas**.
-  - Separação de domínio em `DownloadedTrack` com flag `isSmartDownload: Boolean`. Músicas baixadas explicitamente pelo usuário são marcadas como permanentes e **nunca** sofrem rotação ou expurgo automático.
-  - Ao atingir a cota ou quando novas faixas entram em alta afinidade, o motor remove automaticamente as faixas inteligentes mais antigas e menos reproduzidas.
+Esta versão traz correções essenciais na arquitetura dos **Downloads Inteligentes (Smart Downloads)** e introduz um novo sistema de **feedback visual em tempo real através da barra de notificações do Android**.
 
 ---
 
-### 💎 2. Pipeline de Áudio & Qualidade Lossless Nativa
-- **Resolução Sem Recompressão (`NewPipeStreamResolver`):**
-  - Implementação da sobrecarga `resolveStreamUrl(videoId: String, targetQuality: AudioQuality?)`.
-  - Modo **Lossless (Padrão de Fábrica)**: Seleciona o fluxo de áudio nativo de mais alta taxa de amostragem e bitrate entregue pelo catálogo (Opus a 48 kHz até 256 kbps VBR e AAC/M4A), sem transcodificação ou degradação acústica.
-- **Configuração Hierárquica de Fidelidade (`DownloadAudioQuality`):**
-  - *Lossless (Máxima Fidelidade)* — Padrão.
-  - *Muito Alta (~320 kbps equivalente)*.
-  - *Alta (256 kbps)*.
-  - *Normal (128 kbps)* — Para máxima economia de espaço.
+### 🐛 1. Expansão Online de Candidatos para Quota Completa (`SmartDownloadManager`)
+- **Problema corrigido:** Em instalações onde o usuário possuía um histórico curto ou poucas faixas favoritadas (ex: 23 músicas), a cota configurada (50, 100, 250 ou 500) não era preenchida por completo, gerando uma interrupção prematura da sincronização.
+- **Resolução & Algoritmo de Sementes:**
+  - Inspirado na engenharia reversa do APK oficial do YouTube Music (`FEoffline_mixtape` / `DefaultMusicAutoOfflineController`), o motor agora utiliza as faixas locais do usuário como **sementes de afinidade acústica**.
+  - Quando os candidatos locais não cobrem a cota (`candidates.size < limit`), o gerenciador consulta a rota `/youtubei/v1/next` (`InnerTubeCatalogClient.getUpNextRadio`) de cada semente até completar o limite desejado.
+  - Filtro integrado com `UserAffinityRepository` para descarte de faixas penalizadas (skip penalty/descurtidas).
 
 ---
 
-### 🔄 3. Sincronização Reativa de Estado (`LibraryRepositoryImpl`)
-- **StateFlows Compartilhados & Listener de SharedPreferences:**
-  - Compartilhamento singleton dos fluxos reativos (`sharedDownloadedTracksFlow`, `sharedLikedTracksFlow`, `sharedPlaylistsFlow`).
-  - Registro de `SharedPreferences.OnSharedPreferenceChangeListener`: Garante que downloads efetuados pelo `WorkManager` em segundo plano atualizem instantaneamente a UI em tempo real, sem necessidade de reinicialização do app ou polling.
+### 📥 2. Notificação de Progresso em Tempo Real (`SmartDownloadNotificationHelper`)
+- **Canal Dedicado:** `nerf_smart_downloads` com `NotificationManager.IMPORTANCE_LOW` para atualizações silenciosas sem vibrações ou alertas sonoros repetitivos a cada faixa.
+- **Barra de Progresso Nativa:**
+  - `NotificationCompat.CATEGORY_PROGRESS` com barra de progresso visual de `1 a X` (`setProgress(targetQuota, currentCount, false)`).
+  - Atualização do título e texto dinâmico a cada download concluído: `(N de X) • [Título da Música]`.
+- **Estados de Ciclo de Vida:**
+  - **Em Andamento:** `setOngoing(true)` e `setOnlyAlertOnce(true)`.
+  - **Concluído:** Notificação limpa com ícone `stat_sys_download_done` e resumo: *"X músicas salvas para reprodução offline"*.
+  - **Pausado:** Notificação explicativa caso a conexão Wi-Fi seja perdida (`"Aguardando conexão Wi-Fi"`).
 
 ---
 
-### 🎨 4. Interface do Usuário (Compose)
-- **Subtela de Armazenamento (`SettingsSubScreen.STORAGE`):**
-  - Seção dedicada de Smart Downloads com switch mestre de ativação.
-  - Seletor de chips de cota (50, 100, 250, 500 músicas) com cálculo dinâmico de espaço em disco estimado (*~519 MB em padrão Lossless para 100 faixas*).
-  - Switch de download restrito a Wi-Fi.
-  - Card de status em tempo real com indicador de progresso e botão de sincronização manual imediata.
-- **Subtela de Qualidade da Mídia (`SettingsSubScreen.MEDIA_QUALITY`):**
-  - Nova seção dedicada para qualidade de áudio dos downloads com descrição técnica e seleção em rádio.
-- **Biblioteca (`LibraryScreen`):**
-  - Visualização imediata do quantitativo no cartão e chip "Músicas Baixadas" (`Mix Offline`).
+### 🔒 3. Concorrência e Estabilidade entre Processos
+- **Mutex Estático Global (`globalSyncMutex`):**
+  - Implementado no `SmartDownloadManager.Companion` para prevenir corridas de sincronização simultâneas entre disparos da UI (`MusicViewModel.triggerSmartDownloadSyncNow()`) e execuções agendadas do `WorkManager` (`SmartDownloadWorker`).
+- **Instanciação Segura no `MusicViewModel`:**
+  - Garantia de injeção singleton de repositórios em `initializePlayerController` independentemente da ordem de carregamento da biblioteca.
+
+---
+
+### 💎 4. Fidelidade e Áudio Original Preservados
+- Todas as músicas complementadas via recomendações de catálogo mantêm a extração de áudio original no perfil **Lossless / Máxima Fidelidade** (Opus 48 kHz estéreo sem recompressão).
