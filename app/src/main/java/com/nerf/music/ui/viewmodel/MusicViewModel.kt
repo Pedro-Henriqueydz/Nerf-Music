@@ -361,19 +361,25 @@ class MusicViewModel(
                     _playbackState.value = _playbackState.value.copy(downloadedTrackIds = ids)
                 }
             }
+        }
 
-            if (smartDownloadManager == null && userSettingsRepository != null && userHistoryRepository != null) {
-                val sdManager = SmartDownloadManager(
-                    context = context.applicationContext,
-                    libraryRepository = libRepo,
-                    userSettingsRepository = userSettingsRepository!!,
-                    userHistoryRepository = userHistoryRepository!!
-                )
-                smartDownloadManager = sdManager
-                viewModelScope.launch {
-                    sdManager.syncState.collect { state ->
-                        _smartDownloadSyncState.value = state
-                    }
+        val activeLibRepo = libraryRepository
+        val activeSettingsRepo = userSettingsRepository
+        val activeHistoryRepo = userHistoryRepository
+        val activeAffinityRepo = userAffinityRepository ?: UserAffinityRepositoryImpl(context.applicationContext).also { userAffinityRepository = it }
+
+        if (smartDownloadManager == null && activeLibRepo != null && activeSettingsRepo != null && activeHistoryRepo != null) {
+            val sdManager = SmartDownloadManager(
+                context = context.applicationContext,
+                libraryRepository = activeLibRepo,
+                userSettingsRepository = activeSettingsRepo,
+                userHistoryRepository = activeHistoryRepo,
+                userAffinityRepository = activeAffinityRepo
+            )
+            smartDownloadManager = sdManager
+            viewModelScope.launch {
+                sdManager.syncState.collect { state ->
+                    _smartDownloadSyncState.value = state
                 }
             }
         }

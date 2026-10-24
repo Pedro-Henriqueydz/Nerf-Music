@@ -45,10 +45,12 @@ class SmartDownloadManager(
     private val context: Context,
     private val libraryRepository: LibraryRepository,
     private val userSettingsRepository: UserSettingsRepository,
-    private val userHistoryRepository: UserHistoryRepository
+    private val userHistoryRepository: UserHistoryRepository,
+    private val userAffinityRepository: UserAffinityRepository = UserAffinityRepositoryImpl(context),
+    private val catalogClient: com.nerf.music.data.network.InnerTubeCatalogClient = com.nerf.music.data.network.InnerTubeCatalogClient()
 ) {
 
-    private val mutex = Mutex()
+    // Mutex de sincronizacao em nivel de processo
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _syncState = MutableStateFlow(
@@ -77,7 +79,7 @@ class SmartDownloadManager(
      * Retorna o número de novas músicas baixadas.
      */
     suspend fun syncNow(force: Boolean = false): Result<Int> = withContext(Dispatchers.IO) {
-        if (!mutex.tryLock()) {
+        if (!globalSyncMutex.tryLock()) {
             Log.d(TAG, "Sincronização de Smart Downloads já em andamento. Ignorando chamada concorrente.")
             return@withContext Result.success(0)
         }
@@ -197,7 +199,7 @@ class SmartDownloadManager(
             )
             Result.failure(e)
         } finally {
-            mutex.unlock()
+            globalSyncMutex.unlock()
         }
     }
 
@@ -207,7 +209,7 @@ class SmartDownloadManager(
      * - 30% Playlists do Usuário
      * - 30% Descoberta e Afinidade
      */
-    private fun synthesizeCandidates(limit: Int): List<Track> {
+    private suspend fun synthesizeCandidates(limit: Int): List<Track> {
         val liked = libraryRepository.likedTracksFlow.value
         val recent = userHistoryRepository.getRecentlyPlayed()
         val playlistsTracks = libraryRepository.playlistsFlow.value.flatMap { it.tracks }
@@ -216,7 +218,7 @@ class SmartDownloadManager(
         val seenIds = mutableSetOf<String>()
 
         fun addTrack(track: Track) {
-            if (track.id.isNotBlank() && !seenIds.contains(track.id)) {
+            if (track.id.isNotBlank() && !seenIds.contains(track.id) && !userAffinityRepository.isTrackPenalized(track.id)) {
                 seenIds.add(track.id)
                 candidates.add(track)
             }
@@ -231,16 +233,45 @@ class SmartDownloadManager(
         val playlistLimit = (limit * 0.30).toInt().coerceAtLeast(10)
         playlistsTracks.take(playlistLimit).forEach { addTrack(it) }
 
-        // 3. Restante de favoritos, histórico e faixas do cache
+        // 3. Restante de favoritos, histórico e playlists locais
         liked.drop(topLikedLimit).forEach { addTrack(it) }
         recent.drop(topLikedLimit).forEach { addTrack(it) }
         playlistsTracks.drop(playlistLimit).forEach { addTrack(it) }
+
+        // 4. Expansão Online estilo YouTube Music: Se o acervo local do usuário for menor que a cota,
+        // consulta a API de rádio e recomendações (Up Next) usando as faixas favoritas como sementes
+        if (candidates.size < limit) {
+            var seeds = (liked + recent).filter { it.id.isNotBlank() }.distinctBy { it.id }
+            if (seeds.isEmpty()) {
+                seeds = listOf(
+                    Track(id = "kJQP7kiw5Fk", title = "Despacito", artist = "Luis Fonsi"),
+                    Track(id = "JGwWNGJdvx8", title = "Shape of You", artist = "Ed Sheeran")
+                )
+            }
+
+            Log.i(TAG, "Candidatos locais (${candidates.size}) abaixo da cota ($limit). Expandindo via catálogo com ${seeds.size} sementes...")
+
+            for (seed in seeds) {
+                if (candidates.size >= limit) break
+                try {
+                    val radioResult = catalogClient.getUpNextRadio(seed.id).getOrNull()
+                    val recommendations = radioResult?.tracks.orEmpty()
+                    for (rec in recommendations) {
+                        if (candidates.size >= limit) break
+                        addTrack(rec)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Falha ao consultar rádio de recomendações para semente ${seed.title}: ${e.message}")
+                }
+            }
+        }
 
         return candidates.take(limit)
     }
 
     companion object {
         private const val TAG = "SmartDownloadManager"
+        private val globalSyncMutex = Mutex()
 
         /**
          * Estimativa de consumo em disco para N músicas em qualidade Lossless/Máxima Fidelidade (~5.2MB por faixa).
