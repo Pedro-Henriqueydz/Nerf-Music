@@ -329,9 +329,11 @@ class MusicViewModel(
         loadHomeFeed(params = nextChip?.params)
     }
 
-    fun playSection(section: HomeSection) {
-        val firstTrack = section.items.firstOrNull() ?: return
-        playTrack(firstTrack)
+    fun playSection(section: HomeSection, startIndex: Int = 0) {
+        val tracks = section.items
+        if (tracks.isEmpty()) return
+        val title = section.title.ifBlank { "Escolha a dedo" }
+        playTrackList(title = title, tracks = tracks, startIndex = startIndex, isShuffle = false)
     }
 
     fun checkForAppUpdates() {
@@ -507,8 +509,8 @@ class MusicViewModel(
             isBuffering = isBuffering,
             durationMs = effectiveDuration,
             currentPositionMs = currentPos,
-            hasNext = queueTracks.size > 1,
-            hasPrevious = queueTracks.size > 1,
+            hasNext = player.hasNextMediaItem(),
+            hasPrevious = player.hasPreviousMediaItem(),
             shuffleModeEnabled = player.shuffleModeEnabled,
             repeatMode = player.repeatMode,
             queueSourceTitle = _playbackState.value.queueSourceTitle ?: activeTrack?.title
@@ -529,7 +531,8 @@ class MusicViewModel(
                         Player.EVENT_PLAY_WHEN_READY_CHANGED,
                         Player.EVENT_PLAYBACK_STATE_CHANGED,
                         Player.EVENT_IS_PLAYING_CHANGED,
-                        Player.EVENT_POSITION_DISCONTINUITY
+                        Player.EVENT_POSITION_DISCONTINUITY,
+                        Player.EVENT_TIMELINE_CHANGED
                     )
                 ) {
                     val isPlaying = player.isPlaying
@@ -804,15 +807,19 @@ class MusicViewModel(
 
                 val seenIds = mutableSetOf(track.id)
                 val radioTracks = upNext.tracks.filter { seenIds.add(it.id) }
+                val fullQueue = listOf(track) + radioTracks
 
                 val activeController = mediaController
                 if (activeController != null && radioTracks.isNotEmpty()) {
                     val radioMediaItems = radioTracks.map { trackToMediaItem(it) }
                     activeController.addMediaItems(radioMediaItems)
+                    syncTimelineState(activeController)
                 }
 
                 val selectedParams = upNext.chips.firstOrNull { it.isSelected }?.params
                 _playbackState.value = _playbackState.value.copy(
+                    queue = fullQueue,
+                    hasNext = fullQueue.size > 1,
                     queueSourceTitle = track.title,
                     queueFilterChips = upNext.chips,
                     selectedQueueChipParams = selectedParams,
@@ -824,13 +831,6 @@ class MusicViewModel(
                 }
             }.onFailure { error ->
                 Log.w("MusicViewModel", "Falha ao carregar rádio dinâmica para ${track.id}: ${error.message}")
-                val fallbackSongs = _searchResult.value.songs
-                val seenIds = mutableSetOf(track.id)
-                val extraTracks = fallbackSongs.filter { seenIds.add(it.id) }
-                val activeController = mediaController
-                if (activeController != null && extraTracks.isNotEmpty()) {
-                    activeController.addMediaItems(extraTracks.map { trackToMediaItem(it) })
-                }
                 _playbackState.value = _playbackState.value.copy(
                     isLoadingQueueRadio = false
                 )

@@ -216,7 +216,7 @@ fun HomeScreen(
                                 strapline = defaultStrapline,
                                 actionLabel = if (isQuickPicks) "Reproduzir tudo" else null,
                                 onActionClick = if (isQuickPicks) {
-                                    { viewModel.playSection(section) }
+                                    { viewModel.playSection(section, startIndex = 0) }
                                 } else null
                             )
                             Spacer(modifier = Modifier.height(12.dp))
@@ -226,7 +226,10 @@ fun HomeScreen(
                                     tracks = section.items,
                                     currentPlayingId = playbackState.currentTrack?.id,
                                     isPlaybackActive = playbackState.isPlaying,
-                                    onTrackClick = { track -> viewModel.playTrack(track) }
+                                    onTrackClick = { track ->
+                                        val idx = section.items.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                                        viewModel.playSection(section, startIndex = idx)
+                                    }
                                 )
                             } else {
                                 YtmTwoRowCarousel(
