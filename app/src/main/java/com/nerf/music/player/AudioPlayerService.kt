@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.media.audiofx.AudioEffect
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -472,6 +473,14 @@ class AudioPlayerService : MediaSessionService() {
         )
 
         activePlayer = createExoPlayer(handleAudioFocus = true)
+        try {
+            val openIntent = Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, activePlayer.audioSessionId)
+                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+            }
+            sendBroadcast(openIntent)
+        } catch (_: Exception) {}
 
         val sessionActivityPendingIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntent ->
             PendingIntent.getActivity(
@@ -514,6 +523,13 @@ class AudioPlayerService : MediaSessionService() {
             release()
             mediaSession = null
         }
+        try {
+            val closeIntent = Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, activePlayer.audioSessionId)
+                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+            }
+            sendBroadcast(closeIntent)
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 }

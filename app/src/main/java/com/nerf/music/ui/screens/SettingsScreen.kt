@@ -1,5 +1,6 @@
 package com.nerf.music.ui.screens
 
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
@@ -10,10 +11,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,7 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,6 +37,8 @@ import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.data.repository.DataSaverMode
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
+import com.nerf.music.util.StorageBreakdown
+import com.nerf.music.util.StorageUtils
 
 /**
  * Cores de estilo idênticas ao design do Spotify 9.1.94
@@ -41,6 +49,9 @@ private val SpotifyGreen = Color(0xFF1ED760)
 private val SpotifyTextSecondary = Color(0xFFB3B3B3)
 private val SpotifyTrackInactive = Color(0xFF4D4D4D)
 private val SpotifyNoteBg = Color(0xFF1E1E1E)
+private val SpotifyStorageCache = Color(0xFF1ED760)
+private val SpotifyStorageDownloads = Color(0xFF3D91F4)
+private val SpotifyStorageFree = Color(0xFF535353)
 
 /**
  * Subtelas de navegação das configurações hierárquicas (padrão Spotify).
@@ -51,8 +62,19 @@ enum class SettingsSubScreen {
     MEDIA_QUALITY,
     PLAYBACK,
     CONTENT_DISPLAY,
+    STORAGE,
     ABOUT
 }
+
+/**
+ * Item de índice para busca global rápida nas configurações
+ */
+private data class SearchableSetting(
+    val title: String,
+    val subtitle: String,
+    val categoryName: String,
+    val targetSubScreen: SettingsSubScreen
+)
 
 /**
  * Tela de Configurações do Nerf Music recriada fielmente segundo a arquitetura,
@@ -66,10 +88,20 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.MAIN) }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
 
-    // Intercepta botão Voltar do sistema Android quando em uma sub-tela
-    BackHandler(enabled = currentSubScreen != SettingsSubScreen.MAIN) {
-        currentSubScreen = SettingsSubScreen.MAIN
+    val context = LocalContext.current
+
+    // Intercepta botão Voltar do sistema Android quando em uma sub-tela ou busca ativa
+    BackHandler(enabled = isSearchActive || currentSubScreen != SettingsSubScreen.MAIN) {
+        if (isSearchActive) {
+            isSearchActive = false
+            searchQuery = ""
+        } else {
+            currentSubScreen = SettingsSubScreen.MAIN
+        }
     }
 
     val isCanvasEnabled by viewModel.isCanvasEnabled.collectAsState()
@@ -82,6 +114,35 @@ fun SettingsScreen(
     val isDownloadOverCellular by viewModel.isDownloadOverCellular.collectAsState()
     val wifiAudioQuality by viewModel.wifiAudioQuality.collectAsState()
     val cellularAudioQuality by viewModel.cellularAudioQuality.collectAsState()
+    val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
+    val sleepTimerAtEndOfTrack by viewModel.sleepTimerAtEndOfTrack.collectAsState()
+    val storageBreakdown by viewModel.storageBreakdown.collectAsState()
+
+    // Atualiza armazenamento ao entrar
+    LaunchedEffect(Unit) {
+        viewModel.refreshStorageBreakdown(context)
+    }
+
+    // Modal de Temporizador de Sono (Sleep Timer)
+    if (showSleepTimerSheet) {
+        SleepTimerBottomSheet(
+            remainingSeconds = sleepTimerRemainingSeconds,
+            isEndOfTrack = sleepTimerAtEndOfTrack,
+            onSelectMinutes = {
+                viewModel.setSleepTimerMinutes(it)
+                showSleepTimerSheet = false
+            },
+            onSelectEndOfTrack = {
+                viewModel.setSleepTimerEndOfTrack()
+                showSleepTimerSheet = false
+            },
+            onCancelTimer = {
+                viewModel.cancelSleepTimer()
+                showSleepTimerSheet = false
+            },
+            onDismiss = { showSleepTimerSheet = false }
+        )
+    }
 
     AnimatedContent(
         targetState = currentSubScreen,
@@ -103,11 +164,25 @@ fun SettingsScreen(
                 SettingsMainContent(
                     dataSaverMode = dataSaverMode,
                     audioQuality = wifiAudioQuality,
+                    isSearchActive = isSearchActive,
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { searchQuery = it },
+                    onStartSearch = { isSearchActive = true },
+                    onCloseSearch = {
+                        isSearchActive = false
+                        searchQuery = ""
+                    },
+                    onSelectSearchResult = { target ->
+                        isSearchActive = false
+                        searchQuery = ""
+                        currentSubScreen = target
+                    },
                     onNavigateBack = onNavigateBack,
                     onOpenDataSaver = { currentSubScreen = SettingsSubScreen.DATA_SAVER },
                     onOpenMediaQuality = { currentSubScreen = SettingsSubScreen.MEDIA_QUALITY },
                     onOpenPlayback = { currentSubScreen = SettingsSubScreen.PLAYBACK },
                     onOpenContentDisplay = { currentSubScreen = SettingsSubScreen.CONTENT_DISPLAY },
+                    onOpenStorage = { currentSubScreen = SettingsSubScreen.STORAGE },
                     onOpenAbout = { currentSubScreen = SettingsSubScreen.ABOUT },
                     modifier = modifier
                 )
@@ -142,6 +217,10 @@ fun SettingsScreen(
                     onGaplessChange = { viewModel.setGaplessEnabled(it) },
                     isAutomixEnabled = isAutomixEnabled,
                     onAutomixChange = { viewModel.setAutomixEnabled(it) },
+                    sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+                    sleepTimerAtEndOfTrack = sleepTimerAtEndOfTrack,
+                    onOpenSleepTimer = { showSleepTimerSheet = true },
+                    onOpenEqualizer = { viewModel.openEqualizer(context) },
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
                     modifier = modifier
                 )
@@ -154,6 +233,15 @@ fun SettingsScreen(
                     onCanvasWifiOnlyChange = { viewModel.setCanvasWifiOnly(it) },
                     isLyricsAboveTitleEnabled = isLyricsAboveTitleEnabled,
                     onLyricsAboveTitleChange = { viewModel.setLyricsAboveTitleEnabled(it) },
+                    onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
+                    modifier = modifier
+                )
+            }
+            SettingsSubScreen.STORAGE -> {
+                StorageSettingsScreen(
+                    breakdown = storageBreakdown,
+                    onClearCache = { viewModel.clearAppCache(context) },
+                    onRefresh = { viewModel.refreshStorageBreakdown(context) },
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
                     modifier = modifier
                 )
@@ -171,23 +259,373 @@ fun SettingsScreen(
 }
 
 /**
- * Tela Principal de Configurações do Spotify:
- * - TopBar centralizada com pesquisa
- * - Header de Perfil / App com avatar circular e tag de status (sem botões redundantes como "ver perfil")
- * - Grade de 2 colunas com cartões de acesso rápido funcionais
- * - Lista de categorias de navegação hierárquica com ícones e subtítulos separados por pontos
+ * Tela Principal de Configurações do Spotify
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsMainContent(
     dataSaverMode: DataSaverMode,
     audioQuality: AudioQuality,
+    isSearchActive: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onStartSearch: () -> Unit,
+    onCloseSearch: () -> Unit,
+    onSelectSearchResult: (SettingsSubScreen) -> Unit,
     onNavigateBack: () -> Unit,
     onOpenDataSaver: () -> Unit,
     onOpenMediaQuality: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenContentDisplay: () -> Unit,
+    onOpenStorage: () -> Unit,
     onOpenAbout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val allSearchableItems = remember {
+        listOf(
+            SearchableSetting("Economia de dados", "Modo economia de dados permanente ou automático", "Economia de dados", SettingsSubScreen.DATA_SAVER),
+            SearchableSetting("Downloads via dados móveis", "Inicia ou continua downloads sem Wi-Fi", "Economia de dados", SettingsSubScreen.DATA_SAVER),
+            SearchableSetting("Qualidade do streaming no Wi-Fi", "Automática, Baixa, Normal, Alta ou Muito alta", "Qualidade da mídia", SettingsSubScreen.MEDIA_QUALITY),
+            SearchableSetting("Qualidade em dados móveis", "Reduz o consumo de rede no 4G/5G", "Qualidade da mídia", SettingsSubScreen.MEDIA_QUALITY),
+            SearchableSetting("Crossfade", "Transição suave e sobreposição entre faixas (0s-12s)", "Reprodução", SettingsSubScreen.PLAYBACK),
+            SearchableSetting("Reprodução sem pausas (Gapless)", "Elimina o silêncio entre músicas consecutivas", "Reprodução", SettingsSubScreen.PLAYBACK),
+            SearchableSetting("Automix", "Transições fluidas inteligentes em playlists", "Reprodução", SettingsSubScreen.PLAYBACK),
+            SearchableSetting("Equalizador", "Abre o painel de equalização de áudio", "Reprodução", SettingsSubScreen.PLAYBACK),
+            SearchableSetting("Temporizador de sono (Sleep Timer)", "Pausa a reprodução após tempo determinado ou fim da faixa", "Reprodução", SettingsSubScreen.PLAYBACK),
+            SearchableSetting("Canvas", "Exibe efeitos visuais curtos em loop no player", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
+            SearchableSetting("Canvas apenas no Wi-Fi", "Economiza dados móveis reproduzindo Canvas só no Wi-Fi", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
+            SearchableSetting("Letras sincronizadas no Player", "Exibe a frase da letra em tempo real acima do título", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
+            SearchableSetting("Armazenamento e Cache", "Espaço de downloads, cache e botão de limpar cache", "Armazenamento", SettingsSubScreen.STORAGE),
+            SearchableSetting("Versão do aplicativo", "Verificar atualizações do Nerf Music", "Sobre", SettingsSubScreen.ABOUT),
+            SearchableSetting("Novidades da versão (Change Log)", "Relembre os novos recursos adicionados", "Sobre", SettingsSubScreen.ABOUT)
+        )
+    }
+
+    val filteredResults = remember(searchQuery) {
+        if (searchQuery.isBlank()) emptyList()
+        else {
+            val q = searchQuery.trim().lowercase()
+            allSearchableItems.filter {
+                it.title.lowercase().contains(q) ||
+                it.subtitle.lowercase().contains(q) ||
+                it.categoryName.lowercase().contains(q)
+            }
+        }
+    }
+
+    Scaffold(
+        modifier = modifier
+            .fillMaxSize()
+            .background(SpotifyBlack),
+        containerColor = SpotifyBlack,
+        topBar = {
+            if (isSearchActive) {
+                TopAppBar(
+                    title = {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SpotifyCardBg)
+                                .padding(horizontal = 12.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = onSearchQueryChange,
+                                textStyle = TextStyle(
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 15.sp,
+                                    color = Color.White
+                                ),
+                                cursorBrush = SolidColor(SpotifyGreen),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                decorationBox = { innerTextField ->
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = "Buscar nas configurações...",
+                                            fontFamily = YouTubeSansFontFamily,
+                                            fontSize = 14.sp,
+                                            color = SpotifyTextSecondary
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onCloseSearch) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Fechar busca",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    actions = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { onSearchQueryChange("") }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Limpar busca",
+                                    tint = SpotifyTextSecondary
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Configurações",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                color = Color.White
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Voltar",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onStartSearch) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Pesquisar",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
+                )
+            }
+        }
+    ) { innerPadding ->
+        if (isSearchActive) {
+            // Lista de resultados filtrados da busca
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                if (searchQuery.isBlank()) {
+                    Text(
+                        text = "Digite o nome de uma configuração para buscar.",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontSize = 13.sp,
+                        color = SpotifyTextSecondary,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                } else if (filteredResults.isEmpty()) {
+                    Text(
+                        text = "Nenhuma configuração encontrada para \"$searchQuery\".",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontSize = 13.sp,
+                        color = SpotifyTextSecondary,
+                        modifier = Modifier.padding(top = 16.dp)
+                    )
+                } else {
+                    filteredResults.forEach { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectSearchResult(item.targetSubScreen) }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.title,
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${item.categoryName} • ${item.subtitle}",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 13.sp,
+                                    color = SpotifyTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = SpotifyTextSecondary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        HorizontalDivider(color = Color(0x1AFFFFFF), thickness = 0.5.dp)
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Card / Header do App (limpo e objetivo)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clip(CircleShape)
+                            .background(SpotifyCardBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Headphones,
+                            contentDescription = "Nerf Music",
+                            tint = SpotifyGreen,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Nerf Music",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 19.sp,
+                        color = Color.White
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.Transparent,
+                        border = BorderStroke(1.dp, SpotifyTextSecondary.copy(alpha = 0.35f))
+                    ) {
+                        Text(
+                            text = "Música sem limites • Livre de anúncios",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontSize = 12.sp,
+                            color = SpotifyTextSecondary,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Cartões de acesso rápido em grade de 2 colunas
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    QuickAccessCard(
+                        icon = if (dataSaverMode != DataSaverMode.ALWAYS_OFF) Icons.Default.DataSaverOn else Icons.Default.DataSaverOff,
+                        title = "Economia de dados",
+                        status = dataSaverMode.displayName,
+                        onClick = onOpenDataSaver,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    QuickAccessCard(
+                        icon = Icons.Default.GraphicEq,
+                        title = "Qualidade do áudio",
+                        status = audioQuality.displayName,
+                        onClick = onOpenMediaQuality,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Lista de categorias de navegação hierárquica (padrão Spotify)
+                SpotifyCategoryRow(
+                    icon = Icons.Default.Savings,
+                    title = "Economia de dados",
+                    subtitle = "Modo economia de dados • Downloads via dados móveis",
+                    onClick = onOpenDataSaver
+                )
+
+                SpotifyCategoryRow(
+                    icon = Icons.Default.Tune,
+                    title = "Qualidade da mídia",
+                    subtitle = "Qualidade no Wi-Fi • Qualidade em dados móveis",
+                    onClick = onOpenMediaQuality
+                )
+
+                SpotifyCategoryRow(
+                    icon = Icons.Default.PlayCircleOutline,
+                    title = "Reprodução",
+                    subtitle = "Crossfade • Sem pausas • Equalizador • Sleep timer",
+                    onClick = onOpenPlayback
+                )
+
+                SpotifyCategoryRow(
+                    icon = Icons.Default.SmartDisplay,
+                    title = "Conteúdo e exibição",
+                    subtitle = "Canvas • Canvas no Wi-Fi • Letras sincronizadas",
+                    onClick = onOpenContentDisplay
+                )
+
+                SpotifyCategoryRow(
+                    icon = Icons.Default.Storage,
+                    title = "Armazenamento",
+                    subtitle = "Espaço ocupado • Limpar cache do app",
+                    onClick = onOpenStorage
+                )
+
+                SpotifyCategoryRow(
+                    icon = Icons.Default.Info,
+                    title = "Sobre",
+                    subtitle = "Versão do aplicativo • Change Log",
+                    onClick = onOpenAbout
+                )
+
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Sub-tela de Armazenamento (Storage):
+ * Gráfico de barra proporcional estilo Spotify, detalhamento por categoria e ação de Limpar Cache
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StorageSettingsScreen(
+    breakdown: StorageBreakdown?,
+    onClearCache: () -> Unit,
+    onRefresh: () -> Unit,
+    onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -203,11 +641,12 @@ private fun SettingsMainContent(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Configurações",
+                            text = "Armazenamento",
                             fontFamily = YouTubeSansFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
-                            color = Color.White
+                            color = Color.White,
+                            modifier = Modifier.padding(end = 48.dp)
                         )
                     }
                 },
@@ -220,18 +659,7 @@ private fun SettingsMainContent(
                         )
                     }
                 },
-                actions = {
-                    IconButton(onClick = { /* Pesquisa de configurações */ }) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Pesquisar",
-                            tint = Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SpotifyBlack
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
             )
         }
     ) { innerPadding ->
@@ -240,120 +668,112 @@ private fun SettingsMainContent(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            Spacer(modifier = Modifier.height(14.dp))
+            SpotifySectionHeader(title = "Uso de armazenamento")
 
-            // Card / Header do App (sem conta online, com foco no Nerf Music)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
+            val cacheSize = breakdown?.cacheSizeBytes ?: 0L
+            val downloadsSize = breakdown?.downloadsSizeBytes ?: 0L
+            val freeSpace = breakdown?.freeSpaceBytes ?: 1L
+            val totalSpace = breakdown?.totalDeviceSizeBytes?.coerceAtLeast(1L) ?: 1L
+
+            // Barra visual de armazenamento proporcional (estilo Spotify)
+            Column(modifier = Modifier.padding(vertical = 12.dp)) {
+                Row(
                     modifier = Modifier
-                        .size(68.dp)
-                        .clip(CircleShape)
-                        .background(SpotifyCardBg),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(SpotifyStorageFree)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Headphones,
-                        contentDescription = "Nerf Music",
-                        tint = SpotifyGreen,
-                        modifier = Modifier.size(36.dp)
+                    val cacheFraction = (cacheSize.toFloat() / totalSpace.toFloat()).coerceIn(0.01f, 0.4f)
+                    val downloadsFraction = (downloadsSize.toFloat() / totalSpace.toFloat()).coerceIn(0.01f, 0.4f)
+
+                    Box(
+                        modifier = Modifier
+                            .weight(downloadsFraction)
+                            .fillMaxHeight()
+                            .background(SpotifyStorageDownloads)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(cacheFraction)
+                            .fillMaxHeight()
+                            .background(SpotifyStorageCache)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight((1f - cacheFraction - downloadsFraction).coerceAtLeast(0.1f))
+                            .fillMaxHeight()
+                            .background(SpotifyStorageFree)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
+                // Legenda de cores
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    StorageLegendItem(color = SpotifyStorageDownloads, label = "Downloads")
+                    StorageLegendItem(color = SpotifyStorageCache, label = "Cache")
+                    StorageLegendItem(color = SpotifyStorageFree, label = "Espaço livre")
+                }
+            }
+
+            HorizontalDivider(color = Color(0x1AFFFFFF), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 8.dp))
+
+            // Detalhes numéricos
+            StorageDetailRow(
+                title = "Músicas baixadas offline",
+                size = StorageUtils.formatFileSize(downloadsSize),
+                dotColor = SpotifyStorageDownloads
+            )
+
+            StorageDetailRow(
+                title = "Cache temporário",
+                size = StorageUtils.formatFileSize(cacheSize),
+                dotColor = SpotifyStorageCache
+            )
+
+            StorageDetailRow(
+                title = "Espaço livre no dispositivo",
+                size = StorageUtils.formatFileSize(freeSpace),
+                dotColor = SpotifyStorageFree
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Botão Limpar Cache (estilo Spotify)
+            Button(
+                onClick = onClearCache,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SpotifyCardBg,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
                 Text(
-                    text = "Nerf Music",
+                    text = "Limpar cache",
                     fontFamily = YouTubeSansFontFamily,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 19.sp,
-                    color = Color.White
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = Color.Transparent,
-                    border = BorderStroke(1.dp, SpotifyTextSecondary.copy(alpha = 0.35f))
-                ) {
-                    Text(
-                        text = "Música sem limites • Livre de anúncios",
-                        fontFamily = YouTubeSansFontFamily,
-                        fontSize = 12.sp,
-                        color = SpotifyTextSecondary,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Cartões de acesso rápido em grade de 2 colunas
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                QuickAccessCard(
-                    icon = if (dataSaverMode != DataSaverMode.ALWAYS_OFF) Icons.Default.DataSaverOn else Icons.Default.DataSaverOff,
-                    title = "Economia de dados",
-                    status = dataSaverMode.displayName,
-                    onClick = onOpenDataSaver,
-                    modifier = Modifier.weight(1f)
-                )
-
-                QuickAccessCard(
-                    icon = Icons.Default.GraphicEq,
-                    title = "Qualidade do áudio",
-                    status = audioQuality.displayName,
-                    onClick = onOpenMediaQuality,
-                    modifier = Modifier.weight(1f)
+                    fontSize = 15.sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Lista de categorias de navegação hierárquica (padrão Spotify)
-            SpotifyCategoryRow(
-                icon = Icons.Default.Savings,
-                title = "Economia de dados",
-                subtitle = "Modo economia de dados • Downloads via dados móveis",
-                onClick = onOpenDataSaver
-            )
-
-            SpotifyCategoryRow(
-                icon = Icons.Default.Tune,
-                title = "Qualidade da mídia",
-                subtitle = "Qualidade no Wi-Fi • Qualidade em dados móveis",
-                onClick = onOpenMediaQuality
-            )
-
-            SpotifyCategoryRow(
-                icon = Icons.Default.PlayCircleOutline,
-                title = "Reprodução",
-                subtitle = "Crossfade • Sem pausas • Automix",
-                onClick = onOpenPlayback
-            )
-
-            SpotifyCategoryRow(
-                icon = Icons.Default.SmartDisplay,
-                title = "Conteúdo e exibição",
-                subtitle = "Canvas • Canvas no Wi-Fi • Letras sincronizadas",
-                onClick = onOpenContentDisplay
-            )
-
-            SpotifyCategoryRow(
-                icon = Icons.Default.Info,
-                title = "Sobre",
-                subtitle = "Versão do aplicativo • Change Log",
-                onClick = onOpenAbout
+            Text(
+                text = "Seus downloads e músicas salvas para reprodução offline não serão removidos.",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 12.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -361,9 +781,59 @@ private fun SettingsMainContent(
     }
 }
 
+@Composable
+private fun StorageLegendItem(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = label,
+            fontFamily = YouTubeSansFontFamily,
+            fontSize = 12.sp,
+            color = SpotifyTextSecondary
+        )
+    }
+}
+
+@Composable
+private fun StorageDetailRow(title: String, size: String, dotColor: Color) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = title,
+            fontFamily = YouTubeSansFontFamily,
+            fontSize = 14.sp,
+            color = Color.White,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = size,
+            fontFamily = YouTubeSansFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            color = SpotifyTextSecondary
+        )
+    }
+}
+
 /**
- * Sub-tela de Economia de Dados (Data-saving and offline):
- * Idêntica ao Spotify (Modo economia de dados com opções, Downloads via dados móveis, Canvas no Wi-Fi)
+ * Sub-tela de Economia de Dados (Data-saving and offline)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -408,9 +878,7 @@ private fun DataSaverSettingsScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SpotifyBlack
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
             )
         }
     ) { innerPadding ->
@@ -463,8 +931,7 @@ private fun DataSaverSettingsScreen(
 }
 
 /**
- * Sub-tela de Qualidade da Mídia (Media Quality):
- * Idêntica ao Spotify (Aviso de alteração na próxima faixa, qualidade no Wi-Fi e qualidade em dados móveis)
+ * Sub-tela de Qualidade da Mídia (Media Quality)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -507,9 +974,7 @@ private fun MediaQualitySettingsScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SpotifyBlack
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
             )
         }
     ) { innerPadding ->
@@ -520,7 +985,6 @@ private fun MediaQualitySettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // Nota explicativa estilo Spotify
             Surface(
                 color = SpotifyNoteBg,
                 shape = RoundedCornerShape(8.dp),
@@ -586,6 +1050,404 @@ private fun MediaQualitySettingsScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+/**
+ * Sub-tela de Reprodução (Playback):
+ * Inclui Crossfade, Gapless, Automix, Equalizador nativo e Temporizador de sono
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaybackSettingsScreen(
+    crossfadeSeconds: Int,
+    onCrossfadeChange: (Int) -> Unit,
+    isGaplessEnabled: Boolean,
+    onGaplessChange: (Boolean) -> Unit,
+    isAutomixEnabled: Boolean,
+    onAutomixChange: (Boolean) -> Unit,
+    sleepTimerRemainingSeconds: Long?,
+    sleepTimerAtEndOfTrack: Boolean,
+    onOpenSleepTimer: () -> Unit,
+    onOpenEqualizer: () -> Unit,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Scaffold(
+        modifier = modifier
+            .fillMaxSize()
+            .background(SpotifyBlack),
+        containerColor = SpotifyBlack,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Reprodução",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White,
+                            modifier = Modifier.padding(end = 48.dp)
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Voltar",
+                            tint = Color.White
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            SpotifySectionHeader(title = "Transições de faixas")
+
+            SpotifySliderItem(
+                title = "Crossfade",
+                subtitle = "Permite fazer crossfade entre músicas",
+                value = crossfadeSeconds,
+                valueRange = 0f..12f,
+                steps = 11,
+                minLabel = "0s",
+                maxLabel = "12s",
+                onValueChange = onCrossfadeChange
+            )
+
+            SpotifySwitchItem(
+                title = "Reprodução sem pausas",
+                subtitle = "Elimina pausas e silêncio entre faixas consecutivas.",
+                checked = isGaplessEnabled,
+                onCheckedChange = onGaplessChange
+            )
+
+            SpotifySwitchItem(
+                title = "Automix",
+                subtitle = "Permite transições fluidas e inteligentes entre as músicas de playlists.",
+                checked = isAutomixEnabled,
+                onCheckedChange = onAutomixChange
+            )
+
+            SpotifySectionHeader(title = "Controles de áudio")
+
+            // Equalizador de som
+            SpotifyActionItemWithIcon(
+                title = "Equalizador",
+                subtitle = "Abre o painel de equalização de áudio do dispositivo",
+                trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
+                onClick = onOpenEqualizer
+            )
+
+            // Temporizador de sono (Sleep Timer)
+            val sleepTimerStatusText = when {
+                sleepTimerAtEndOfTrack -> "Pausará ao final desta música"
+                sleepTimerRemainingSeconds != null -> {
+                    val mins = sleepTimerRemainingSeconds / 60
+                    val secs = sleepTimerRemainingSeconds % 60
+                    "Pausará em %02d:%02d min".format(mins, secs)
+                }
+                else -> "Desativado"
+            }
+
+            SpotifyActionItemWithStatus(
+                title = "Temporizador de sono",
+                subtitle = "Pausa automaticamente a reprodução após o período escolhido",
+                statusText = sleepTimerStatusText,
+                isStatusActive = sleepTimerRemainingSeconds != null || sleepTimerAtEndOfTrack,
+                onClick = onOpenSleepTimer
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Modal BottomSheet estilo Spotify para o Temporizador de Sono
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SleepTimerBottomSheet(
+    remainingSeconds: Long?,
+    isEndOfTrack: Boolean,
+    onSelectMinutes: (Int) -> Unit,
+    onSelectEndOfTrack: () -> Unit,
+    onCancelTimer: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = SpotifyCardBg,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = SpotifyTextSecondary) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Temporizador de sono",
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = Color.White,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            val timerOptions = listOf(5, 15, 30, 45, 60)
+            timerOptions.forEach { mins ->
+                val label = if (mins >= 60) "1 hora" else "$mins minutos"
+                SleepTimerOptionRow(
+                    label = label,
+                    selected = remainingSeconds != null && (remainingSeconds + 30) / 60 == mins.toLong() && !isEndOfTrack,
+                    onClick = { onSelectMinutes(mins) }
+                )
+            }
+
+            SleepTimerOptionRow(
+                label = "Fim da música atual",
+                selected = isEndOfTrack,
+                onClick = onSelectEndOfTrack
+            )
+
+            if (remainingSeconds != null || isEndOfTrack) {
+                HorizontalDivider(color = Color(0x1AFFFFFF), thickness = 0.5.dp, modifier = Modifier.padding(vertical = 8.dp))
+
+                SleepTimerOptionRow(
+                    label = "Desativar temporizador",
+                    selected = false,
+                    isDestructive = true,
+                    onClick = onCancelTimer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SleepTimerOptionRow(
+    label: String,
+    selected: Boolean,
+    isDestructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontFamily = YouTubeSansFontFamily,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            fontSize = 15.sp,
+            color = when {
+                selected -> SpotifyGreen
+                isDestructive -> Color(0xFFFF5252)
+                else -> Color.White
+            },
+            modifier = Modifier.weight(1f)
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = SpotifyGreen,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Sub-tela de Conteúdo e Exibição (Content and Display)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ContentDisplaySettingsScreen(
+    isCanvasEnabled: Boolean,
+    onCanvasChange: (Boolean) -> Unit,
+    isCanvasWifiOnly: Boolean,
+    onCanvasWifiOnlyChange: (Boolean) -> Unit,
+    isLyricsAboveTitleEnabled: Boolean,
+    onLyricsAboveTitleChange: (Boolean) -> Unit,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Scaffold(
+        modifier = modifier
+            .fillMaxSize()
+            .background(SpotifyBlack),
+        containerColor = SpotifyBlack,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Conteúdo e exibição",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White,
+                            modifier = Modifier.padding(end = 48.dp)
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Voltar",
+                            tint = Color.White
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            SpotifySectionHeader(title = "Vídeos e Canvas")
+
+            SpotifySwitchItem(
+                title = "Canvas",
+                subtitle = "Exibe efeitos visuais curtos em loop nas músicas.",
+                checked = isCanvasEnabled,
+                onCheckedChange = onCanvasChange
+            )
+
+            SpotifySwitchItem(
+                title = "Canvas apenas no Wi-Fi",
+                subtitle = "Economiza dados móveis reproduzindo o Canvas somente conectado ao Wi-Fi.",
+                checked = isCanvasWifiOnly,
+                enabled = isCanvasEnabled,
+                onCheckedChange = onCanvasWifiOnlyChange
+            )
+
+            SpotifySectionHeader(title = "Letras")
+
+            SpotifySwitchItem(
+                title = "Letras sincronizadas no Player",
+                subtitle = "Exibe a frase da letra em tempo real logo acima do título da faixa.",
+                checked = isLyricsAboveTitleEnabled,
+                onCheckedChange = onLyricsAboveTitleChange
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Sub-tela Sobre (About)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AboutSettingsScreen(
+    onCheckUpdates: () -> Unit,
+    onShowChangeLog: () -> Unit,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Scaffold(
+        modifier = modifier
+            .fillMaxSize()
+            .background(SpotifyBlack),
+        containerColor = SpotifyBlack,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Sobre",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White,
+                            modifier = Modifier.padding(end = 48.dp)
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Voltar",
+                            tint = Color.White
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            SpotifySectionHeader(title = "Sobre o Nerf Music")
+
+            SpotifyActionItem(
+                title = "Versão do aplicativo",
+                subtitle = "Nerf Music v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                onClick = onCheckUpdates
+            )
+
+            SpotifyActionItem(
+                title = "Novidades da versão (Change Log)",
+                subtitle = "Relembre os novos recursos adicionados nesta versão",
+                onClick = onShowChangeLog
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Título de seção em sub-telas do Spotify (negrito, branco, espaçamento característico)
+ */
+@Composable
+private fun SpotifySectionHeader(title: String) {
+    Text(
+        text = title,
+        fontFamily = YouTubeSansFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp,
+        color = Color.White,
+        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+    )
 }
 
 /**
@@ -739,283 +1601,7 @@ private fun SpotifyCategoryRow(
 }
 
 /**
- * Sub-tela de Reprodução (Playback):
- * Idêntica à página Playback do Spotify (Transições de faixas, Crossfade slider, Gapless, Automix)
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PlaybackSettingsScreen(
-    crossfadeSeconds: Int,
-    onCrossfadeChange: (Int) -> Unit,
-    isGaplessEnabled: Boolean,
-    onGaplessChange: (Boolean) -> Unit,
-    isAutomixEnabled: Boolean,
-    onAutomixChange: (Boolean) -> Unit,
-    onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(SpotifyBlack),
-        containerColor = SpotifyBlack,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Reprodução",
-                            fontFamily = YouTubeSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White,
-                            modifier = Modifier.padding(end = 48.dp)
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Voltar",
-                            tint = Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SpotifyBlack
-                )
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            SpotifySectionHeader(title = "Transições de faixas")
-
-            SpotifySliderItem(
-                title = "Crossfade",
-                subtitle = "Permite fazer crossfade entre músicas",
-                value = crossfadeSeconds,
-                valueRange = 0f..12f,
-                steps = 11,
-                minLabel = "0s",
-                maxLabel = "12s",
-                onValueChange = onCrossfadeChange
-            )
-
-            SpotifySwitchItem(
-                title = "Reprodução sem pausas",
-                subtitle = "Elimina pausas e silêncio entre faixas consecutivas.",
-                checked = isGaplessEnabled,
-                onCheckedChange = onGaplessChange
-            )
-
-            SpotifySwitchItem(
-                title = "Automix",
-                subtitle = "Permite transições fluidas e inteligentes entre as músicas de playlists.",
-                checked = isAutomixEnabled,
-                onCheckedChange = onAutomixChange
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-    }
-}
-
-/**
- * Sub-tela de Conteúdo e Exibição (Content and Display):
- * Idêntica à página Content and display do Spotify (Canvas, Canvas no Wi-Fi, Letras sincronizadas)
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ContentDisplaySettingsScreen(
-    isCanvasEnabled: Boolean,
-    onCanvasChange: (Boolean) -> Unit,
-    isCanvasWifiOnly: Boolean,
-    onCanvasWifiOnlyChange: (Boolean) -> Unit,
-    isLyricsAboveTitleEnabled: Boolean,
-    onLyricsAboveTitleChange: (Boolean) -> Unit,
-    onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(SpotifyBlack),
-        containerColor = SpotifyBlack,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Conteúdo e exibição",
-                            fontFamily = YouTubeSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White,
-                            modifier = Modifier.padding(end = 48.dp)
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Voltar",
-                            tint = Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SpotifyBlack
-                )
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            SpotifySectionHeader(title = "Vídeos e Canvas")
-
-            SpotifySwitchItem(
-                title = "Canvas",
-                subtitle = "Exibe efeitos visuais curtos em loop nas músicas.",
-                checked = isCanvasEnabled,
-                onCheckedChange = onCanvasChange
-            )
-
-            SpotifySwitchItem(
-                title = "Canvas apenas no Wi-Fi",
-                subtitle = "Economiza dados móveis reproduzindo o Canvas somente conectado ao Wi-Fi.",
-                checked = isCanvasWifiOnly,
-                enabled = isCanvasEnabled,
-                onCheckedChange = onCanvasWifiOnlyChange
-            )
-
-            SpotifySectionHeader(title = "Letras")
-
-            SpotifySwitchItem(
-                title = "Letras sincronizadas no Player",
-                subtitle = "Exibe a frase da letra em tempo real logo acima do título da faixa.",
-                checked = isLyricsAboveTitleEnabled,
-                onCheckedChange = onLyricsAboveTitleChange
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-    }
-}
-
-/**
- * Sub-tela Sobre (About):
- * Exibe versão do aplicativo e acesso ao Change Log
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AboutSettingsScreen(
-    onCheckUpdates: () -> Unit,
-    onShowChangeLog: () -> Unit,
-    onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Scaffold(
-        modifier = modifier
-            .fillMaxSize()
-            .background(SpotifyBlack),
-        containerColor = SpotifyBlack,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Sobre",
-                            fontFamily = YouTubeSansFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = Color.White,
-                            modifier = Modifier.padding(end = 48.dp)
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Voltar",
-                            tint = Color.White
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = SpotifyBlack
-                )
-            )
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            SpotifySectionHeader(title = "Sobre o Nerf Music")
-
-            SpotifyActionItem(
-                title = "Versão do aplicativo",
-                subtitle = "Nerf Music v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
-                onClick = onCheckUpdates
-            )
-
-            SpotifyActionItem(
-                title = "Novidades da versão (Change Log)",
-                subtitle = "Relembre os novos recursos adicionados nesta versão",
-                onClick = onShowChangeLog
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-    }
-}
-
-/**
- * Título de seção em sub-telas do Spotify (negrito, branco, espaçamento característico)
- */
-@Composable
-private fun SpotifySectionHeader(title: String) {
-    Text(
-        text = title,
-        fontFamily = YouTubeSansFontFamily,
-        fontWeight = FontWeight.Bold,
-        fontSize = 16.sp,
-        color = Color.White,
-        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-    )
-}
-
-/**
- * Item de configuração com Switch no estilo oficial do Spotify:
- * - Título em destaque
- * - Descrição explicativa
- * - Switch com trilha verde Spotify (#1ED760) quando ativo
+ * Item de configuração com Switch no estilo oficial do Spotify
  */
 @Composable
 private fun SpotifySwitchItem(
@@ -1065,10 +1651,7 @@ private fun SpotifySwitchItem(
 }
 
 /**
- * Item de Slider no estilo Spotify (Crossfade):
- * - Título e status atual ("Desativado" ou "${seconds}s" em verde Spotify)
- * - Slider com cor ativa verde Spotify e trilha inativa cinza
- * - Rótulos inferior esquerdo e direito (0s / 12s)
+ * Item de Slider no estilo Spotify (Crossfade)
  */
 @Composable
 private fun SpotifySliderItem(
@@ -1157,7 +1740,104 @@ private fun SpotifySliderItem(
 }
 
 /**
- * Item clicável de ação em sub-tela do Spotify
+ * Item clicável com badge de status dinâmico (ex: Temporizador de sono)
+ */
+@Composable
+private fun SpotifyActionItemWithStatus(
+    title: String,
+    subtitle: String,
+    statusText: String,
+    isStatusActive: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 17.sp
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = statusText,
+            fontFamily = YouTubeSansFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = if (isStatusActive) SpotifyGreen else SpotifyTextSecondary
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = SpotifyTextSecondary.copy(alpha = 0.6f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * Item clicável de ação com ícone final específico
+ */
+@Composable
+private fun SpotifyActionItemWithIcon(
+    title: String,
+    subtitle: String,
+    trailingIcon: ImageVector,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 17.sp
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Icon(
+            imageVector = trailingIcon,
+            contentDescription = null,
+            tint = SpotifyTextSecondary.copy(alpha = 0.8f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * Item clicável de ação padrão em sub-tela do Spotify
  */
 @Composable
 private fun SpotifyActionItem(
