@@ -7,55 +7,37 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ## [1.1.0] - 2026-10-24
 
 ### Adicionado
-- **Home Dinâmica YouTube Music 9.41 (Paridade Visual e Comportamental):**
-  - **Speed Dial Paginado (3x3):** Grade de 3 colunas por 3 linhas (9 cards por página) com paginação horizontal contínua (`HorizontalPager`) e pontos indicadores de página centralizados.
-  - **Integração de Bibliotecas no Speed Dial:** Inclusão automática das playlists criadas pelo usuário, atalho exclusivo de "Músicas Curtidas" com gradiente magenta/laranja e músicas recentes filtradas por afinidade acústica.
-  - **Feedback Visual Ativo no Speed Dial:** Borda branca de destaque de `2.dp`, mini equalizador animado no canto superior direito (`AnimatedEqualizerBars`) e barra de progresso de reprodução em vermelho oficial (`YtmRed`) na base do card ativo.
-  - **Dinamismo Temporal e Contextual:** Módulo `HomeFeedSynthesizer` que adapta as prateleiras em tempo real baseado no dia da semana e horário:
-    - *Fim de semana:* "Para o fim de semana" (strapline "CHURRASCO, FESTA E DESCONTRAÇÃO") com botão de atalho "Reproduzir tudo".
-    - *Manhã:* "Energia para o seu dia".
-    - *Tarde:* "Foco e ritmo".
-    - *Noite:* "Para desacelerar".
-    - *Madrugada:* "Madrugada calma".
-  - **Seção Covers e Remixes:** Prateleira horizontal dinâmica com filtro estrito de versões alternativas (*Slowed*, *Sped Up*, *Remixes*, *VIP Edits* e *Covers*) respeitando o gênero musical em reprodução.
-  - **Seção Seus Downloads:** Prateleira elegante com cartões em gradiente oficial para "Músicas Curtidas" (`#8A2387` a `#F27121`) e "Mix Offline" (`#4A00E0` a `#8E2DE2`), permitindo reprodução com um único toque.
-  - **Hero Card "Sua Descoberta Diária":** Card nobre com arte em destaque, badge `NOVA DESCOBERTA`, botão Play branco e assinatura contextual em itálico *"Parecido com [Música] de [Artista]"*.
-  - **Suporte a Ações Rápidas da Home:** `MusicViewModel.handleHomeTrackClick` para redirecionamento inteligente de toques em atalhos de curtidas, downloads locais, playlists do usuário ou faixas individuais.
+- **Transições de Música & Motor de Áudio (`Song Transitions`):**
+  - **Crossfade Suave com Curva de Potência Constante (0s a 12s):** Arquitetura Dual-ExoPlayer sincronizada, isolamento de foco de áudio e pré-buffer contínuo para fusão perfeita entre faixas.
+  - **Reprodução Sem Pausas (Gapless Playback):** Encadeamento contínuo nativo com transição de frame zero entre músicas consecutivas.
+  - **Automix Inteligente:** Mixagens naturais e dinâmicas projetadas para reprodução contínua em playlists e rádios.
+  - **Equalizador Nativo:** Integração com o painel de efeitos de áudio profissional do Android vinculado à sessão de áudio ativa.
+  - **Temporizador de Sono (Sleep Timer):** Desligamento programado em 15, 30, 45, 60 minutos ou ao término da faixa atual, com fade-out gradual de volume.
+
+- **Home Dinâmica YouTube Music 9.41 (`HomeFeedSynthesizer`):**
+  - **Speed Dial Paginado (3x3):** Grade de 9 cards por página com paginação horizontal contínua (`HorizontalPager`) e pontos indicadores de página centralizados.
+  - **Feedback Visual Ativo no Início:** Borda branca de `2.dp`, mini equalizador animado no canto superior direito (`AnimatedEqualizerBars`) e barra de progresso vermelha na base do card ativo.
+  - **Dinamismo Temporal e Contextual:** Adaptação em tempo real baseada no dia da semana e horário (Fim de semana / Churrasco com botão "Reproduzir tudo", Energia matinal, Foco da tarde, Vibe noturna e Madrugada calma).
+  - **Seção Covers e Remixes:** Prateleira horizontal dinâmica filtrando estritamente versões *Slowed*, *Sped Up*, *Remixes*, *VIP Edits* e *Covers*.
+  - **Seção Seus Downloads:** Prateleira com cartões em gradiente oficial para Músicas Curtidas e Mix Offline com ação de reprodução imediata.
+  - **Hero Card "Sua Descoberta Diária":** Arte em destaque, badge `NOVA DESCOBERTA`, botão Play branco e assinatura em itálico *"Parecido com [Música] de [Artista]"*.
+
+- **Smart Radio Engine & Afinidade Contínua:**
+  - Proporção áurea de novidade / familiaridade (60/40) e fila infinita sem repetições consecutivas de um mesmo artista.
+  - Guarda de isolamento acústico estrito (`clusterArtists`) para impedir vazamento de faixas fora de gênero na rádio.
+  - Repositório de Afinidade do Usuário (`UserAffinityRepository`) com aprendizado contínuo: cálculo de *Skip Penalty* para faixas puladas antes de 30s e bonificação para faixas ouvidas até o fim ou curtidas.
+  - Correção definitiva de durações no catálogo, rádio e fila, eliminando qualquer marcador provisório (`--:--`).
+
+- **Central de Configurações no Padrão Spotify:**
+  - Navegação hierárquica fluida por categorias (Economia de Dados, Qualidade da Mídia, Reprodução, Conteúdo e Exibição, Armazenamento, Sobre) com barra de pesquisa instantânea.
+  - Gerenciador de Armazenamento com gráfico proporcional e limpeza rápida de cache em 1 toque sem apagar faixas baixadas.
+  - Diálogo de Change Log in-app com container rolável vertical (`verticalScroll`), acessível pelo menu Sobre ou na inicialização pós-update.
 
 ---
 
-### Smart Radio & Algoritmo (Grupo 1)
+## [1.0.8] - 2026-10-23
 
 ### Adicionado
-- **Smart Radio Engine (Motor de Rádio e Fila Infinita Premium):**
-  - Algoritmo de proporção áurea (60% descoberta do mesmo cluster / 40% familiaridade do usuário).
-  - Repositório de Afinidade do Usuário (`UserAffinityRepository`) com aprendizado contínuo:
-    - Cálculo de *Skip Penalty* para faixas puladas nos primeiros 30 segundos.
-    - Bonificação de afinidade para faixas ouvidas até o fim ou curtidas.
-  - Isolamento estrito de cluster acústico (`clusterArtists`) para impedir vazamento de faixas fora de contexto de gênero.
-  - Fila inteligente sem repetições consecutivas do mesmo artista.
-
-### Corrigido
-- **Resolução de Durações no Catálogo e na Fila:**
-  - Extração resiliente de durações reais em milissegundos e texto legível a partir de payloads multilíngues do InnerTube (`simpleText`, `runs`, acessibilidade PT/EN).
-  - Eliminação de marcadores provisórios `--:--` na fila do player e no histórico.
-  - Preservação e enriquecimento automático de durações cacheadas em SharedPreferences via `UserHistoryRepository.updateTrackDuration`.
-
----
-
-## [1.5.0] - 2026-10-24
-
-### Adicionado
-- **Equalizador Nativo de 5 Bandas:** Suporte integrado aos efeitos de áudio do sistema (`AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL`).
-- **Sleep Timer (Temporizador de Suspensão):** Desligamento gradual da música em 15, 30, 45, 60 minutos ou ao término da faixa atual.
-- **Gerenciador de Armazenamento e Limpeza de Cache:** Detalhamento do espaço ocupado por capas, cache de áudio e dados do aplicativo com botão de limpeza rápida.
-- **Personalização de Aparência:** Modos de visualização em grade ou lista para a Biblioteca, controle de exibição de letras acima do título e seleção de qualidade de áudio.
-
----
-
-## [1.4.0] - 2026-10-23
-
-### Adicionado
-- **Spotify Canvas Integration:** Exibição contínua de loops de vídeo curtos em faixas compatíveis com opção de economia de dados móveis (Wi-Fi apenas).
-- **Letras Sincronizadas em Tela Cheia:** Rolagem automática linha a linha com suporte a salto temporal interativo.
-- **Transições Suaves de Áudio:** Efeito de crossfade entre faixas e prefetch automático da próxima música na fila.
+- **Aba Biblioteca Completa (Estilo YTM):** Playlists personalizadas, músicas salvas e downloads offline em múltiplos blocos paralelos.
+- **Letras em Tela Cheia (Estilo Apple Music):** Efeito Aurora Blur dinâmico baseado nas cores da capa e cápsula de volume interativa.
+- **Gestos Fluidos & Motion no Player (120Hz):** Gesto 1:1 de fechamento do player com morphing de capa e fila "A Seguir" com 3 estágios.

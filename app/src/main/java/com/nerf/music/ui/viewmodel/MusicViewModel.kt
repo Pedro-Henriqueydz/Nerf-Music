@@ -524,19 +524,30 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🚀 NOVA TELA INICIAL (ESTILO YOUTUBE MUSIC):
-            • Início 3x3 com Swipe: Navegue com facilidade pelas suas músicas recentes, playlists pessoais e atalho de Músicas Curtidas em uma grade prática e dinâmica.
-            • Capas Vivas: Acompanhe a reprodução com borda iluminada, equalizador em tempo real e barra de progresso na própria capa.
-            • Músicas para o Seu Momento: Recomendações automáticas que mudam com o seu dia — como faixas para Churrasco no fim de semana, energia de manhã e relax à noite.
-            • Covers e Remixes: Suas versões slowed, sped up e edits preferidos reunidos em uma prateleira exclusiva.
-            • Seus Downloads: Acesse suas músicas curtidas e faixas offline com um único toque.
-            • Descoberta do Dia: Uma recomendação especial diária feita sob medida para o seu gosto.
+            ✨ TRANSIÇÕES DE MÚSICA & EXPERIÊNCIA DE SOM:
+            • Crossfade Suave (0s a 12s): Chega de cortes bruscos entre as músicas! O final de uma faixa se funde suavemente com o início da próxima no tempo que você escolher.
+            • Reprodução Sem Pausas (Gapless): Música ininterrupta, ideal para curtir shows ao vivo e álbuns contínuos sem nenhum segundo de silêncio.
+            • Automix Inteligente: O app cria mixagens naturais entre faixas para dar ritmo de festa às suas playlists.
+            • Equalizador do Sistema: Acesse o painel de equalização direto das configurações para turbinar os graves ou ajustar o som ao seu gosto.
+            • Temporizador de Sono (Sleep Timer): Programe para desligar a música em 15, 30, 45, 60 minutos ou ao terminar a música atual, com diminuição suave do volume.
 
-            📻 RÁDIO E RECOMENDAÇÕES MUITO MAIS INTELIGENTES:
-            • Rádio sem Repetições Chatas: O algoritmo agora equilibra novidades com faixas que você curte, sem ficar repetindo o mesmo artista seguidas vezes.
-            • Respeito ao que Você Ouve: Músicas que você pula com frequência deixam de tocar; músicas que você escuta até o fim ganham prioridade máxima.
-            • Foco no Seu Gênero: Nada de estilos desconexos misturados na sua rádio favorita.
-            • Durações Reais: Tempo de música sempre preciso e visível na fila e no player.
+            🚀 NOVA TELA INICIAL (ESTILO YOUTUBE MUSIC 9.41):
+            • Início 3x3 com Swipe: Suas músicas recentes, playlists e atalho de Músicas Curtidas em uma grade dinâmica de 9 cards com navegação por gestos laterais.
+            • Capas Vivas no Início: Acompanhe a música atual com borda em destaque, equalizador animado ao vivo e barra de progresso vermelha na própria capa.
+            • Músicas para o Seu Momento: O início se adapta ao seu dia — sugerindo faixas para Churrasco no fim de semana, energia pela manhã e relax à noite.
+            • Covers e Remixes Exclusivos: Uma prateleira feita só com versões alternativas (slowed, sped up, remixes e VIP edits) do seu estilo.
+            • Seus Downloads Rápidos: Seus downloads e músicas curtidas em cartões com gradiente vibrante para tocar com um só toque.
+            • Descoberta do Dia: Um card especial diário com músicas parecidas com o que você mais ouve.
+
+            🧠 RÁDIO INTELIGENTE & SEM REPETIÇÕES:
+            • Rádio com Proporção Áurea: 60% novidades do mesmo gênero e 40% músicas queridinhas do seu histórico, sem repetir o mesmo artista em sequência.
+            • Respeito ao seu Gosto (Skip Penalty): Músicas que você pula com frequência deixam de tocar; faixas que você escuta até o fim ganham preferência.
+            • Foco no Estilo: Chega de estilos nada a ver invadindo a sua rádio.
+            • Durações Reais: Todas as músicas agora mostram o tempo de duração exato em minutos e segundos na fila e no player.
+
+            ⚙️ NOVA CENTRAL DE CONFIGURAÇÕES & ARMAZENAMENTO:
+            • Visual Estilo Spotify: Configurações elegantes, organizadas por categorias e com barra de busca rápida para achar qualquer opção.
+            • Gerenciador de Armazenamento: Veja com precisão quanto espaço é ocupado por downloads e cache, com botão de limpeza rápida para liberar memória do celular.
         """.trimIndent()
     }
 
