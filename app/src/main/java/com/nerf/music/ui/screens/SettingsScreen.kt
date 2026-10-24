@@ -35,6 +35,9 @@ import androidx.compose.ui.unit.sp
 import com.nerf.music.BuildConfig
 import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.data.repository.DataSaverMode
+import com.nerf.music.data.repository.DownloadAudioQuality
+import com.nerf.music.data.repository.SmartDownloadManager
+import com.nerf.music.data.repository.SmartDownloadSyncState
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
 import com.nerf.music.util.StorageBreakdown
@@ -117,6 +120,11 @@ fun SettingsScreen(
     val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
     val sleepTimerAtEndOfTrack by viewModel.sleepTimerAtEndOfTrack.collectAsState()
     val storageBreakdown by viewModel.storageBreakdown.collectAsState()
+    val downloadAudioQuality by viewModel.downloadAudioQuality.collectAsState()
+    val isSmartDownloadsEnabled by viewModel.isSmartDownloadsEnabled.collectAsState()
+    val smartDownloadsLimit by viewModel.smartDownloadsLimit.collectAsState()
+    val isSmartDownloadsWifiOnly by viewModel.isSmartDownloadsWifiOnly.collectAsState()
+    val smartDownloadSyncState by viewModel.smartDownloadSyncState.collectAsState()
 
     // Atualiza armazenamento ao entrar
     LaunchedEffect(Unit) {
@@ -205,6 +213,8 @@ fun SettingsScreen(
                     onSelectWifiQuality = { viewModel.setWifiAudioQuality(it) },
                     cellularQuality = cellularAudioQuality,
                     onSelectCellularQuality = { viewModel.setCellularAudioQuality(it) },
+                    downloadQuality = downloadAudioQuality,
+                    onSelectDownloadQuality = { viewModel.setDownloadAudioQuality(it) },
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
                     modifier = modifier
                 )
@@ -240,6 +250,14 @@ fun SettingsScreen(
             SettingsSubScreen.STORAGE -> {
                 StorageSettingsScreen(
                     breakdown = storageBreakdown,
+                    isSmartDownloadsEnabled = isSmartDownloadsEnabled,
+                    onSmartDownloadsEnabledChange = { viewModel.setSmartDownloadsEnabled(it) },
+                    smartDownloadsLimit = smartDownloadsLimit,
+                    onSmartDownloadsLimitChange = { viewModel.setSmartDownloadsLimit(it) },
+                    isSmartDownloadsWifiOnly = isSmartDownloadsWifiOnly,
+                    onSmartDownloadsWifiOnlyChange = { viewModel.setSmartDownloadsWifiOnly(it) },
+                    syncState = smartDownloadSyncState,
+                    onTriggerSyncNow = { viewModel.triggerSmartDownloadSyncNow() },
                     onClearCache = { viewModel.clearAppCache(context) },
                     onRefresh = { viewModel.refreshStorageBreakdown(context) },
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
@@ -287,6 +305,8 @@ private fun SettingsMainContent(
             SearchableSetting("Downloads via dados móveis", "Inicia ou continua downloads sem Wi-Fi", "Economia de dados", SettingsSubScreen.DATA_SAVER),
             SearchableSetting("Qualidade do streaming no Wi-Fi", "Automática, Baixa, Normal, Alta ou Muito alta", "Qualidade da mídia", SettingsSubScreen.MEDIA_QUALITY),
             SearchableSetting("Qualidade em dados móveis", "Reduz o consumo de rede no 4G/5G", "Qualidade da mídia", SettingsSubScreen.MEDIA_QUALITY),
+            SearchableSetting("Qualidade dos downloads (Lossless)", "Lossless / Máxima Fidelidade, Muito alta, Alta ou Normal", "Qualidade da mídia", SettingsSubScreen.MEDIA_QUALITY),
+            SearchableSetting("Downloads Inteligentes (Smart Downloads)", "Limite de músicas, apenas no Wi-Fi e sincronização automática", "Armazenamento", SettingsSubScreen.STORAGE),
             SearchableSetting("Crossfade", "Transição suave e sobreposição entre faixas (0s-12s)", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Reprodução sem pausas (Gapless)", "Elimina o silêncio entre músicas consecutivas", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Automix", "Transições fluidas inteligentes em playlists", "Reprodução", SettingsSubScreen.PLAYBACK),
@@ -623,6 +643,14 @@ private fun SettingsMainContent(
 @Composable
 private fun StorageSettingsScreen(
     breakdown: StorageBreakdown?,
+    isSmartDownloadsEnabled: Boolean,
+    onSmartDownloadsEnabledChange: (Boolean) -> Unit,
+    smartDownloadsLimit: Int,
+    onSmartDownloadsLimitChange: (Int) -> Unit,
+    isSmartDownloadsWifiOnly: Boolean,
+    onSmartDownloadsWifiOnlyChange: (Boolean) -> Unit,
+    syncState: SmartDownloadSyncState,
+    onTriggerSyncNow: () -> Unit,
     onClearCache: () -> Unit,
     onRefresh: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -775,6 +803,154 @@ private fun StorageSettingsScreen(
                 lineHeight = 16.sp,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
+
+            HorizontalDivider(
+                color = Color(0x1AFFFFFF),
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 18.dp)
+            )
+
+            SpotifySectionHeader(title = "Downloads Inteligentes (Smart Downloads)")
+
+            Text(
+                text = "Baixa automaticamente suas músicas favoritas e novidades semanais para que você nunca fique sem música offline.",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            SpotifySwitchItem(
+                title = "Ativar Smart Downloads",
+                subtitle = "Mantém uma seleção offline atualizada automaticamente",
+                checked = isSmartDownloadsEnabled,
+                onCheckedChange = onSmartDownloadsEnabledChange
+            )
+
+            if (isSmartDownloadsEnabled) {
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = "Cota de músicas offline",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                // Chips de cota: 50, 100, 250, 500
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(50, 100, 250, 500).forEach { quota ->
+                        val isSelected = smartDownloadsLimit == quota
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onSmartDownloadsLimitChange(quota) },
+                            label = {
+                                Text(
+                                    text = "$quota",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 13.sp
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SpotifyGreen,
+                                selectedLabelColor = Color.Black,
+                                containerColor = SpotifyCardBg,
+                                labelColor = Color.White
+                            ),
+                            border = null,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Espaço estimado: ~${SmartDownloadManager.formatStorageEstimate(smartDownloadsLimit)} (Padrão Lossless)",
+                    fontFamily = YouTubeSansFontFamily,
+                    fontSize = 12.sp,
+                    color = SpotifyTextSecondary,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                SpotifySwitchItem(
+                    title = "Apenas no Wi-Fi",
+                    subtitle = "Sincroniza os downloads inteligentes sem gastar dados móveis",
+                    checked = isSmartDownloadsWifiOnly,
+                    onCheckedChange = onSmartDownloadsWifiOnlyChange
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Card de status da sincronização
+                Surface(
+                    color = SpotifyCardBg,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (syncState.isSyncing) "Sincronizando faixas..." else "Mix Offline pronto",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (syncState.isSyncing) {
+                                        syncState.currentTrackTitle ?: "Conectando ao catálogo..."
+                                    } else {
+                                        "${syncState.currentDownloadedCount} de ${smartDownloadsLimit} faixas disponíveis"
+                                    },
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontSize = 12.sp,
+                                    color = SpotifyTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onTriggerSyncNow,
+                                enabled = !syncState.isSyncing
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Sincronizar agora",
+                                    tint = if (syncState.isSyncing) SpotifyTextSecondary else SpotifyGreen
+                                )
+                            }
+                        }
+
+                        if (syncState.isSyncing) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { syncState.currentTrackProgress.coerceIn(0f, 1f) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = SpotifyGreen,
+                                trackColor = SpotifyTrackInactive
+                            )
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -940,6 +1116,8 @@ private fun MediaQualitySettingsScreen(
     onSelectWifiQuality: (AudioQuality) -> Unit,
     cellularQuality: AudioQuality,
     onSelectCellularQuality: (AudioQuality) -> Unit,
+    downloadQuality: DownloadAudioQuality,
+    onSelectDownloadQuality: (DownloadAudioQuality) -> Unit,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1044,6 +1222,26 @@ private fun MediaQualitySettingsScreen(
                     subtitle = quality.bitrateLabel,
                     selected = cellularQuality == quality,
                     onSelect = { onSelectCellularQuality(quality) }
+                )
+            }
+
+            SpotifySectionHeader(title = "Qualidade dos downloads")
+
+            Text(
+                text = "Escolha a fidelidade das faixas salvas para reprodução offline e Smart Downloads. O padrão Lossless extrai o áudio bruto sem compressão redutora.",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            DownloadAudioQuality.values().forEach { quality ->
+                SpotifyRadioOptionItem(
+                    title = quality.displayName,
+                    subtitle = quality.description,
+                    selected = downloadQuality == quality,
+                    onSelect = { onSelectDownloadQuality(quality) }
                 )
             }
 

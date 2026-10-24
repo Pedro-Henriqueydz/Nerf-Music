@@ -67,6 +67,10 @@ import com.nerf.music.data.repository.SpotifyCanvasRepository
 import com.nerf.music.data.repository.SpotifyCanvasRepositoryImpl
 import com.nerf.music.data.repository.LibraryRepository
 import com.nerf.music.data.repository.LibraryRepositoryImpl
+import com.nerf.music.data.repository.DownloadAudioQuality
+import com.nerf.music.data.repository.SmartDownloadManager
+import com.nerf.music.data.repository.SmartDownloadSyncState
+import com.nerf.music.work.SmartDownloadWorker
 import com.nerf.music.data.model.UserPlaylist
 import com.nerf.music.data.model.DownloadedTrack
 import com.nerf.music.data.repository.HomeFeedSynthesizer
@@ -120,6 +124,22 @@ class MusicViewModel(
 
     private val _cellularAudioQuality = MutableStateFlow(AudioQuality.AUTOMATIC)
     val cellularAudioQuality: StateFlow<AudioQuality> = _cellularAudioQuality.asStateFlow()
+    private var smartDownloadManager: SmartDownloadManager? = null
+
+    private val _downloadAudioQuality = MutableStateFlow(DownloadAudioQuality.LOSSLESS)
+    val downloadAudioQuality: StateFlow<DownloadAudioQuality> = _downloadAudioQuality.asStateFlow()
+
+    private val _isSmartDownloadsEnabled = MutableStateFlow(true)
+    val isSmartDownloadsEnabled: StateFlow<Boolean> = _isSmartDownloadsEnabled.asStateFlow()
+
+    private val _smartDownloadsLimit = MutableStateFlow(100)
+    val smartDownloadsLimit: StateFlow<Int> = _smartDownloadsLimit.asStateFlow()
+
+    private val _isSmartDownloadsWifiOnly = MutableStateFlow(true)
+    val isSmartDownloadsWifiOnly: StateFlow<Boolean> = _isSmartDownloadsWifiOnly.asStateFlow()
+
+    private val _smartDownloadSyncState = MutableStateFlow(SmartDownloadSyncState())
+    val smartDownloadSyncState: StateFlow<SmartDownloadSyncState> = _smartDownloadSyncState.asStateFlow()
 
     private var sleepTimerJob: Job? = null
     private val _sleepTimerRemainingSeconds = MutableStateFlow<Long?>(null)
@@ -294,6 +314,10 @@ class MusicViewModel(
             _isDownloadOverCellular.value = settingsRepo.isDownloadOverCellular.value
             _wifiAudioQuality.value = settingsRepo.wifiAudioQuality.value
             _cellularAudioQuality.value = settingsRepo.cellularAudioQuality.value
+            _downloadAudioQuality.value = settingsRepo.downloadAudioQuality.value
+            _isSmartDownloadsEnabled.value = settingsRepo.isSmartDownloadsEnabled.value
+            _smartDownloadsLimit.value = settingsRepo.smartDownloadsLimit.value
+            _isSmartDownloadsWifiOnly.value = settingsRepo.isSmartDownloadsWifiOnly.value
         }
         if (userHistoryRepository == null) {
             val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
@@ -335,6 +359,21 @@ class MusicViewModel(
                     _downloadedTracks.value = list
                     val ids = list.map { it.track.id }.toSet()
                     _playbackState.value = _playbackState.value.copy(downloadedTrackIds = ids)
+                }
+            }
+
+            if (smartDownloadManager == null && userSettingsRepository != null && userHistoryRepository != null) {
+                val sdManager = SmartDownloadManager(
+                    context = context.applicationContext,
+                    libraryRepository = libRepo,
+                    userSettingsRepository = userSettingsRepository!!,
+                    userHistoryRepository = userHistoryRepository!!
+                )
+                smartDownloadManager = sdManager
+                viewModelScope.launch {
+                    sdManager.syncState.collect { state ->
+                        _smartDownloadSyncState.value = state
+                    }
                 }
             }
         }
@@ -524,6 +563,17 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
+            ⚡ SMART DOWNLOADS (DOWNLOADS INTELIGENTES):
+            • Músicas Offline Automáticas: O Nerf Music agora cuida dos seus downloads por você! Suas músicas favoritas e novidades semanais são salvas automaticamente no aparelho.
+            • Cota Flexível (50 a 500 Músicas): Escolha manter 50, 100, 250 ou até 500 faixas offline com estimativa em tempo real de espaço em disco.
+            • Mix Offline Sempre Atualizado: Sincronização periódica em segundo plano via WorkManager — renova seu repertório apenas quando conectado ao Wi-Fi e com bateria segura.
+            • Rotação Inteligente: Faixas antigas não ouvidas dão lugar a novos gostos e lançamentos automaticamente. Músicas baixadas manualmente NUNCA são apagadas!
+            • Sincronização em Tempo Real: Acompanhe o progresso faixa a faixa e toque no botão de sincronizar a qualquer momento nas configurações de Armazenamento.
+
+            💎 QUALIDADE LOSSLESS / MÁXIMA FIDELIDADE (PADRÃO):
+            • Áudio Puro de Estúdio: Todos os downloads passam a ser extraídos na integridade máxima do catálogo original (Opus a 48kHz e AAC de alta resolução sem recompressão).
+            • Seletor de Qualidade Dedicado: Escolha entre Lossless (Padrão), Muito Alta (~320 kbps eq.), Alta (256 kbps) ou Normal (128 kbps para máxima economia de memória).
+
             ✨ TRANSIÇÕES DE MÚSICA & EXPERIÊNCIA DE SOM:
             • Crossfade Suave (0s a 12s): Chega de cortes bruscos entre as músicas! O final de uma faixa se funde suavemente com o início da próxima no tempo que você escolher.
             • Reprodução Sem Pausas (Gapless): Música ininterrupta, ideal para curtir shows ao vivo e álbuns contínuos sem nenhum segundo de silêncio.
@@ -1753,6 +1803,47 @@ class MusicViewModel(
     fun setCellularAudioQuality(quality: AudioQuality) {
         _cellularAudioQuality.value = quality
         userSettingsRepository?.setCellularAudioQuality(quality)
+    }
+
+    fun setDownloadAudioQuality(quality: DownloadAudioQuality) {
+        _downloadAudioQuality.value = quality
+        userSettingsRepository?.setDownloadAudioQuality(quality)
+    }
+
+    fun setSmartDownloadsEnabled(enabled: Boolean) {
+        _isSmartDownloadsEnabled.value = enabled
+        userSettingsRepository?.setSmartDownloadsEnabled(enabled)
+        applicationContext?.let { ctx ->
+            if (enabled) {
+                SmartDownloadWorker.schedule(ctx)
+                SmartDownloadWorker.triggerImmediate(ctx)
+            } else {
+                SmartDownloadWorker.cancel(ctx)
+            }
+        }
+    }
+
+    fun setSmartDownloadsLimit(limit: Int) {
+        _smartDownloadsLimit.value = limit
+        _smartDownloadSyncState.value = _smartDownloadSyncState.value.copy(targetQuota = limit)
+        userSettingsRepository?.setSmartDownloadsLimit(limit)
+        applicationContext?.let { ctx ->
+            SmartDownloadWorker.triggerImmediate(ctx)
+        }
+    }
+
+    fun setSmartDownloadsWifiOnly(wifiOnly: Boolean) {
+        _isSmartDownloadsWifiOnly.value = wifiOnly
+        userSettingsRepository?.setSmartDownloadsWifiOnly(wifiOnly)
+        applicationContext?.let { ctx ->
+            SmartDownloadWorker.schedule(ctx)
+        }
+    }
+
+    fun triggerSmartDownloadSyncNow() {
+        viewModelScope.launch {
+            smartDownloadManager?.syncNow(force = true)
+        }
     }
 
     fun setSleepTimerMinutes(minutes: Int) {

@@ -26,6 +26,17 @@ enum class AudioQuality(val displayName: String, val bitrateLabel: String) {
     VERY_HIGH("Muito alta", "Máxima fidelidade disponível")
 }
 
+/**
+ * Níveis de qualidade para downloads offline.
+ * Por padrão: LOSSLESS (áudio nativo de máxima fidelidade sem compressão adicional).
+ */
+enum class DownloadAudioQuality(val displayName: String, val description: String) {
+    LOSSLESS("Lossless (Máxima Fidelidade)", "Áudio original sem perda perceptível de estúdio (Padrão)"),
+    VERY_HIGH("Muito Alta (~320 kbps eq.)", "Altíssima fidelidade para fones avançados"),
+    HIGH("Alta (256 kbps)", "Excelente qualidade e bom equilíbrio de espaço"),
+    NORMAL("Normal (128 kbps)", "Economia máxima de armazenamento")
+}
+
 interface UserSettingsRepository {
     val isCanvasEnabled: StateFlow<Boolean>
     val isCanvasWifiOnly: StateFlow<Boolean>
@@ -44,6 +55,12 @@ interface UserSettingsRepository {
     // Qualidade de Mídia (Media Quality)
     val wifiAudioQuality: StateFlow<AudioQuality>
     val cellularAudioQuality: StateFlow<AudioQuality>
+    val downloadAudioQuality: StateFlow<DownloadAudioQuality>
+
+    // Smart Downloads (Downloads Inteligentes - YouTube Music Style)
+    val isSmartDownloadsEnabled: StateFlow<Boolean>
+    val smartDownloadsLimit: StateFlow<Int>
+    val isSmartDownloadsWifiOnly: StateFlow<Boolean>
 
     fun setCanvasEnabled(enabled: Boolean)
     fun setCanvasWifiOnly(wifiOnly: Boolean)
@@ -58,6 +75,11 @@ interface UserSettingsRepository {
     fun setDownloadOverCellular(enabled: Boolean)
     fun setWifiAudioQuality(quality: AudioQuality)
     fun setCellularAudioQuality(quality: AudioQuality)
+    fun setDownloadAudioQuality(quality: DownloadAudioQuality)
+
+    fun setSmartDownloadsEnabled(enabled: Boolean)
+    fun setSmartDownloadsLimit(limit: Int)
+    fun setSmartDownloadsWifiOnly(wifiOnly: Boolean)
 }
 
 class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
@@ -97,6 +119,18 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
     private val _cellularAudioQuality = MutableStateFlow(loadCellularAudioQuality())
     override val cellularAudioQuality: StateFlow<AudioQuality> = _cellularAudioQuality.asStateFlow()
 
+    private val _downloadAudioQuality = MutableStateFlow(loadDownloadAudioQuality())
+    override val downloadAudioQuality: StateFlow<DownloadAudioQuality> = _downloadAudioQuality.asStateFlow()
+
+    private val _isSmartDownloadsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, true))
+    override val isSmartDownloadsEnabled: StateFlow<Boolean> = _isSmartDownloadsEnabled.asStateFlow()
+
+    private val _smartDownloadsLimit = MutableStateFlow(prefs.getInt(KEY_SMART_DOWNLOADS_LIMIT, 100))
+    override val smartDownloadsLimit: StateFlow<Int> = _smartDownloadsLimit.asStateFlow()
+
+    private val _isSmartDownloadsWifiOnly = MutableStateFlow(prefs.getBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, true))
+    override val isSmartDownloadsWifiOnly: StateFlow<Boolean> = _isSmartDownloadsWifiOnly.asStateFlow()
+
     private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             KEY_CANVAS_ENABLED -> _isCanvasEnabled.value = prefs.getBoolean(KEY_CANVAS_ENABLED, true)
@@ -110,6 +144,10 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
             KEY_DOWNLOAD_OVER_CELLULAR -> _isDownloadOverCellular.value = prefs.getBoolean(KEY_DOWNLOAD_OVER_CELLULAR, false)
             KEY_WIFI_AUDIO_QUALITY -> _wifiAudioQuality.value = loadWifiAudioQuality()
             KEY_CELLULAR_AUDIO_QUALITY -> _cellularAudioQuality.value = loadCellularAudioQuality()
+            KEY_DOWNLOAD_AUDIO_QUALITY -> _downloadAudioQuality.value = loadDownloadAudioQuality()
+            KEY_SMART_DOWNLOADS_ENABLED -> _isSmartDownloadsEnabled.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, true)
+            KEY_SMART_DOWNLOADS_LIMIT -> _smartDownloadsLimit.value = prefs.getInt(KEY_SMART_DOWNLOADS_LIMIT, 100)
+            KEY_SMART_DOWNLOADS_WIFI_ONLY -> _isSmartDownloadsWifiOnly.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, true)
         }
     }
 
@@ -141,6 +179,15 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
             AudioQuality.valueOf(raw ?: AudioQuality.AUTOMATIC.name)
         } catch (_: Exception) {
             AudioQuality.AUTOMATIC
+        }
+    }
+
+    private fun loadDownloadAudioQuality(): DownloadAudioQuality {
+        val raw = prefs.getString(KEY_DOWNLOAD_AUDIO_QUALITY, DownloadAudioQuality.LOSSLESS.name)
+        return try {
+            DownloadAudioQuality.valueOf(raw ?: DownloadAudioQuality.LOSSLESS.name)
+        } catch (_: Exception) {
+            DownloadAudioQuality.LOSSLESS
         }
     }
 
@@ -200,6 +247,27 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         prefs.edit().putString(KEY_CELLULAR_AUDIO_QUALITY, quality.name).apply()
     }
 
+    override fun setDownloadAudioQuality(quality: DownloadAudioQuality) {
+        _downloadAudioQuality.value = quality
+        prefs.edit().putString(KEY_DOWNLOAD_AUDIO_QUALITY, quality.name).apply()
+    }
+
+    override fun setSmartDownloadsEnabled(enabled: Boolean) {
+        _isSmartDownloadsEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_SMART_DOWNLOADS_ENABLED, enabled).apply()
+    }
+
+    override fun setSmartDownloadsLimit(limit: Int) {
+        val valid = limit.coerceIn(10, 1000)
+        _smartDownloadsLimit.value = valid
+        prefs.edit().putInt(KEY_SMART_DOWNLOADS_LIMIT, valid).apply()
+    }
+
+    override fun setSmartDownloadsWifiOnly(wifiOnly: Boolean) {
+        _isSmartDownloadsWifiOnly.value = wifiOnly
+        prefs.edit().putBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, wifiOnly).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "nerf_user_settings_prefs"
         private const val KEY_CANVAS_ENABLED = "key_canvas_video_enabled"
@@ -213,5 +281,9 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         private const val KEY_DOWNLOAD_OVER_CELLULAR = "key_download_over_cellular"
         private const val KEY_WIFI_AUDIO_QUALITY = "key_wifi_audio_quality"
         private const val KEY_CELLULAR_AUDIO_QUALITY = "key_cellular_audio_quality"
+        private const val KEY_DOWNLOAD_AUDIO_QUALITY = "key_download_audio_quality"
+        private const val KEY_SMART_DOWNLOADS_ENABLED = "key_smart_downloads_enabled"
+        private const val KEY_SMART_DOWNLOADS_LIMIT = "key_smart_downloads_limit"
+        private const val KEY_SMART_DOWNLOADS_WIFI_ONLY = "key_smart_downloads_wifi_only"
     }
 }

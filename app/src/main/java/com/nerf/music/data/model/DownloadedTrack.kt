@@ -7,5 +7,6 @@ data class DownloadedTrack(
     val track: Track,
     val localFilePath: String,
     val downloadedAtEpochMs: Long = System.currentTimeMillis(),
-    val fileSizeBytes: Long = 0L
+    val fileSizeBytes: Long = 0L,
+    val isSmartDownload: Boolean = false
 )

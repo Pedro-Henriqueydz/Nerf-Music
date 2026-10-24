@@ -27,11 +27,15 @@ class NewPipeStreamResolver(
     companion object {
         private const val TAG = "NewPipeStreamResolver"
         private const val YOUTUBE_WATCH_BASE = "https://www.youtube.com/watch?v="
+        private const val PREFS_NAME = "nerf_user_settings_prefs"
     }
 
-    override suspend fun resolveStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
+    override suspend fun resolveStreamUrl(videoId: String): Result<String> =
+        resolveStreamUrl(videoId, targetQuality = null)
+
+    override suspend fun resolveStreamUrl(videoId: String, targetQuality: AudioQuality?): Result<String> = withContext(Dispatchers.IO) {
         if (videoId.isBlank()) {
-            return@withContext Result.failure(IllegalArgumentException("Identificador de vídeo vazio"))
+            return@withContext Result.failure(IllegalArgumentException("videoId não pode ser vazio"))
         }
 
         try {
@@ -56,9 +60,9 @@ class NewPipeStreamResolver(
                 return@withContext Result.failure(IOException("Falha ao carregar a faixa. O servidor recusou a conexão."))
             }
 
-            // Seleciona o stream conforme o perfil de qualidade e economia de dados ativo
-            val targetQuality = determineTargetQuality()
-            val selectedStream = pickStreamForQuality(validStreams, targetQuality)
+            // Seleciona o stream conforme a qualidade alvo informada ou perfil configurado
+            val effectiveQuality = targetQuality ?: determineTargetQuality()
+            val selectedStream = pickStreamForQuality(validStreams, effectiveQuality)
 
             val audioUrl = selectedStream.content
             if (audioUrl.isNullOrBlank()) {
@@ -67,23 +71,24 @@ class NewPipeStreamResolver(
 
             Log.i(
                 TAG,
-                "Áudio decifrado com sucesso via NewPipe (Qualidade=$targetQuality): itag=${selectedStream.itag}, bitrate=${selectedStream.averageBitrate}, codec=${selectedStream.codec}"
+                "Áudio decifrado com sucesso via NewPipe (Qualidade=$effectiveQuality): itag=${selectedStream.itag}, bitrate=${selectedStream.averageBitrate}, codec=${selectedStream.codec}"
             )
             Result.success(audioUrl)
         } catch (e: ExtractionException) {
             Log.e(TAG, "Exceção de extração/cipher do NewPipe para videoId=$videoId: ${e.message}", e)
             Result.failure(IOException("Falha ao carregar a faixa. O servidor recusou a conexão.", e))
         } catch (e: Exception) {
-            Log.e(TAG, "Falha na resolução de áudio via NewPipe para videoId=$videoId: ${e.message}", e)
-            Result.failure(IOException("Falha ao carregar a faixa. O servidor recusou a conexão.", e))
+            Log.e(TAG, "Erro inesperado ao resolver stream para videoId=$videoId: ${e.message}", e)
+            Result.failure(IOException("Falha ao conectar com o serviço de mídia: ${e.message}", e))
         }
     }
 
     private fun determineTargetQuality(): AudioQuality {
         val ctx = context ?: return AudioQuality.HIGH
-        val prefs = ctx.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
-        val dataSaverName = prefs.getString("key_data_saver_mode", DataSaverMode.ALWAYS_OFF.name) ?: DataSaverMode.ALWAYS_OFF.name
-        val dataSaver = try { DataSaverMode.valueOf(dataSaverName) } catch (_: Exception) { DataSaverMode.ALWAYS_OFF }
+        val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        val dataSaverName = prefs.getString("key_data_saver_mode", DataSaverMode.ALWAYS_OFF.name)
+        val dataSaver = try { DataSaverMode.valueOf(dataSaverName ?: DataSaverMode.ALWAYS_OFF.name) } catch (_: Exception) { DataSaverMode.ALWAYS_OFF }
 
         val isWifi = NetworkUtils.isConnectedToWifi(ctx)
 
@@ -112,7 +117,7 @@ class NewPipeStreamResolver(
                 streams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128_000) } ?: streams.first()
             }
             AudioQuality.HIGH, AudioQuality.VERY_HIGH -> {
-                // Maior bitrate disponível (ex: Opus 160k ou 256k)
+                // Maior bitrate disponível (Lossless do catálogo: Opus 48kHz ou M4A de alta fidelidade)
                 streams.maxByOrNull { it.averageBitrate } ?: streams.first()
             }
             AudioQuality.AUTOMATIC -> {
@@ -127,9 +132,7 @@ class NewPipeStreamResolver(
     }
 
     override suspend fun resolveVideoStreamUrl(videoId: String): Result<String?> = withContext(Dispatchers.IO) {
-        if (videoId.isBlank()) {
-            return@withContext Result.success(null)
-        }
+        if (videoId.isBlank()) return@withContext Result.success(null)
 
         try {
             if (NewPipe.getDownloader() == null) {
@@ -140,25 +143,25 @@ class NewPipeStreamResolver(
             val watchUrl = "$YOUTUBE_WATCH_BASE$videoId"
 
             val streamInfo = StreamInfo.getInfo(youtubeService, watchUrl)
-            val videoStreams = (streamInfo.videoOnlyStreams.orEmpty() + streamInfo.videoStreams.orEmpty())
+            val videoStreams = streamInfo.videoStreams
 
-            if (videoStreams.isEmpty()) {
+            if (videoStreams.isNullOrEmpty()) {
                 return@withContext Result.success(null)
             }
 
-            // Para economia de dados e renderização suave de Canvas em background,
-            // escolhemos um stream leve (360p ou 480p)
-            val validStreams = videoStreams.filter { !it.content.isNullOrBlank() }
-            Log.i(TAG, "VideoStream count para videoId=$videoId: total=${videoStreams.size}, validos=${validStreams.size}")
-            val selectedStream = validStreams
-                .firstOrNull { it.resolution.contains("360p") || it.resolution.contains("480p") }
-                ?: validStreams.firstOrNull()
+            // Seleciona um vídeo de baixa resolução (360p ou menor) e leve para servir como Canvas de fundo
+            val candidate = videoStreams
+                .filter { it.format?.name.equals("mp4", ignoreCase = true) || it.format?.name.equals("webm", ignoreCase = true) }
+                .sortedBy { it.getResolution()?.replace("p", "")?.toIntOrNull() ?: 9999 }
+                .firstOrNull {
+                    val res = it.getResolution()?.replace("p", "")?.toIntOrNull() ?: 0
+                    res in 144..480
+                } ?: videoStreams.firstOrNull()
 
-            val videoUrl = selectedStream?.content
-            Log.i(TAG, "Canvas video selecionado: itag=${selectedStream?.itag}, resolution=${selectedStream?.resolution}, url_valida=${!videoUrl.isNullOrBlank()}")
-            Result.success(videoUrl)
+            val url = candidate?.content
+            Result.success(url)
         } catch (e: Exception) {
-            Log.e(TAG, "Falha na resolução de vídeo para Canvas via NewPipe para videoId=$videoId: ${e.message}", e)
+            Log.w(TAG, "Não foi possível extrair stream de vídeo para Canvas (videoId=$videoId): ${e.message}")
             Result.success(null)
         }
     }

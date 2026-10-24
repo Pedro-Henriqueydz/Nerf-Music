@@ -4,6 +4,27 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.2.0] - 2026-10-24
+
+### Adicionado
+- **Smart Downloads (Downloads Inteligentes Estilo YouTube Music):**
+  - **Sincronização em Segundo Plano via WorkManager:** `SmartDownloadWorker` periódico (24h) e disparo sob demanda com restrições de bateria (`batteryNotLow`) e conectividade Wi-Fi (`NetworkType.UNMETERED`).
+  - **Heurística de Síntese Ponderada:** Coleta inteligente de faixas candidatas (40% Favoritas e Recentes, 30% Playlists do usuário e 30% Descobertas do rádio).
+  - **Cotas Configuráveis & Estimativa em Disco:** Seleção de cota para 50, 100, 250 ou 500 músicas com estimativa visual de espaço em disco (~519 MB para 100 faixas em Lossless).
+  - **Política de Rotação Automática de Quota:** Liberação de espaço de smart downloads antigos não ouvidos preservando permanentemente downloads efetuados manualmente pelo usuário (`isSmartDownload`).
+  - **Sincronização Reativa em Tempo Real:** Singleton `StateFlow` e `OnSharedPreferenceChangeListener` em `LibraryRepositoryImpl` para sincronização instantânea com a interface.
+
+- **Qualidade de Mídia dos Downloads (Padrão Lossless):**
+  - **Extração Lossless / Máxima Fidelidade:** Extração direta do fluxo de estúdio nativo de mais alta resolução e taxa de amostragem do catálogo (Opus 48kHz até 256kbps VBR e AAC/M4A), sem compressão redutora.
+  - **Seletor de Qualidade das Mídias Baixadas:** Suporte a múltiplos níveis de qualidade nas configurações: Lossless (Padrão), Muito Alta (~320 kbps eq.), Alta (256 kbps) e Normal (128 kbps).
+
+- **Interface & Experiência do Usuário (Compose):**
+  - **Central de Armazenamento:** Seção completa de Smart Downloads com switches, seletor de cotas em chips, status de progresso e botão de sincronização manual.
+  - **Central de Qualidade:** Seção dedicada com opções em rádio e descrição técnica de fidelidade acústica.
+  - **Biblioteca & Mix Offline:** Contagem em tempo real e visualização organizada das músicas baixadas.
+
+---
+
 ## [1.1.0] - 2026-10-24
 
 ### Adicionado

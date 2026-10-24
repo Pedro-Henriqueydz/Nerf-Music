@@ -36,7 +36,7 @@ interface LibraryRepository {
 
     fun isDownloaded(trackId: String): Boolean
     fun getDownloadedFilePath(trackId: String): String?
-    suspend fun downloadTrack(track: Track, onProgress: (Float) -> Unit = {}): Result<DownloadedTrack>
+    suspend fun downloadTrack(track: Track, isSmartDownload: Boolean = false, onProgress: (Float) -> Unit = {}): Result<DownloadedTrack>
     fun removeDownload(trackId: String): Boolean
 
     fun createPlaylist(title: String, description: String = ""): UserPlaylist
@@ -59,6 +59,15 @@ class LibraryRepositoryImpl(
         private const val KEY_LIKED_TRACKS = "liked_tracks_json"
         private const val KEY_PLAYLISTS = "user_playlists_json"
         private const val KEY_DOWNLOADS = "downloaded_tracks_json"
+
+        private val _likedTracksFlow = MutableStateFlow<List<Track>>(emptyList())
+        val sharedLikedTracksFlow: StateFlow<List<Track>> = _likedTracksFlow.asStateFlow()
+
+        private val _playlistsFlow = MutableStateFlow<List<UserPlaylist>>(emptyList())
+        val sharedPlaylistsFlow: StateFlow<List<UserPlaylist>> = _playlistsFlow.asStateFlow()
+
+        private val _downloadedTracksFlow = MutableStateFlow<List<DownloadedTrack>>(emptyList())
+        val sharedDownloadedTracksFlow: StateFlow<List<DownloadedTrack>> = _downloadedTracksFlow.asStateFlow()
     }
 
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -73,40 +82,67 @@ class LibraryRepositoryImpl(
         if (!exists()) mkdirs()
     }
 
-    private val _likedTracksFlow = MutableStateFlow<List<Track>>(emptyList())
-    override val likedTracksFlow: StateFlow<List<Track>> = _likedTracksFlow.asStateFlow()
+    override val likedTracksFlow: StateFlow<List<Track>> = sharedLikedTracksFlow
+    override val playlistsFlow: StateFlow<List<UserPlaylist>> = sharedPlaylistsFlow
+    override val downloadedTracksFlow: StateFlow<List<DownloadedTrack>> = sharedDownloadedTracksFlow
 
-    private val _playlistsFlow = MutableStateFlow<List<UserPlaylist>>(emptyList())
-    override val playlistsFlow: StateFlow<List<UserPlaylist>> = _playlistsFlow.asStateFlow()
-
-    private val _downloadedTracksFlow = MutableStateFlow<List<DownloadedTrack>>(emptyList())
-    override val downloadedTracksFlow: StateFlow<List<DownloadedTrack>> = _downloadedTracksFlow.asStateFlow()
+    private val prefChangeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            KEY_DOWNLOADS -> reloadDownloads()
+            KEY_LIKED_TRACKS -> reloadLiked()
+            KEY_PLAYLISTS -> reloadPlaylists()
+        }
+    }
 
     init {
         loadData()
+        prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
     }
 
     private fun loadData() {
+        reloadLiked()
+        reloadPlaylists()
+        reloadDownloads()
+    }
+
+    private fun reloadLiked() {
         try {
             val rawLiked = prefs.getString(KEY_LIKED_TRACKS, null)
-            if (!rawLiked.isNullOrBlank()) {
-                _likedTracksFlow.value = json.decodeFromString(rawLiked)
+            _likedTracksFlow.value = if (!rawLiked.isNullOrBlank()) {
+                json.decodeFromString(rawLiked)
+            } else {
+                emptyList()
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao recarregar músicas curtidas: ${e.message}", e)
+        }
+    }
 
+    private fun reloadPlaylists() {
+        try {
             val rawPlaylists = prefs.getString(KEY_PLAYLISTS, null)
-            if (!rawPlaylists.isNullOrBlank()) {
-                _playlistsFlow.value = json.decodeFromString(rawPlaylists)
+            _playlistsFlow.value = if (!rawPlaylists.isNullOrBlank()) {
+                json.decodeFromString(rawPlaylists)
+            } else {
+                emptyList()
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao recarregar playlists: ${e.message}", e)
+        }
+    }
 
+    private fun reloadDownloads() {
+        try {
             val rawDownloads = prefs.getString(KEY_DOWNLOADS, null)
             if (!rawDownloads.isNullOrBlank()) {
                 val list = json.decodeFromString<List<DownloadedTrack>>(rawDownloads)
-                // Valida se os arquivos locais ainda existem no disco
                 val existing = list.filter { File(it.localFilePath).exists() }
                 _downloadedTracksFlow.value = existing
+            } else {
+                _downloadedTracksFlow.value = emptyList()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Erro ao carregar dados da biblioteca: ${e.message}", e)
+            Log.e(TAG, "Erro ao recarregar downloads: ${e.message}", e)
         }
     }
 
@@ -153,6 +189,7 @@ class LibraryRepositoryImpl(
 
     override suspend fun downloadTrack(
         track: Track,
+        isSmartDownload: Boolean,
         onProgress: (Float) -> Unit
     ): Result<DownloadedTrack> = withContext(Dispatchers.IO) {
         if (track.id.isBlank()) return@withContext Result.failure(IllegalArgumentException("TrackId vazio"))
@@ -167,8 +204,15 @@ class LibraryRepositoryImpl(
         }
 
         try {
-            // 1. Resolve URL de áudio JIT via NewPipe
-            val streamUrl = streamResolver.resolveStreamUrl(track.id).getOrThrow()
+            val downloadQualityStr = settingsPrefs.getString("key_download_audio_quality", "LOSSLESS") ?: "LOSSLESS"
+            val targetAudioQuality = when (downloadQualityStr) {
+                "LOSSLESS", "VERY_HIGH" -> AudioQuality.VERY_HIGH
+                "HIGH" -> AudioQuality.HIGH
+                "NORMAL" -> AudioQuality.NORMAL
+                else -> AudioQuality.VERY_HIGH
+            }
+            // 1. Resolve URL de áudio JIT via NewPipe com a qualidade alvo (Padrão: Lossless / Máxima Fidelidade)
+            val streamUrl = streamResolver.resolveStreamUrl(track.id, targetAudioQuality).getOrThrow()
 
             // 2. Determina o tamanho total do áudio (Content-Length / Content-Range)
             val streamUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -296,7 +340,8 @@ class LibraryRepositoryImpl(
                 track = track,
                 localFilePath = destFile.absolutePath,
                 downloadedAtEpochMs = System.currentTimeMillis(),
-                fileSizeBytes = destFile.length()
+                fileSizeBytes = destFile.length(),
+                isSmartDownload = isSmartDownload
             )
 
             val current = _downloadedTracksFlow.value.filterNot { it.track.id == track.id }.toMutableList()

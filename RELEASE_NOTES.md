@@ -1,74 +1,52 @@
-# 🚀 NERF Music v1.1.0 — Major Release: Audio Transitions, Dynamic Home, Smart Radio & Advanced Settings
+# ⚡ NERF Music v1.2.0 — Smart Downloads & Lossless Audio Quality
 
-Esta versão consolida grandes avanços de arquitetura, áudio e experiência de usuário, integrando transições contínuas de reprodução, tela inicial dinâmica inspirada no YouTube Music 9.41, motor de rádio com isolamento acústico e nova central de configurações no padrão Spotify.
-
----
-
-### 🎧 1. Motor de Áudio & Transições de Faixa (`Song Transitions`)
-- **Crossfade Suave com Curva de Potência Constante (0s a 12s):**
-  - Implementação de arquitetura baseada em dois players concorrentes (`Dual-ExoPlayer Architecture`) com pré-carregamento sincronizado do fluxo da próxima música antes do ponto de transição.
-  - Curva senoidal/cossenoidal de atenuação e ganho mútuo (`Equal-Power Crossfade Curve`) para eliminar qualquer alteração perceptível de pressão sonora e artefatos de clique.
-  - Isolamento de foco de áudio (`Audio Focus Decoupling`) para evitar que instâncias concorrentes preempcionem a sessão de mídia principal.
-- **Reprodução Sem Pausas (Gapless Playback):**
-  - Encadeamento contínuo nativo com transição de frame zero entre faixas consecutivas, preservando a integridade de gravações ao vivo e álbuns contínuos.
-- **Automix Inteligente:**
-  - Heurística de transição rápida e fade dinâmico projetada para fluxos de rádio e playlists em modo contínuo.
-- **Integração com Equalizador Nativo:**
-  - Acesso transparente aos efeitos de áudio do sistema operacional via `AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL` vinculado ao `audioSessionId` ativo do ExoPlayer.
-- **Temporizador de Sono (Sleep Timer):**
-  - Gerenciador de suspensão com intervalos de 15, 30, 45, 60 minutos e modo contextual *"Ao término da faixa atual"*, implementando rampa de desaceleração suave de volume (*Volume Ramp Fade-Out*) antes do encerramento para evitar interrupções abruptas.
+Esta versão introduz a arquitetura de **Smart Downloads (Downloads Inteligentes)** com paridade total à experiência do YouTube Music, somada ao suporte nativo de **Qualidade de Mídia dos Downloads com padrão Lossless / Máxima Fidelidade**.
 
 ---
 
-### 🏛️ 2. Home Dinâmica Estilo YouTube Music 9.41 (`HomeFeedSynthesizer`)
-- **Síntese e Orquestração Local:**
-  - Fusão reativa de metadados entre fontes locais (`UserHistoryRepository`, `LibraryRepository`, `UserAffinityRepository`) e o catálogo anônimo do InnerTube, contornando a esterilidade do browse padrão não autenticado.
-- **Speed Dial Paginado (3x3):**
-  - Grade 3 colunas x 3 linhas (9 cards por página) implementada via `HorizontalPager` do Jetpack Compose Foundation com pontos indicadores de página (`rememberPagerState`).
-  - Cards com proporção 1:1, cantos de 8dp, scrim gradiente escuro de alta legibilidade, borda branca de `2.dp` para a faixa ativa, mini equalizador animado (`AnimatedEqualizerBars`) e barra de progresso em vermelho oficial (`YtmRed`) na base do card.
-  - Inclusão automática de atalhos rápidos: Músicas Curtidas (com gradiente magenta/laranja), playlists criadas pelo usuário e faixas do histórico com afinidade positiva.
-- **Dinamismo Temporal e Contextual (Time-of-Day):**
-  - Avaliação em tempo real pelo relógio do dispositivo:
-    - *Fim de semana (Sexta 17h até Domingo 23h59):* "Para o fim de semana" / "CHURRASCO, FESTA E DESCONTRAÇÃO" com botão de ação rápida "Reproduzir tudo".
-    - *Manhã (05h-11h):* "Energia para o seu dia".
-    - *Tarde (12h-17h):* "Foco e ritmo".
-    - *Noite (18h-23h):* "Para desacelerar".
-    - *Madrugada (00h-05h):* "Madrugada calma".
-- **Prateleira Covers & Remixes:**
-  - Query especializada combinada com filtragem léxica heurística (`remix`, `slowed`, `sped`, `cover`, `reverb`, `vip`, `edit`) restrita ao gênero e cluster de preferência do usuário.
-- **Seus Downloads & Mix Offline:**
-  - Cartões com gradientes vetoriais oficiais para Músicas Curtidas e Mix Offline prontos para execução imediata em lote.
-- **Hero Card "Sua Descoberta Diária":**
-  - Consulta ao rádio da seed favorita via `InnerTubeCatalogClient.getUpNextRadio`, destacando faixas desconhecidas com badge `NOVA DESCOBERTA` e selo em itálico *"Parecido com [Música] de [Artista]"*.
+### ⚡ 1. Arquitetura de Smart Downloads (`SmartDownloadManager` & `SmartDownloadWorker`)
+- **Orquestração em Segundo Plano via Android WorkManager:**
+  - `SmartDownloadWorker` (`CoroutineWorker`) agendado com políticas periódicas de 24 horas (`ExistingPeriodicWorkPolicy.UPDATE`) e disparos imediatos sob demanda via `OneTimeWorkRequestBuilder`.
+  - Restrições estritas de ambiente configuráveis:
+    - Rede não tarifada (`NetworkType.UNMETERED`) para sincronização exclusiva em Wi-Fi (configuração padrão ativada).
+    - Preservação energética do dispositivo com `setRequiresBatteryNotLow(true)`.
+- **Heurística de Síntese Ponderada de Candidatos:**
+  - **40% Familiaridade Imediata:** Músicas favoritadas (`likedTracksFlow`) e histórico recente de alta afinidade (`userHistoryRepository.getRecentlyPlayed()`).
+  - **30% Coleções do Usuário:** Músicas presentes nas playlists criadas pelo usuário (`playlistsFlow`).
+  - **30% Descoberta & Afinidade Acústica:** Recomendações e faixas correlacionadas pelo `SmartRadioEngine`.
+- **Política de Rotação Automática de Quotas:**
+  - Cotas selecionáveis: **50, 100, 250 ou 500 músicas**.
+  - Separação de domínio em `DownloadedTrack` com flag `isSmartDownload: Boolean`. Músicas baixadas explicitamente pelo usuário são marcadas como permanentes e **nunca** sofrem rotação ou expurgo automático.
+  - Ao atingir a cota ou quando novas faixas entram em alta afinidade, o motor remove automaticamente as faixas inteligentes mais antigas e menos reproduzidas.
 
 ---
 
-### 🧠 3. Smart Radio Engine & Afinidade Acústica Contínua
-- **Proporção Áurea de Rádio:**
-  - Equilíbrio matemático de 60% novidades dentro do mesmo cluster sonoro e 40% familiaridade do histórico do usuário, sem repetições consecutivas de um mesmo artista.
-- **Guarda de Isolamento Acústico:**
-  - Validação de fronteira de cluster (`clusterArtists.contains(...)`) para erradicar contaminação de gêneros desconexos na fila do rádio.
-- **Repositório de Afinidade do Usuário (`UserAffinityRepository`):**
-  - Cálculo de *Skip Penalty* para faixas puladas precocemente (< 30s ou < 40% de reprodução) e bonificação exponencial para músicas ouvidas até o fim ou favoritadas.
-- **Resolução e Cura de Durações:**
-  - Extração de durações exatas a partir de nós multilíngues do InnerTube (`simpleText`, `runs`, acessibilidade PT/EN).
-  - Enriquecimento contínuo de metadados em runtime, eliminando placeholders provisórios (`--:--`) da fila, player e histórico.
+### 💎 2. Pipeline de Áudio & Qualidade Lossless Nativa
+- **Resolução Sem Recompressão (`NewPipeStreamResolver`):**
+  - Implementação da sobrecarga `resolveStreamUrl(videoId: String, targetQuality: AudioQuality?)`.
+  - Modo **Lossless (Padrão de Fábrica)**: Seleciona o fluxo de áudio nativo de mais alta taxa de amostragem e bitrate entregue pelo catálogo (Opus a 48 kHz até 256 kbps VBR e AAC/M4A), sem transcodificação ou degradação acústica.
+- **Configuração Hierárquica de Fidelidade (`DownloadAudioQuality`):**
+  - *Lossless (Máxima Fidelidade)* — Padrão.
+  - *Muito Alta (~320 kbps equivalente)*.
+  - *Alta (256 kbps)*.
+  - *Normal (128 kbps)* — Para máxima economia de espaço.
 
 ---
 
-### ⚙️ 4. Central de Configurações & Armazenamento (Padrão Spotify)
-- **Navegação Hierárquica & Busca Global:**
-  - Reestruturação completa em sub-telas temáticas (Economia de Dados, Qualidade da Mídia, Reprodução, Conteúdo e Exibição, Armazenamento, Sobre) com barra de pesquisa instantânea de configurações.
-- **Gerenciador de Armazenamento (`StorageSettingsScreen`):**
-  - Gráfico de barras proporcional no padrão Spotify detalhando o consumo de espaço em disco: Músicas Baixadas, Cache de Streaming e Dados do Aplicativo.
-  - Ação de limpeza de cache em um toque (`clearAppCache`) com atualização dinâmica dos contadores em MB/GB sem afetar downloads.
-- **Modal de Novidades In-App Acessível:**
-  - Diálogo de Change Log voltado ao usuário final com container rolável vertical (`verticalScroll`), garantindo leitura completa em qualquer resolução de tela.
+### 🔄 3. Sincronização Reativa de Estado (`LibraryRepositoryImpl`)
+- **StateFlows Compartilhados & Listener de SharedPreferences:**
+  - Compartilhamento singleton dos fluxos reativos (`sharedDownloadedTracksFlow`, `sharedLikedTracksFlow`, `sharedPlaylistsFlow`).
+  - Registro de `SharedPreferences.OnSharedPreferenceChangeListener`: Garante que downloads efetuados pelo `WorkManager` em segundo plano atualizem instantaneamente a UI em tempo real, sem necessidade de reinicialização do app ou polling.
 
 ---
 
-### 📦 Metadados da Versão
-- **Versão:** `v1.1.0`
-- **VersionCode:** `10`
-- **Target SDK:** Android 14 (API 34)
-- **Min SDK:** Android 8.0 (API 26)
+### 🎨 4. Interface do Usuário (Compose)
+- **Subtela de Armazenamento (`SettingsSubScreen.STORAGE`):**
+  - Seção dedicada de Smart Downloads com switch mestre de ativação.
+  - Seletor de chips de cota (50, 100, 250, 500 músicas) com cálculo dinâmico de espaço em disco estimado (*~519 MB em padrão Lossless para 100 faixas*).
+  - Switch de download restrito a Wi-Fi.
+  - Card de status em tempo real com indicador de progresso e botão de sincronização manual imediata.
+- **Subtela de Qualidade da Mídia (`SettingsSubScreen.MEDIA_QUALITY`):**
+  - Nova seção dedicada para qualidade de áudio dos downloads com descrição técnica e seleção em rádio.
+- **Biblioteca (`LibraryScreen`):**
+  - Visualização imediata do quantitativo no cartão e chip "Músicas Baixadas" (`Mix Offline`).

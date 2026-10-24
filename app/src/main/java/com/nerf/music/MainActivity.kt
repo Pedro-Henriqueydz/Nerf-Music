@@ -11,6 +11,7 @@ import com.nerf.music.ui.theme.NERFMusicTheme
 import com.nerf.music.ui.viewmodel.MusicViewModel
 import com.nerf.music.updater.UpdateCheckWorker
 import com.nerf.music.updater.UpdateNotificationHelper
+import com.nerf.music.work.SmartDownloadWorker
 
 class MainActivity : ComponentActivity() {
 
@@ -23,6 +24,7 @@ class MainActivity : ComponentActivity() {
         // Inicializa canal de notificação e agenda verificação em segundo plano via WorkManager
         UpdateNotificationHelper.createNotificationChannel(this)
         UpdateCheckWorker.schedule(this)
+        SmartDownloadWorker.schedule(this)
 
         // Inicializa a conexão com o MediaSessionService em segundo plano
         viewModel.initializePlayerController(this)
