@@ -175,8 +175,7 @@ fun ArtistScreen(
                                     strapline = "TOP SONGS",
                                     actionLabel = "Reproduzir tudo",
                                     onActionClick = {
-                                        val first = currentArtist.topSongs.firstOrNull()
-                                        if (first != null) viewModel.playTrack(first)
+                                        viewModel.playTrackList("Top músicas de ${currentArtist.name}", currentArtist.topSongs, startIndex = 0)
                                     }
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -187,7 +186,9 @@ fun ArtistScreen(
                                         track = track,
                                         isCurrentTrack = isCurrent,
                                         isPlaying = isCurrent && playbackState.isPlaying,
-                                        onClick = { viewModel.playTrack(track) }
+                                        onClick = {
+                                            viewModel.playTrackList("Top músicas de ${currentArtist.name}", currentArtist.topSongs, startIndex = index)
+                                        }
                                     )
                                 }
                             }
