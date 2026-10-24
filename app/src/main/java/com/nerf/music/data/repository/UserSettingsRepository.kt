@@ -6,6 +6,26 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+/**
+ * Modos de economia de dados móveis (idêntico ao Spotify 9.1.94)
+ */
+enum class DataSaverMode(val displayName: String, val description: String) {
+    ALWAYS_OFF("Desativado", "Qualidade padrão selecionada"),
+    AUTOMATIC("Automático", "Ajusta conforme a rede (reduz consumo em dados móveis)"),
+    ALWAYS_ON("Sempre ativado", "Qualidade baixa permanente e economia de dados")
+}
+
+/**
+ * Níveis de qualidade de streaming de áudio (idêntico ao Spotify 9.1.94)
+ */
+enum class AudioQuality(val displayName: String, val bitrateLabel: String) {
+    AUTOMATIC("Automática", "Recomendado (ajusta conforme a rede)"),
+    LOW("Baixa", "Economia máxima (~48-64 kbps)"),
+    NORMAL("Normal", "Qualidade padrão (~128 kbps)"),
+    HIGH("Alta", "Alta fidelidade (~160 kbps)"),
+    VERY_HIGH("Muito alta", "Máxima fidelidade disponível")
+}
+
 interface UserSettingsRepository {
     val isCanvasEnabled: StateFlow<Boolean>
     val isCanvasWifiOnly: StateFlow<Boolean>
@@ -17,6 +37,14 @@ interface UserSettingsRepository {
     val isAutomixEnabled: StateFlow<Boolean>
     val crossfadeSeconds: StateFlow<Int>
 
+    // Economia de Dados (Data-saving and offline)
+    val dataSaverMode: StateFlow<DataSaverMode>
+    val isDownloadOverCellular: StateFlow<Boolean>
+
+    // Qualidade de Mídia (Media Quality)
+    val wifiAudioQuality: StateFlow<AudioQuality>
+    val cellularAudioQuality: StateFlow<AudioQuality>
+
     fun setCanvasEnabled(enabled: Boolean)
     fun setCanvasWifiOnly(wifiOnly: Boolean)
     fun setLyricsAboveTitleEnabled(enabled: Boolean)
@@ -25,6 +53,11 @@ interface UserSettingsRepository {
     fun setGaplessEnabled(enabled: Boolean)
     fun setAutomixEnabled(enabled: Boolean)
     fun setCrossfadeSeconds(seconds: Int)
+
+    fun setDataSaverMode(mode: DataSaverMode)
+    fun setDownloadOverCellular(enabled: Boolean)
+    fun setWifiAudioQuality(quality: AudioQuality)
+    fun setCellularAudioQuality(quality: AudioQuality)
 }
 
 class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
@@ -52,6 +85,18 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
     private val _crossfadeSeconds = MutableStateFlow(prefs.getInt(KEY_CROSSFADE_SECONDS, 0))
     override val crossfadeSeconds: StateFlow<Int> = _crossfadeSeconds.asStateFlow()
 
+    private val _dataSaverMode = MutableStateFlow(loadDataSaverMode())
+    override val dataSaverMode: StateFlow<DataSaverMode> = _dataSaverMode.asStateFlow()
+
+    private val _isDownloadOverCellular = MutableStateFlow(prefs.getBoolean(KEY_DOWNLOAD_OVER_CELLULAR, false))
+    override val isDownloadOverCellular: StateFlow<Boolean> = _isDownloadOverCellular.asStateFlow()
+
+    private val _wifiAudioQuality = MutableStateFlow(loadWifiAudioQuality())
+    override val wifiAudioQuality: StateFlow<AudioQuality> = _wifiAudioQuality.asStateFlow()
+
+    private val _cellularAudioQuality = MutableStateFlow(loadCellularAudioQuality())
+    override val cellularAudioQuality: StateFlow<AudioQuality> = _cellularAudioQuality.asStateFlow()
+
     private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             KEY_CANVAS_ENABLED -> _isCanvasEnabled.value = prefs.getBoolean(KEY_CANVAS_ENABLED, true)
@@ -61,11 +106,42 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
             KEY_GAPLESS_ENABLED -> _isGaplessEnabled.value = prefs.getBoolean(KEY_GAPLESS_ENABLED, true)
             KEY_AUTOMIX_ENABLED -> _isAutomixEnabled.value = prefs.getBoolean(KEY_AUTOMIX_ENABLED, true)
             KEY_CROSSFADE_SECONDS -> _crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE_SECONDS, 0)
+            KEY_DATA_SAVER_MODE -> _dataSaverMode.value = loadDataSaverMode()
+            KEY_DOWNLOAD_OVER_CELLULAR -> _isDownloadOverCellular.value = prefs.getBoolean(KEY_DOWNLOAD_OVER_CELLULAR, false)
+            KEY_WIFI_AUDIO_QUALITY -> _wifiAudioQuality.value = loadWifiAudioQuality()
+            KEY_CELLULAR_AUDIO_QUALITY -> _cellularAudioQuality.value = loadCellularAudioQuality()
         }
     }
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+    }
+
+    private fun loadDataSaverMode(): DataSaverMode {
+        val raw = prefs.getString(KEY_DATA_SAVER_MODE, DataSaverMode.ALWAYS_OFF.name)
+        return try {
+            DataSaverMode.valueOf(raw ?: DataSaverMode.ALWAYS_OFF.name)
+        } catch (_: Exception) {
+            DataSaverMode.ALWAYS_OFF
+        }
+    }
+
+    private fun loadWifiAudioQuality(): AudioQuality {
+        val raw = prefs.getString(KEY_WIFI_AUDIO_QUALITY, AudioQuality.HIGH.name)
+        return try {
+            AudioQuality.valueOf(raw ?: AudioQuality.HIGH.name)
+        } catch (_: Exception) {
+            AudioQuality.HIGH
+        }
+    }
+
+    private fun loadCellularAudioQuality(): AudioQuality {
+        val raw = prefs.getString(KEY_CELLULAR_AUDIO_QUALITY, AudioQuality.AUTOMATIC.name)
+        return try {
+            AudioQuality.valueOf(raw ?: AudioQuality.AUTOMATIC.name)
+        } catch (_: Exception) {
+            AudioQuality.AUTOMATIC
+        }
     }
 
     override fun setCanvasEnabled(enabled: Boolean) {
@@ -104,6 +180,26 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         prefs.edit().putInt(KEY_CROSSFADE_SECONDS, clamped).apply()
     }
 
+    override fun setDataSaverMode(mode: DataSaverMode) {
+        _dataSaverMode.value = mode
+        prefs.edit().putString(KEY_DATA_SAVER_MODE, mode.name).apply()
+    }
+
+    override fun setDownloadOverCellular(enabled: Boolean) {
+        _isDownloadOverCellular.value = enabled
+        prefs.edit().putBoolean(KEY_DOWNLOAD_OVER_CELLULAR, enabled).apply()
+    }
+
+    override fun setWifiAudioQuality(quality: AudioQuality) {
+        _wifiAudioQuality.value = quality
+        prefs.edit().putString(KEY_WIFI_AUDIO_QUALITY, quality.name).apply()
+    }
+
+    override fun setCellularAudioQuality(quality: AudioQuality) {
+        _cellularAudioQuality.value = quality
+        prefs.edit().putString(KEY_CELLULAR_AUDIO_QUALITY, quality.name).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "nerf_user_settings_prefs"
         private const val KEY_CANVAS_ENABLED = "key_canvas_video_enabled"
@@ -113,5 +209,9 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         private const val KEY_GAPLESS_ENABLED = "key_gapless_enabled"
         private const val KEY_AUTOMIX_ENABLED = "key_automix_enabled"
         private const val KEY_CROSSFADE_SECONDS = "key_crossfade_seconds"
+        private const val KEY_DATA_SAVER_MODE = "key_data_saver_mode"
+        private const val KEY_DOWNLOAD_OVER_CELLULAR = "key_download_over_cellular"
+        private const val KEY_WIFI_AUDIO_QUALITY = "key_wifi_audio_quality"
+        private const val KEY_CELLULAR_AUDIO_QUALITY = "key_cellular_audio_quality"
     }
 }

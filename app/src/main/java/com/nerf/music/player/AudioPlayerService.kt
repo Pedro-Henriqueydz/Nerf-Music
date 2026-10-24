@@ -224,7 +224,8 @@ class AudioPlayerService : MediaSessionService() {
         private data class CachedStreamUrl(val url: String, val timestampMs: Long)
         private val streamUrlCache = ConcurrentHashMap<String, CachedStreamUrl>()
         private val inFlightResolutions = ConcurrentHashMap<String, Deferred<String>>()
-        private val globalStreamResolver: StreamResolver by lazy { NewPipeStreamResolver() }
+        private var serviceAppContext: Context? = null
+        private val globalStreamResolver: StreamResolver by lazy { NewPipeStreamResolver(serviceAppContext) }
         private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun isStreamCached(videoId: String): Boolean {
@@ -427,6 +428,7 @@ class AudioPlayerService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        serviceAppContext = applicationContext
 
         settingsRepository = UserSettingsRepositoryImpl(this)
 
