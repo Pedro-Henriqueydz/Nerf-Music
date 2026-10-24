@@ -45,6 +45,11 @@ import com.nerf.music.data.repository.DataSaverMode
 import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.util.NetworkUtils
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.media.audiofx.AudioEffect
+import com.nerf.music.util.StorageBreakdown
+import com.nerf.music.util.StorageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -107,6 +112,16 @@ class MusicViewModel(
 
     private val _cellularAudioQuality = MutableStateFlow(AudioQuality.AUTOMATIC)
     val cellularAudioQuality: StateFlow<AudioQuality> = _cellularAudioQuality.asStateFlow()
+
+    private var sleepTimerJob: Job? = null
+    private val _sleepTimerRemainingSeconds = MutableStateFlow<Long?>(null)
+    val sleepTimerRemainingSeconds: StateFlow<Long?> = _sleepTimerRemainingSeconds.asStateFlow()
+
+    private val _sleepTimerAtEndOfTrack = MutableStateFlow(false)
+    val sleepTimerAtEndOfTrack: StateFlow<Boolean> = _sleepTimerAtEndOfTrack.asStateFlow()
+
+    private val _storageBreakdown = MutableStateFlow<StorageBreakdown?>(null)
+    val storageBreakdown: StateFlow<StorageBreakdown?> = _storageBreakdown.asStateFlow()
 
     // URL do vídeo para o background do Player (Canvas)
     private val _canvasVideoUrl = MutableStateFlow<String?>(null)
@@ -596,6 +611,11 @@ class MusicViewModel(
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (mediaItem != null) {
                     _loadingTrackId.value = mediaItem.mediaId
+                }
+                if (_sleepTimerAtEndOfTrack.value && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                    _sleepTimerAtEndOfTrack.value = false
+                    player.pause()
+                    _userMessage.value = "Temporizador de sono: reprodução pausada ao final da música."
                 }
                 syncTimelineState(player)
             }
@@ -1554,6 +1574,74 @@ class MusicViewModel(
     fun setCellularAudioQuality(quality: AudioQuality) {
         _cellularAudioQuality.value = quality
         userSettingsRepository?.setCellularAudioQuality(quality)
+    }
+
+    fun setSleepTimerMinutes(minutes: Int) {
+        sleepTimerJob?.cancel()
+        _sleepTimerAtEndOfTrack.value = false
+        if (minutes <= 0) {
+            _sleepTimerRemainingSeconds.value = null
+            return
+        }
+
+        sleepTimerJob = viewModelScope.launch {
+            var remaining = minutes * 60L
+            while (remaining > 0) {
+                _sleepTimerRemainingSeconds.value = remaining
+                delay(1000L)
+                remaining--
+            }
+            _sleepTimerRemainingSeconds.value = 0L
+            mediaController?.pause()
+            _userMessage.value = "Temporizador de sono: reprodução finalizada."
+            _sleepTimerRemainingSeconds.value = null
+        }
+    }
+
+    fun setSleepTimerEndOfTrack() {
+        sleepTimerJob?.cancel()
+        _sleepTimerRemainingSeconds.value = null
+        _sleepTimerAtEndOfTrack.value = true
+        _userMessage.value = "Temporizador: a reprodução será pausada ao final desta música."
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerRemainingSeconds.value = null
+        _sleepTimerAtEndOfTrack.value = false
+        _userMessage.value = "Temporizador de sono cancelado."
+    }
+
+    fun openEqualizer(context: Context) {
+        val intent = Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
+            putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
+            putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            _userMessage.value = "Nenhum aplicativo de equalização nativo encontrado no dispositivo."
+        }
+    }
+
+    fun refreshStorageBreakdown(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val breakdown = StorageUtils.getStorageBreakdown(context)
+            _storageBreakdown.value = breakdown
+        }
+    }
+
+    fun clearAppCache(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val success = StorageUtils.clearCache(context)
+            val breakdown = StorageUtils.getStorageBreakdown(context)
+            _storageBreakdown.value = breakdown
+            if (success) {
+                _userMessage.value = "Cache temporário limpo com sucesso!"
+            }
+        }
     }
 
     fun showChangeLogManually() {
