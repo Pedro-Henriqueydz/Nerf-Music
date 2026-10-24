@@ -66,6 +66,7 @@ enum class SettingsSubScreen {
     PLAYBACK,
     CONTENT_DISPLAY,
     STORAGE,
+    MIGRATION,
     ABOUT
 }
 
@@ -191,6 +192,7 @@ fun SettingsScreen(
                     onOpenPlayback = { currentSubScreen = SettingsSubScreen.PLAYBACK },
                     onOpenContentDisplay = { currentSubScreen = SettingsSubScreen.CONTENT_DISPLAY },
                     onOpenStorage = { currentSubScreen = SettingsSubScreen.STORAGE },
+                    onOpenMigration = { currentSubScreen = SettingsSubScreen.MIGRATION },
                     onOpenAbout = { currentSubScreen = SettingsSubScreen.ABOUT },
                     modifier = modifier
                 )
@@ -264,6 +266,13 @@ fun SettingsScreen(
                     modifier = modifier
                 )
             }
+            SettingsSubScreen.MIGRATION -> {
+                MigrationScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
+                    modifier = modifier
+                )
+            }
             SettingsSubScreen.ABOUT -> {
                 AboutSettingsScreen(
                     onCheckUpdates = { viewModel.checkForAppUpdates(manual = true) },
@@ -296,6 +305,7 @@ private fun SettingsMainContent(
     onOpenPlayback: () -> Unit,
     onOpenContentDisplay: () -> Unit,
     onOpenStorage: () -> Unit,
+    onOpenMigration: () -> Unit,
     onOpenAbout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -316,6 +326,11 @@ private fun SettingsMainContent(
             SearchableSetting("Canvas apenas no Wi-Fi", "Economiza dados móveis reproduzindo Canvas só no Wi-Fi", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
             SearchableSetting("Letras sincronizadas no Player", "Exibe a frase da letra em tempo real acima do título", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
             SearchableSetting("Armazenamento e Cache", "Espaço de downloads, cache e botão de limpar cache", "Armazenamento", SettingsSubScreen.STORAGE),
+        SearchableSetting("Importar biblioteca e migração", "Migre do Spotify, YouTube Music ou arquivos de backup", "Migração", SettingsSubScreen.MIGRATION),
+        SearchableSetting("Conectar YouTube Music", "Sincronização de Músicas Curtidas e Playlists", "Migração", SettingsSubScreen.MIGRATION),
+        SearchableSetting("Conectar Spotify", "Importação de Liked Songs e Playlists", "Migração", SettingsSubScreen.MIGRATION),
+        SearchableSetting("Importar link de playlist", "Cole link público do Spotify ou YouTube Music", "Migração", SettingsSubScreen.MIGRATION),
+        SearchableSetting("Importar arquivo CSV / Backup", "Restaure músicas via Soundiiz ou TuneMyMusic", "Migração", SettingsSubScreen.MIGRATION),
             SearchableSetting("Versão do aplicativo", "Verificar atualizações do Nerf Music", "Sobre", SettingsSubScreen.ABOUT),
             SearchableSetting("Novidades da versão (Change Log)", "Relembre os novos recursos adicionados", "Sobre", SettingsSubScreen.ABOUT)
         )
@@ -620,6 +635,13 @@ private fun SettingsMainContent(
                     title = "Armazenamento",
                     subtitle = "Espaço ocupado • Limpar cache do app",
                     onClick = onOpenStorage
+                )
+
+                SpotifyCategoryRow(
+                    icon = Icons.Default.CloudSync,
+                    title = "Importar biblioteca e migração",
+                    subtitle = "Migre do Spotify, YouTube Music ou arquivos de backup",
+                    onClick = onOpenMigration
                 )
 
                 SpotifyCategoryRow(

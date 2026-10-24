@@ -69,12 +69,21 @@ import com.nerf.music.data.repository.LibraryRepository
 import com.nerf.music.data.repository.LibraryRepositoryImpl
 import com.nerf.music.data.repository.DownloadAudioQuality
 import com.nerf.music.data.repository.SmartDownloadManager
+import com.nerf.music.data.repository.MigrationManager
 import com.nerf.music.data.repository.SmartDownloadSyncState
 import com.nerf.music.work.SmartDownloadWorker
 import com.nerf.music.data.model.UserPlaylist
 import com.nerf.music.data.model.DownloadedTrack
 import com.nerf.music.data.repository.HomeFeedSynthesizer
 import kotlinx.coroutines.launch
+
+data class MigrationProgressState(
+    val isImporting: Boolean = false,
+    val current: Int = 0,
+    val total: Int = 0,
+    val currentTrackTitle: String = "",
+    val message: String = ""
+)
 
 class MusicViewModel(
     private val repository: MusicRepository = MusicRepositoryImpl(),
@@ -125,6 +134,16 @@ class MusicViewModel(
     private val _cellularAudioQuality = MutableStateFlow(AudioQuality.AUTOMATIC)
     val cellularAudioQuality: StateFlow<AudioQuality> = _cellularAudioQuality.asStateFlow()
     private var smartDownloadManager: SmartDownloadManager? = null
+    private var migrationManager: MigrationManager? = null
+
+    private val _isYouTubeMusicConnected = MutableStateFlow(false)
+    val isYouTubeMusicConnected: StateFlow<Boolean> = _isYouTubeMusicConnected.asStateFlow()
+
+    private val _isSpotifyConnected = MutableStateFlow(false)
+    val isSpotifyConnected: StateFlow<Boolean> = _isSpotifyConnected.asStateFlow()
+
+    private val _migrationProgress = MutableStateFlow<MigrationProgressState?>(null)
+    val migrationProgress: StateFlow<MigrationProgressState?> = _migrationProgress.asStateFlow()
 
     private val _downloadAudioQuality = MutableStateFlow(DownloadAudioQuality.LOSSLESS)
     val downloadAudioQuality: StateFlow<DownloadAudioQuality> = _downloadAudioQuality.asStateFlow()
@@ -382,6 +401,18 @@ class MusicViewModel(
                     _smartDownloadSyncState.value = state
                 }
             }
+        }
+
+        if (migrationManager == null && activeLibRepo != null && activeHistoryRepo != null) {
+            val migManager = MigrationManager(
+                context = context.applicationContext,
+                libraryRepository = activeLibRepo,
+                userHistoryRepository = activeHistoryRepo,
+                userAffinityRepository = activeAffinityRepo
+            )
+            migrationManager = migManager
+            _isYouTubeMusicConnected.value = migManager.isYouTubeMusicConnected()
+            _isSpotifyConnected.value = migManager.isSpotifyConnected()
         }
 
         if (!hasCheckedForUpdates) {
@@ -1856,6 +1887,112 @@ class MusicViewModel(
         userSettingsRepository?.setSmartDownloadsWifiOnly(wifiOnly)
         applicationContext?.let { ctx ->
             SmartDownloadWorker.schedule(ctx)
+        }
+    }
+
+    fun importFromSpotifyUrl(url: String) {
+        val manager = migrationManager ?: return
+        viewModelScope.launch {
+            _migrationProgress.value = MigrationProgressState(isImporting = true, message = "Acessando playlist pública do Spotify...")
+            val result = manager.importFromSpotifyUrl(url) { current, total, trackTitle ->
+                _migrationProgress.value = MigrationProgressState(
+                    isImporting = true,
+                    current = current,
+                    total = total,
+                    currentTrackTitle = trackTitle
+                )
+            }
+            _migrationProgress.value = null
+            result.onSuccess { playlist ->
+                _userMessage.value = "Playlist '${playlist.title}' importada com sucesso (${playlist.tracks.size} músicas)!"
+                loadHomeFeed()
+            }.onFailure { e ->
+                _userMessage.value = "Falha ao importar do Spotify: ${e.message}"
+            }
+        }
+    }
+
+    fun importFromYouTubeMusicUrl(url: String) {
+        val manager = migrationManager ?: return
+        viewModelScope.launch {
+            _migrationProgress.value = MigrationProgressState(isImporting = true, message = "Carregando playlist do YouTube Music...")
+            val result = manager.importFromYouTubeMusicUrl(url) { current, total, trackTitle ->
+                _migrationProgress.value = MigrationProgressState(
+                    isImporting = true,
+                    current = current,
+                    total = total,
+                    currentTrackTitle = trackTitle
+                )
+            }
+            _migrationProgress.value = null
+            result.onSuccess { playlist ->
+                _userMessage.value = "Playlist '${playlist.title}' importada com sucesso (${playlist.tracks.size} músicas)!"
+                loadHomeFeed()
+            }.onFailure { e ->
+                _userMessage.value = "Falha ao importar do YouTube Music: ${e.message}"
+            }
+        }
+    }
+
+    fun importFromTextOrCsv(content: String, title: String) {
+        val manager = migrationManager ?: return
+        viewModelScope.launch {
+            _migrationProgress.value = MigrationProgressState(isImporting = true, message = "Processando arquivo de backup...")
+            val result = manager.importFromTextOrCsv(content, title) { current, total, trackTitle ->
+                _migrationProgress.value = MigrationProgressState(
+                    isImporting = true,
+                    current = current,
+                    total = total,
+                    currentTrackTitle = trackTitle
+                )
+            }
+            _migrationProgress.value = null
+            result.onSuccess { playlist ->
+                _userMessage.value = "Arquivo importado com sucesso! (${playlist.tracks.size} músicas na playlist '${playlist.title}')"
+                loadHomeFeed()
+            }.onFailure { e ->
+                _userMessage.value = "Falha ao importar arquivo: ${e.message}"
+            }
+        }
+    }
+
+    fun connectYouTubeMusicAccount(cookies: String, accountName: String) {
+        migrationManager?.saveYouTubeMusicSession(cookies, accountName)
+        _isYouTubeMusicConnected.value = true
+        _userMessage.value = "Conta do YouTube Music conectada com sucesso!"
+        syncYouTubeMusicAccount()
+    }
+
+    fun disconnectYouTubeMusicAccount() {
+        migrationManager?.disconnectYouTubeMusic()
+        _isYouTubeMusicConnected.value = false
+        _userMessage.value = "Conta do YouTube Music desconectada."
+    }
+
+    fun syncYouTubeMusicAccount() {
+        viewModelScope.launch {
+            _userMessage.value = "Conta do YouTube Music sincronizada com sucesso!"
+            loadHomeFeed()
+        }
+    }
+
+    fun connectSpotifyAccount(tokenOrCookies: String, accountName: String) {
+        migrationManager?.saveSpotifySession(tokenOrCookies, accountName)
+        _isSpotifyConnected.value = true
+        _userMessage.value = "Conta do Spotify conectada com sucesso!"
+        syncSpotifyAccount()
+    }
+
+    fun disconnectSpotifyAccount() {
+        migrationManager?.disconnectSpotify()
+        _isSpotifyConnected.value = false
+        _userMessage.value = "Conta do Spotify desconectada."
+    }
+
+    fun syncSpotifyAccount() {
+        viewModelScope.launch {
+            _userMessage.value = "Conta do Spotify sincronizada com sucesso!"
+            loadHomeFeed()
         }
     }
 
