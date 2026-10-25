@@ -100,9 +100,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1284,29 +1289,12 @@ fun FullPlayerSheet(
                                     .clickable { isFullscreenLyricsActive = true }
                                     .padding(bottom = 8.dp)
                             ) {
-                                AnimatedContent(
-                                    targetState = lyricsLine.orEmpty(),
-                                    transitionSpec = {
-                                        fadeIn(animationSpec = tween(250)) togetherWith fadeOut(animationSpec = tween(180))
-                                    },
-                                    label = "LyricsChunkTransition"
-                                ) { chunkText ->
-                                    Text(
-                                        text = chunkText,
-                                        fontFamily = YouTubeSansFontFamily,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 18.sp,
-                                        lineHeight = 24.sp,
-                                        color = Color.White,
-                                        textAlign = TextAlign.Start,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .clickable { isFullscreenLyricsActive = true }
-                                    )
-                                }
+                                InlineSyncedLyrics(
+                                    lyricText = lyricsLine.orEmpty(),
+                                    lyrics = lyrics,
+                                    positionMs = state.currentPositionMs,
+                                    durationMs = effectiveDurationMs
+                                )
                             }
 
                             Row(
@@ -1909,6 +1897,174 @@ fun FullPlayerSheet(
             }
         }
     }
+}
+
+/** Displays a long synced lyric as timed, one-line segments without growing the player layout. */
+@Composable
+private fun InlineSyncedLyrics(
+    lyricText: String,
+    lyrics: LyricsData?,
+    positionMs: Long,
+    durationMs: Long
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val maxWidthPx = constraints.maxWidth
+        val textMeasurer = rememberTextMeasurer()
+        val textStyle = remember {
+            TextStyle(
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                lineHeight = 24.sp,
+                color = Color.White,
+                textAlign = TextAlign.Start
+            )
+        }
+        val segments = remember(lyricText, maxWidthPx, density, textStyle) {
+            splitInlineLyricIntoSegments(lyricText, maxWidthPx, textStyle, textMeasurer)
+        }
+        val segmentIndex = inlineLyricSegmentIndex(
+            segments = segments,
+            lyrics = lyrics,
+            positionMs = positionMs,
+            durationMs = durationMs
+        )
+        val visibleSegment = segments.getOrNull(segmentIndex).orEmpty()
+
+        AnimatedContent(
+            targetState = visibleSegment,
+            transitionSpec = {
+                fadeIn(animationSpec = tween(250)) togetherWith fadeOut(animationSpec = tween(180))
+            },
+            label = "LyricsChunkTransition"
+        ) { chunkText ->
+            Text(
+                text = chunkText,
+                style = textStyle,
+                softWrap = false,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+            )
+        }
+    }
+}
+
+private fun splitInlineLyricIntoSegments(
+    lyricText: String,
+    maxWidthPx: Int,
+    textStyle: TextStyle,
+    textMeasurer: TextMeasurer
+): List<String> {
+    val originalText = lyricText.trim().replace(Regex("\\s+"), " ")
+    if (originalText.isEmpty() || maxWidthPx <= 0) return listOf(originalText)
+
+    val segments = mutableListOf<String>()
+    var remaining = originalText
+    while (remaining.isNotEmpty()) {
+        val layout = textMeasurer.measure(
+            text = AnnotatedString(remaining),
+            style = textStyle,
+            overflow = TextOverflow.Clip,
+            softWrap = true,
+            maxLines = 1,
+            constraints = Constraints(maxWidth = maxWidthPx)
+        )
+        if (!layout.hasVisualOverflow) {
+            segments += remaining
+            break
+        }
+
+        val measuredLineEnd = layout.getLineEnd(0).coerceIn(1, remaining.length)
+        val wordBoundary = remaining.lastIndexOf(' ', measuredLineEnd - 1)
+        val cutIndex = if (wordBoundary > 0) {
+            wordBoundary
+        } else {
+            largestFittingCharacterBoundary(remaining, maxWidthPx, textStyle, textMeasurer)
+        }.coerceIn(1, remaining.length)
+
+        val segment = remaining.substring(0, cutIndex).trim()
+        if (segment.isNotEmpty()) segments += segment
+        remaining = remaining.substring(cutIndex).trimStart()
+    }
+
+    return segments.ifEmpty { listOf(originalText) }
+}
+
+private fun largestFittingCharacterBoundary(
+    text: String,
+    maxWidthPx: Int,
+    textStyle: TextStyle,
+    textMeasurer: TextMeasurer
+): Int {
+    val boundaries = mutableListOf<Int>()
+    val iterator = java.text.BreakIterator.getCharacterInstance(Locale.ROOT)
+    iterator.setText(text)
+    var boundary = iterator.first()
+    while (boundary != java.text.BreakIterator.DONE) {
+        boundaries += boundary
+        boundary = iterator.next()
+    }
+    if (boundaries.size <= 1) return text.length
+
+    var low = 1
+    var high = boundaries.lastIndex
+    var bestBoundary = boundaries[1]
+    while (low <= high) {
+        val middle = (low + high) / 2
+        val candidateBoundary = boundaries[middle]
+        val layout = textMeasurer.measure(
+            text = AnnotatedString(text.substring(0, candidateBoundary)),
+            style = textStyle,
+            overflow = TextOverflow.Clip,
+            softWrap = false,
+            maxLines = 1,
+            constraints = Constraints(maxWidth = maxWidthPx)
+        )
+        if (layout.hasVisualOverflow) {
+            high = middle - 1
+        } else {
+            bestBoundary = candidateBoundary
+            low = middle + 1
+        }
+    }
+    return bestBoundary
+}
+
+private fun inlineLyricSegmentIndex(
+    segments: List<String>,
+    lyrics: LyricsData?,
+    positionMs: Long,
+    durationMs: Long
+): Int {
+    if (segments.size <= 1 || lyrics?.isSynced != true) return 0
+
+    val lines = lyrics.syncedLines
+    val activeIndex = lines.indexOfLast { positionMs >= it.timeMs }
+    val activeLine = lines.getOrNull(activeIndex) ?: return 0
+    val nextTimestamp = lines.drop(activeIndex + 1)
+        .firstOrNull { it.timeMs > activeLine.timeMs }
+        ?.timeMs
+        ?: durationMs
+    val intervalMs = nextTimestamp - activeLine.timeMs
+    if (intervalMs <= 0L) return 0
+
+    val elapsedMs = (positionMs - activeLine.timeMs).coerceIn(0L, intervalMs)
+    val weights = segments.map { segment ->
+        segment.codePointCount(0, segment.length).coerceAtLeast(1).toLong()
+    }
+    val totalWeight = weights.sum().coerceAtLeast(1L)
+    var elapsedWeight = 0L
+
+    for (index in segments.indices) {
+        elapsedWeight += weights[index]
+        val boundaryMs = intervalMs.toDouble() * elapsedWeight / totalWeight
+        if (elapsedMs.toDouble() < boundaryMs) return index
+    }
+    return segments.lastIndex
 }
 
 /**
