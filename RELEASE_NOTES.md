@@ -1,3 +1,16 @@
+# 🎵 NERF Music v1.3.3 — Sincronização e início mais rápidos
+
+Esta versão corrige a sincronização de playlists e melhora o tempo de resposta da Home.
+
+### Correções e melhorias
+
+- **YouTube Music:** sincronizações reaproveitam playlists antigas quando correspondem às faixas importadas, sem substituir playlists diferentes que tenham o mesmo nome.
+- **Duração das músicas:** faixas importadas passam a receber a duração encontrada nos diferentes formatos de resposta do YouTube Music.
+- **Início da reprodução:** pré-carregamento das primeiras músicas e dos Canvas da Home para reduzir a espera ao tocar.
+- **Smart Downloads:** agora começa desativado e só baixa músicas automaticamente quando você ativar a opção.
+
+---
+
 # 🎵 NERF Music v1.3.2 — Reprodução e migração mais confiáveis
 
 Esta versão corrige problemas de reprodução e torna a importação de bibliotecas mais previsível.

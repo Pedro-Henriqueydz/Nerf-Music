@@ -642,11 +642,10 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🎵 NERF Music v1.3.2 — Reprodução e migração mais confiáveis:
-            • Reprodução: resolução de áudio mais resiliente e retomada mais consistente ao trocar de faixa ou de qualidade.
-            • Migração: playlists importadas são atualizadas sem criar cópias, e músicas curtidas são adicionadas em lote.
-            • Conexões: o app só confirma uma sessão quando ela foi armazenada com segurança.
-            • Estabilidade: correções na leitura de durações e no armazenamento seguro de dados.
+            🎵 NERF Music v1.3.3 — Sincronização e início mais rápidos:
+            • Home: músicas e Canvas começam a carregar antes de você tocar.
+            • YouTube Music: sincronizações evitam recriar playlists e as faixas importadas mostram a duração correta.
+            • Smart Downloads: fica desativado até você escolher ativá-lo.
         """.trimIndent()
     }
 

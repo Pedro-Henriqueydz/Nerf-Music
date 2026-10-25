@@ -4,6 +4,18 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.3.3] - 2026-10-25
+
+### Corrigido
+- **Sync do YouTube Music:** reaproveitamento conservador de playlists importadas em versões anteriores, evitando recriação em sincronizações repetidas sem substituir playlists distintas de mesmo nome.
+- **Duração das faixas importadas:** leitura de durações em diferentes campos da resposta do YouTube Music e preenchimento do tempo em segundos.
+
+### Melhorado
+- **Carregamento da Home:** pré-carregamento de streams e Canvas das primeiras faixas para reduzir a espera ao iniciar a reprodução.
+- **Smart Downloads:** desativado por padrão; pode ser ativado nas configurações.
+
+---
+
 ## [1.3.2] - 2026-10-25
 
 ### Corrigido
