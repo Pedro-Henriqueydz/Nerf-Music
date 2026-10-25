@@ -4,6 +4,13 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.3.4] - 2026-10-25
+
+### Corrigido
+- **Letras no player:** versos longos são divididos em trechos de uma linha que avançam sincronizados com a música, sem reticências. A visualização completa de letras permanece inalterada.
+
+---
+
 ## [1.3.3] - 2026-10-25
 
 ### Corrigido

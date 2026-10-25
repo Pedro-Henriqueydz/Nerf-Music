@@ -642,10 +642,9 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🎵 NERF Music v1.3.3 — Sincronização e início mais rápidos:
-            • Home: músicas e Canvas começam a carregar antes de você tocar.
-            • YouTube Music: sincronizações evitam recriar playlists e as faixas importadas mostram a duração correta.
-            • Smart Downloads: fica desativado até você escolher ativá-lo.
+            🎵 NERF Music v1.3.4 — Letras mais claras no player:
+            • Versos longos aparecem em trechos de uma linha, acompanhando o tempo da música sem reticências.
+            • A tela completa de letras permanece igual.
         """.trimIndent()
     }
 
