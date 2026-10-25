@@ -614,48 +614,6 @@ class MusicViewModel(
             • Importação via Arquivos: Importe arquivos de backup (.csv e .txt) do Soundiiz, TuneMyMusic ou suas próprias listas.
             • Capas Quadradas em Alta Definição: Capas perfeitas de 544x544 sem barras pretas laterais ou cortes indesejados.
             • Home Transformada Instantaneamente: A tela inicial aprende com as músicas importadas na mesma hora, atualizando seus favoritos e o Supermix.
-
-            🔧 NOVIDADES DA VERSÃO 1.2.1:
-            • Notificação de Progresso em Tempo Real: Agora você pode acompanhar o download das músicas inteligentes direto na barra de status do celular! Uma notificação dinâmica mostra o progresso aumentando faixa a faixa (ex: 23 de 100) com o nome de cada música sendo baixada.
-            • Cota Completa Garantida: Corrigido o comportamento que baixava menos faixas do que o selecionado (ex: apenas 23 músicas para quem tinha poucas curtidas). O app agora busca recomendações exclusivas baseadas nos seus artistas favoritos para preencher 100% da sua cota escolhida!
-            • Conclusão Silenciosa e Limpa: Notificações sem alertas sonoros repetitivos a cada música baixada, finalizando com um aviso discreto de que suas músicas estão prontas para ouvir sem internet.
-            • Mais Estabilidade: Correção de concorrência que impedia o download manual de travar quando o sistema em segundo plano já estava ativo.
-
-            ⚡ SMART DOWNLOADS (DOWNLOADS INTELIGENTES):
-            • Músicas Offline Automáticas: O Nerf Music agora cuida dos seus downloads por você! Suas músicas favoritas e novidades semanais são salvas automaticamente no aparelho.
-            • Cota Flexível (50 a 500 Músicas): Escolha manter 50, 100, 250 ou até 500 faixas offline com estimativa em tempo real de espaço em disco.
-            • Mix Offline Sempre Atualizado: Sincronização periódica em segundo plano via WorkManager — renova seu repertório apenas quando conectado ao Wi-Fi e com bateria segura.
-            • Rotação Inteligente: Faixas antigas não ouvidas dão lugar a novos gostos e lançamentos automaticamente. Músicas baixadas manualmente NUNCA são apagadas!
-            • Sincronização em Tempo Real: Acompanhe o progresso faixa a faixa e toque no botão de sincronizar a qualquer momento nas configurações de Armazenamento.
-
-            💎 QUALIDADE LOSSLESS / MÁXIMA FIDELIDADE (PADRÃO):
-            • Áudio Puro de Estúdio: Todos os downloads passam a ser extraídos na integridade máxima do catálogo original (Opus a 48kHz e AAC de alta resolução sem recompressão).
-            • Seletor de Qualidade Dedicado: Escolha entre Lossless (Padrão), Muito Alta (~320 kbps eq.), Alta (256 kbps) ou Normal (128 kbps para máxima economia de memória).
-
-            ✨ TRANSIÇÕES DE MÚSICA & EXPERIÊNCIA DE SOM:
-            • Crossfade Suave (0s a 12s): Chega de cortes bruscos entre as músicas! O final de uma faixa se funde suavemente com o início da próxima no tempo que você escolher.
-            • Reprodução Sem Pausas (Gapless): Música ininterrupta, ideal para curtir shows ao vivo e álbuns contínuos sem nenhum segundo de silêncio.
-            • Automix Inteligente: O app cria mixagens naturais entre faixas para dar ritmo de festa às suas playlists.
-            • Equalizador do Sistema: Acesse o painel de equalização direto das configurações para turbinar os graves ou ajustar o som ao seu gosto.
-            • Temporizador de Sono (Sleep Timer): Programe para desligar a música em 15, 30, 45, 60 minutos ou ao terminar a música atual, com diminuição suave do volume.
-
-            🚀 NOVA TELA INICIAL (ESTILO YOUTUBE MUSIC 9.41):
-            • Início 3x3 com Swipe: Suas músicas recentes, playlists e atalho de Músicas Curtidas em uma grade dinâmica de 9 cards com navegação por gestos laterais.
-            • Capas Vivas no Início: Acompanhe a música atual com borda em destaque, equalizador animado ao vivo e barra de progresso vermelha na própria capa.
-            • Músicas para o Seu Momento: O início se adapta ao seu dia — sugerindo faixas para Churrasco no fim de semana, energia pela manhã e relax à noite.
-            • Covers e Remixes Exclusivos: Uma prateleira feita só com versões alternativas (slowed, sped up, remixes e VIP edits) do seu estilo.
-            • Seus Downloads Rápidos: Seus downloads e músicas curtidas em cartões com gradiente vibrante para tocar com um só toque.
-            • Descoberta do Dia: Um card especial diário com músicas parecidas com o que você mais ouve.
-
-            🧠 RÁDIO INTELIGENTE & SEM REPETIÇÕES:
-            • Rádio com Proporção Áurea: 60% novidades do mesmo gênero e 40% músicas queridinhas do seu histórico, sem repetir o mesmo artista em sequência.
-            • Respeito ao seu Gosto (Skip Penalty): Músicas que você pula com frequência deixam de tocar; faixas que você escuta até o fim ganham preferência.
-            • Foco no Estilo: Chega de estilos nada a ver invadindo a sua rádio.
-            • Durações Reais: Todas as músicas agora mostram o tempo de duração exato em minutos e segundos na fila e no player.
-
-            ⚙️ NOVA CENTRAL DE CONFIGURAÇÕES & ARMAZENAMENTO:
-            • Visual Estilo Spotify: Configurações elegantes, organizadas por categorias e com barra de busca rápida para achar qualquer opção.
-            • Gerenciador de Armazenamento: Veja com precisão quanto espaço é ocupado por downloads e cache, com botão de limpeza rápida para liberar memória do celular.
         """.trimIndent()
     }
 
