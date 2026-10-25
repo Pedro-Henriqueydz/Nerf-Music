@@ -607,13 +607,11 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🔥 MIGRAÇÃO MULTI-STREAMING & PERSONALIZAÇÃO DA HOME (v1.3.0):
-            • Migração Direta com Login: Conecte sua conta do YouTube Music ou Spotify com 1 toque para sincronizar todas as suas Músicas Curtidas e Playlists.
-            • Suporte Completo a Grandes Bibliotecas: Paginação inteligente que recupera 100% das suas faixas sem parar em limites de página (mais de 250 músicas).
-            • Modo Anônimo por Link: Cole links públicos do Spotify ou do YouTube Music e importe playlists com precisão de estúdio (~98% de correspondência acústica).
-            • Importação via Arquivos: Importe arquivos de backup (.csv e .txt) do Soundiiz, TuneMyMusic ou suas próprias listas.
-            • Capas Quadradas em Alta Definição: Capas perfeitas de 544x544 sem barras pretas laterais ou cortes indesejados.
-            • Home Transformada Instantaneamente: A tela inicial aprende com as músicas importadas na mesma hora, atualizando seus favoritos e o Supermix.
+            🛡️ ATUALIZAÇÃO DE SEGURANÇA & ESTABILIDADE (v1.3.1):
+            • Proteção de Dados e Sessões: Aprimoramento na criptografia e armazenamento seguro de dados locais e sessões conectadas.
+            • Conexões e Navegação Segura: Implementação de diretivas rigorosas de tráfego HTTPS e isolamento na navegação interna.
+            • Integridade do Aplicativo: Validação aprimorada de pacotes e downloads para maior confiabilidade nas atualizações.
+            • Melhorias Gerais: Otimizações de desempenho e correções de estabilidade em toda a biblioteca.
         """.trimIndent()
     }
 

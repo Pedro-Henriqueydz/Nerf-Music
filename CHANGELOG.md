@@ -4,6 +4,18 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.3.1] - 2026-10-25
+
+### Segurança e Estabilidade
+- **Proteção Avançada de Dados Locais:** Implementação de criptografia autenticada AES-256 GCM vinculada ao Android KeyStore (`SecureStorageHelper`) para proteção de dados locais e sessões de streaming.
+- **Prevenção de Extração não Autorizada:** Desativação de backup arbitrário no manifesto (`android:allowBackup="false"`).
+- **Tráfego Seguro Obrigatório:** Configuração de rede restrita (`network_security_config.xml`) com bloqueio de conexões em texto claro e ancoragem exclusiva em CAs oficiais do sistema.
+- **Navegação Segura no WebView:** Desativação de acesso a arquivos locais e whitelist estrita de domínios permitidos nos fluxos de autenticação do YouTube Music e Spotify.
+- **Validação de Integridade no Auto-Updater:** Filtro específico para pacotes `.apk`, verificação de integridade estrutural e checagem de integridade contra Path Traversal no `AppUpdateManager`.
+- **Menor Privilégio no FileProvider:** Redução de caminhos compartilhados em `file_paths.xml` estritamente ao diretório de atualizações.
+
+---
+
 ## [1.3.0] - 2026-10-24
 
 ### Adicionado
