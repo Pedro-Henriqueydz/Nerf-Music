@@ -4,6 +4,20 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.3.0] - 2026-10-24
+
+### Adicionado
+- **Central de Migração de Streaming & Personalização da Home (Multi-Streaming Migration):**
+  - **Conexão Direta (YouTube Music & Spotify):** Login seguro com extração direta de sessão oficial para sincronização completa de Músicas Curtidas e Playlists pessoais.
+  - **Paginação Completa sem Perdas:** Motor recursivo de paginação avançada cobrindo tanto `shelf.continuations` quanto `continuationItemRenderer` embutido e `onResponseReceivedActions.appendContinuationItemsAction`, capturando 100% de bibliotecas com mais de 250 faixas.
+  - **Modo Anônimo de Alta Fidelidade (Sem Login):** Importação instantânea de links públicos do Spotify (com motor de correspondência acústica atingindo ~98% de assertividade) e do YouTube Music.
+  - **Importação de Arquivos de Backup:** Compatibilidade universal com arquivos `.csv`, `.txt` e exportações de ferramentas de migração como Soundiiz e TuneMyMusic.
+  - **Capas Quadradas Nativas de Alta Resolução:** Eliminação de bordas pretas letterbox via extração nativa de thumbnails Google/YTM em resolução 544x544 (`=w544-h544-l90-rj`).
+  - **Persistência Atômica em Lote:** Criação e armazenamento em disco atômico de playlists com centenas de faixas em um único ciclo, prevenindo condições de corrida e perda de faixas.
+  - **DNA Acústico & Transformação Imediata da Home:** Injeção automática das faixas importadas no grafo de afinidade do ouvinte, adaptando os cards de Escolha a Dedo, Artistas Favoritos e Supermix assim que a migração é finalizada.
+
+---
+
 ## [1.2.0] - 2026-10-24
 
 ### Adicionado

@@ -607,6 +607,14 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
+            🔥 MIGRAÇÃO MULTI-STREAMING & PERSONALIZAÇÃO DA HOME (v1.3.0):
+            • Migração Direta com Login: Conecte sua conta do YouTube Music ou Spotify com 1 toque para sincronizar todas as suas Músicas Curtidas e Playlists.
+            • Suporte Completo a Grandes Bibliotecas: Paginação inteligente que recupera 100% das suas faixas sem parar em limites de página (mais de 250 músicas).
+            • Modo Anônimo por Link: Cole links públicos do Spotify ou do YouTube Music e importe playlists com precisão de estúdio (~98% de correspondência acústica).
+            • Importação via Arquivos: Importe arquivos de backup (.csv e .txt) do Soundiiz, TuneMyMusic ou suas próprias listas.
+            • Capas Quadradas em Alta Definição: Capas perfeitas de 544x544 sem barras pretas laterais ou cortes indesejados.
+            • Home Transformada Instantaneamente: A tela inicial aprende com as músicas importadas na mesma hora, atualizando seus favoritos e o Supermix.
+
             🔧 NOVIDADES DA VERSÃO 1.2.1:
             • Notificação de Progresso em Tempo Real: Agora você pode acompanhar o download das músicas inteligentes direto na barra de status do celular! Uma notificação dinâmica mostra o progresso aumentando faixa a faixa (ex: 23 de 100) com o nome de cada música sendo baixada.
             • Cota Completa Garantida: Corrigido o comportamento que baixava menos faixas do que o selecionado (ex: apenas 23 músicas para quem tinha poucas curtidas). O app agora busca recomendações exclusivas baseadas nos seus artistas favoritos para preencher 100% da sua cota escolhida!
