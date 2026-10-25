@@ -4,6 +4,23 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.3.2] - 2026-10-25
+
+### Corrigido
+- **Resolução de streams:** uso de resolução alternativa quando a fonte primária falha e cache separado por rede e qualidade para reduzir a reutilização de URLs expiradas ou incompatíveis.
+- **Migração de playlists:** identificação estável de playlists importadas e atualização da playlist existente em reimportações, em vez de criar cópias.
+- **Importação de favoritos:** inclusão em lote com deduplicação de faixas.
+- **Persistência de sessão:** falha ao criptografar ou persistir uma sessão deixa de ser apresentada como conexão concluída.
+- **Leitura de duração:** tratamento de colunas ausentes nas respostas do catálogo.
+
+### Segurança
+- **Armazenamento seguro:** operações de escrita passam a falhar de forma explícita quando a criptografia ou persistência protegida não pode ser concluída.
+
+### Testes
+- Adicionados testes unitários para a identidade de playlists importadas e a estratégia padrão de resolução de streams.
+
+---
+
 ## [1.3.1] - 2026-10-25
 
 ### Segurança e Estabilidade

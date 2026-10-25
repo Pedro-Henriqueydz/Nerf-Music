@@ -8,12 +8,12 @@ import com.nerf.music.data.repository.AudioQuality
  * para garantir máxima velocidade de inicialização (<200ms) e tolerância zero a falhas.
  *
  * Estratégia:
- * 1. Tenta primeiro o resolvedor primário (InnerTube via cliente oficial do iOS Music) - ultra rápido.
- * 2. Em caso de falha ou recusa de conexão, aciona imediatamente o resolvedor secundário (NewPipeExtractor).
+ * 1. Tenta primeiro o NewPipeExtractor, que respeita as preferências de qualidade e economia.
+ * 2. Em caso de falha, tenta o resolvedor InnerTube como alternativa.
  */
 class CompositeStreamResolver(
-    private val primary: StreamResolver,
-    private val secondary: StreamResolver
+    internal val primary: StreamResolver,
+    internal val secondary: StreamResolver
 ) : StreamResolver {
 
     companion object {
@@ -60,3 +60,10 @@ class CompositeStreamResolver(
         return secondary.resolveVideoStreamUrl(videoId)
     }
 }
+
+/** Uses NewPipe first because it applies the user's active quality and data-saver profile. */
+internal fun createDefaultStreamResolver(context: android.content.Context?): StreamResolver =
+    CompositeStreamResolver(
+        primary = NewPipeStreamResolver(context),
+        secondary = InnerTubeStreamResolver()
+    )

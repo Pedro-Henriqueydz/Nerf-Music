@@ -607,11 +607,11 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🛡️ ATUALIZAÇÃO DE SEGURANÇA & ESTABILIDADE (v1.3.1):
-            • Proteção de Dados e Sessões: Aprimoramento na criptografia e armazenamento seguro de dados locais e sessões conectadas.
-            • Conexões e Navegação Segura: Implementação de diretivas rigorosas de tráfego HTTPS e isolamento na navegação interna.
-            • Integridade do Aplicativo: Validação aprimorada de pacotes e downloads para maior confiabilidade nas atualizações.
-            • Melhorias Gerais: Otimizações de desempenho e correções de estabilidade em toda a biblioteca.
+            🎵 NERF Music v1.3.2 — Reprodução e migração mais confiáveis:
+            • Reprodução: resolução de áudio mais resiliente e retomada mais consistente ao trocar de faixa ou de qualidade.
+            • Migração: playlists importadas são atualizadas sem criar cópias, e músicas curtidas são adicionadas em lote.
+            • Conexões: o app só confirma uma sessão quando ela foi armazenada com segurança.
+            • Estabilidade: correções na leitura de durações e no armazenamento seguro de dados.
         """.trimIndent()
     }
 
@@ -1920,11 +1920,16 @@ class MusicViewModel(
         }
     }
 
-    fun connectYouTubeMusicAccount(cookies: String, accountName: String) {
-        migrationManager?.saveYouTubeMusicSession(cookies, accountName)
+    fun connectYouTubeMusicAccount(cookies: String, accountName: String): Boolean {
+        val saved = migrationManager?.saveYouTubeMusicSession(cookies, accountName) == true
+        if (!saved) {
+            _userMessage.value = "Não foi possível proteger e salvar a sessão do YouTube Music."
+            return false
+        }
         _isYouTubeMusicConnected.value = true
         _userMessage.value = "Conta do YouTube Music conectada com sucesso!"
         syncYouTubeMusicAccount()
+        return true
     }
 
     fun disconnectYouTubeMusicAccount() {
@@ -1959,11 +1964,16 @@ class MusicViewModel(
         }
     }
 
-    fun connectSpotifyAccount(tokenOrCookies: String, accountName: String) {
-        migrationManager?.saveSpotifySession(tokenOrCookies, accountName)
+    fun connectSpotifyAccount(tokenOrCookies: String, accountName: String): Boolean {
+        val saved = migrationManager?.saveSpotifySession(tokenOrCookies, accountName) == true
+        if (!saved) {
+            _userMessage.value = "Não foi possível proteger e salvar a sessão do Spotify."
+            return false
+        }
         _isSpotifyConnected.value = true
         _userMessage.value = "Conta do Spotify conectada com sucesso!"
         syncSpotifyAccount()
+        return true
     }
 
     fun disconnectSpotifyAccount() {

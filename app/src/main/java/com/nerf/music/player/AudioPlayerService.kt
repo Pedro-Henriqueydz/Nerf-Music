@@ -25,6 +25,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
+import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -227,15 +228,24 @@ class AudioPlayerService : MediaSessionService() {
         private val inFlightResolutions = ConcurrentHashMap<String, Deferred<String>>()
         private var serviceAppContext: Context? = null
         private val globalStreamResolver: StreamResolver by lazy {
-            CompositeStreamResolver(
-                primary = InnerTubeStreamResolver(),
-                secondary = NewPipeStreamResolver(serviceAppContext)
-            )
+            createDefaultStreamResolver(serviceAppContext)
         }
         private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+        // The resolved URL depends on the active network and quality preferences. Keep separate
+        // entries so changing those settings cannot reuse a stream selected for the old profile.
+        private fun streamCacheKey(videoId: String): String {
+            val context = serviceAppContext
+            val prefs = context?.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
+            val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: true
+            val qualityKey = if (isWifi) "key_wifi_audio_quality" else "key_cellular_audio_quality"
+            val dataSaver = prefs?.getString("key_data_saver_mode", "ALWAYS_OFF") ?: "ALWAYS_OFF"
+            val quality = prefs?.getString(qualityKey, "AUTOMATIC") ?: "AUTOMATIC"
+            return "$videoId|$dataSaver|$quality|$isWifi"
+        }
+
         fun isStreamCached(videoId: String): Boolean {
-            val cached = streamUrlCache[videoId] ?: return false
+            val cached = streamUrlCache[streamCacheKey(videoId)] ?: return false
             return (System.currentTimeMillis() - cached.timestampMs) < CACHE_TTL_MS
         }
 
@@ -249,11 +259,12 @@ class AudioPlayerService : MediaSessionService() {
                 if (offlineFile.exists() && offlineFile.length() > 0) return
             }
 
+            val cacheKey = streamCacheKey(videoId)
             val now = System.currentTimeMillis()
-            val cached = streamUrlCache[videoId]
+            val cached = streamUrlCache[cacheKey]
             if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) return
 
-            val existing = inFlightResolutions[videoId]
+            val existing = inFlightResolutions[cacheKey]
             if (existing != null && existing.isActive) return
 
             val deferred = prefetchScope.async {
@@ -262,7 +273,7 @@ class AudioPlayerService : MediaSessionService() {
                     val result = globalStreamResolver.resolveStreamUrl(videoId)
                     val url = result.getOrNull()
                     if (!url.isNullOrBlank()) {
-                        streamUrlCache[videoId] = CachedStreamUrl(url, System.currentTimeMillis())
+                        streamUrlCache[cacheKey] = CachedStreamUrl(url, System.currentTimeMillis())
                         Log.i(TAG, "Pre-fetch de áudio concluído com sucesso para: $videoId")
                         url
                     } else {
@@ -272,24 +283,25 @@ class AudioPlayerService : MediaSessionService() {
                     Log.w(TAG, "Falha no pre-fetch de stream para $videoId: ${e.message}")
                     throw e
                 } finally {
-                    inFlightResolutions.remove(videoId)
+                    inFlightResolutions.remove(cacheKey)
                 }
             }
-            inFlightResolutions[videoId] = deferred
+            inFlightResolutions[cacheKey] = deferred
         }
 
         /**
          * Resolve a URL de streaming ou aguarda uma pre-busca já em andamento, garantindo 0 requisições duplicadas.
          */
         fun resolveOrAwaitStreamUrl(videoId: String): String {
+            val cacheKey = streamCacheKey(videoId)
             val now = System.currentTimeMillis()
-            val cached = streamUrlCache[videoId]
+            val cached = streamUrlCache[cacheKey]
             if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) {
                 Log.i(TAG, "Stream URL obtida diretamente do cache instantâneo para: $videoId")
                 return cached.url
             }
 
-            val existing = inFlightResolutions[videoId]
+            val existing = inFlightResolutions[cacheKey]
             if (existing != null && existing.isActive) {
                 Log.i(TAG, "Aguardando pre-fetch em voo para: $videoId")
                 return runBlocking {
@@ -298,7 +310,7 @@ class AudioPlayerService : MediaSessionService() {
                     } catch (e: Exception) {
                         Log.w(TAG, "Pre-fetch em voo falhou, re-tentando JIT: ${e.message}")
                         val retryUrl = globalStreamResolver.resolveStreamUrl(videoId).getOrThrow()
-                        streamUrlCache[videoId] = CachedStreamUrl(retryUrl, System.currentTimeMillis())
+                        streamUrlCache[cacheKey] = CachedStreamUrl(retryUrl, System.currentTimeMillis())
                         retryUrl
                     }
                 }
@@ -307,22 +319,28 @@ class AudioPlayerService : MediaSessionService() {
             val deferred = prefetchScope.async {
                 Log.i(TAG, "Resolvendo URL de stream JIT para: $videoId")
                 val result = globalStreamResolver.resolveStreamUrl(videoId).getOrThrow()
-                streamUrlCache[videoId] = CachedStreamUrl(result, System.currentTimeMillis())
+                streamUrlCache[cacheKey] = CachedStreamUrl(result, System.currentTimeMillis())
                 result
             }
-            inFlightResolutions[videoId] = deferred
+            inFlightResolutions[cacheKey] = deferred
             return runBlocking {
                 try {
                     deferred.await()
                 } finally {
-                    inFlightResolutions.remove(videoId)
+                    inFlightResolutions.remove(cacheKey)
                 }
             }
         }
 
         fun evictCache(videoId: String) {
-            streamUrlCache.remove(videoId)
-            inFlightResolutions.remove(videoId)?.cancel()
+            val prefix = "$videoId|"
+            streamUrlCache.keys.removeAll { it.startsWith(prefix) }
+            inFlightResolutions.entries
+                .filter { it.key.startsWith(prefix) }
+                .forEach { (key, deferred) ->
+                    deferred.cancel()
+                    inFlightResolutions.remove(key, deferred)
+                }
         }
     }
 

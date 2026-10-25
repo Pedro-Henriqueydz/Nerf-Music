@@ -1,79 +1,80 @@
-# NERF Music (Android) — Prova de Conceito (PoC)
+# NERF Music
 
-Aplicativo Android nativo de música desenvolvido em **Kotlin**, **Jetpack Compose** e **AndroidX Media3 (ExoPlayer)** com interface inteiramente em **Português do Brasil (PT-BR)**.
+Aplicativo Android de música em Kotlin, com interface construída em Jetpack Compose e reprodução por AndroidX Media3. O app reúne busca e navegação por um catálogo musical, player em segundo plano, biblioteca local e recursos de personalização.
 
----
+> O catálogo e a resolução de streams dependem de serviços e endpoints externos do YouTube Music. O funcionamento dessas integrações pode mudar quando os serviços alterarem seus endpoints ou formatos.
 
-## 1. Arquitetura da Solução
+## Recursos
 
-O projeto segue a arquitetura recomendada do Android (MVVM com Separação Estrita de Responsabilidades):
+- Busca de músicas e artistas, navegação por artistas e álbuns e feed inicial com seções e filtros de humor.
+- Player com fila, controles na notificação e reprodução em segundo plano; configurações de reprodução incluem gapless, crossfade e automix.
+- Biblioteca local com músicas curtidas, playlists, histórico, downloads para reprodução offline e letras.
+- Feed e rádio sintetizados com base em histórico, artistas e afinidade musical.
+- Downloads inteligentes em segundo plano, com limites e opções de qualidade configuráveis.
+- Configurações de rede, reprodução, conteúdo, armazenamento e exibição.
+- Ferramentas de migração/importação de biblioteca e verificação de atualizações do app.
 
+Os recursos que dependem da rede exigem conexão à internet. A disponibilidade de faixas, letras, metadados e streams depende das fontes externas usadas pelo aplicativo.
+
+## Tecnologias
+
+- Kotlin e Android Gradle Plugin, com Gradle Wrapper.
+- Jetpack Compose, Material 3 e Navigation Compose.
+- AndroidX Media3 (ExoPlayer e MediaSession) para reprodução em primeiro e segundo plano.
+- OkHttp e Kotlin Serialization para chamadas de rede e dados serializados.
+- NewPipe Extractor e resolvedores InnerTube para localizar streams de áudio.
+- WorkManager para tarefas periódicas, como downloads inteligentes e verificações de atualização.
+
+## Organização do código
+
+O código-fonte do aplicativo fica em `app/src/main/java/com/nerf/music/`:
+
+| Pacote | Responsabilidade |
+| --- | --- |
+| `data/model` | Modelos de faixas, artistas, álbuns, feed, biblioteca e estado de reprodução. |
+| `data/network` | Cliente do catálogo e interpretação das respostas do InnerTube. |
+| `data/repository` | Acesso ao catálogo e persistência local de biblioteca, histórico, preferências, afinidade, downloads e migração. |
+| `player` | Serviço Media3, resolução de streams, rádio e lógica de transição. |
+| `ui/screens` | Telas de Home, busca, exploração, player, biblioteca, artistas, álbuns, configurações e migração. |
+| `ui/viewmodel` | Estado e operações que conectam a interface aos repositórios e ao player. |
+| `updater`, `work`, `util` | Atualizações, tarefas de fundo, notificações e utilitários de armazenamento e rede. |
+
+## Requisitos
+
+- JDK 17
+- Android SDK com plataforma 34
+- Gradle Wrapper incluído no repositório (`gradlew` / `gradlew.bat`)
+
+## Compilar e instalar
+
+No Windows, a partir da raiz do projeto:
+
+```powershell
+.\gradlew.bat assembleDebug
 ```
-app/src/main/java/com/nerf/music/
-├── data/
-│   ├── model/
-│   │   ├── Track.kt                 # Metadados de catálogo (Título, Artista, Capa, Duração)
-│   │   └── PlaybackState.kt         # Estado reativo da reprodução (Posição, Buffer, IsPlaying)
-│   ├── network/
-│   │   └── InnerTubeCatalogClient.kt# Cliente HTTP anônimo do catálogo InnerTube (WEB_REMIX pt-BR)
-│   └── repository/
-│       ├── MusicRepository.kt       # Interface limpa de acesso ao catálogo
-│       └── MusicRepositoryImpl.kt   # Implementação do repositório
-├── player/
-│   ├── AudioPlayerService.kt        # MediaSessionService Media3 com ResolvingDataSource e segundo plano
-│   ├── StreamResolver.kt            # Interface para resolução de streaming
-│   └── NewPipeStreamResolver.kt     # Extrator real de fluxos de áudio via NewPipeExtractor
-└── ui/
-    ├── MainActivity.kt              # Entrypoint com enableEdgeToEdge
-    ├── theme/                       # Cores e tema Material 3 Dark
-    ├── viewmodel/
-    │   └── MusicViewModel.kt        # Conexão entre Repositório, MediaController e Compose
-    └── screens/
-        ├── SearchScreen.kt          # Tela de busca com abas e MiniPlayer persistente
-        └── PlayerScreen.kt          # Full Player com Palette dinâmica e Fila ("A seguir") em 3 estágios
+
+O APK de depuração será gerado em `app\build\outputs\apk\debug\app-debug.apk`. Para instalar em um dispositivo conectado com ADB:
+
+```powershell
+.\gradlew.bat installDebug
 ```
 
----
+Para compilar a variante de lançamento:
 
-## 2. Separação Estrita: Catálogo vs. Reprodução de Áudio
+```powershell
+.\gradlew.bat assembleRelease
+```
 
-- **Catálogo de Metadados:** Obtido através de chamadas anônimas e públicas ao endpoint `https://music.youtube.com/youtubei/v1/search` com identificador `WEB_REMIX` e localização `pt-BR / BR`. Não requer login, conta de usuário ou chaves privadas.
-- **Motor de Áudio:** Implementado via **AndroidX Media3 ExoPlayer** encapsulado em um `MediaSessionService` (`AudioPlayerService`) com `ResolvingDataSource.Factory` para resolução JIT da fila nativa (`currentTimeline`).
-- **Resolução de Stream Real:** Implementada em `NewPipeStreamResolver` usando `NewPipeExtractor` para extrair diretamente o stream de áudio de maior bitrate a partir do `videoId`.
+As configurações de assinatura da variante de lançamento estão no `app/build.gradle.kts` e usam `app/nerf-release.jks`, com suporte a variáveis de ambiente para as senhas e o alias. Configure credenciais próprias antes de gerar uma distribuição assinada; não publique credenciais no repositório.
 
----
+## Testes
 
-## 3. Instruções de Compilação e Instalação
+Os testes unitários ficam em `app/src/test/`. Para executá-los:
 
-### Pré-requisitos instalados:
-- **JDK:** OpenJDK 17 LTS
-- **Android SDK:** `android-34` com `build-tools 34.0.0`
-- **Gradle:** Wrapper 8.10.2 incluso no projeto
+```powershell
+.\gradlew.bat test
+```
 
-### Comandos:
+## Versão
 
-1. **Executar os testes unitários e de integração:**
-   ```bash
-   .\gradlew.bat test
-   ```
-
-2. **Compilar o APK de desenvolvimento (Debug):**
-   ```bash
-   .\gradlew.bat assembleDebug
-   ```
-   *O APK gerado estará em:* `app\build\outputs\apk\debug\app-debug.apk`
-
-3. **Instalar em dispositivo ou emulador conectado via ADB:**
-   ```bash
-   .\gradlew.bat installDebug
-   # ou diretamente via adb:
-   adb install -r app\build\outputs\apk\debug\app-debug.apk
-   ```
-
----
-
-## 4. Resultados dos Testes
-
-- `InnerTubeCatalogClientTest.testEmptyQueryReturnsEmptyList`: **APROVADO** (0.28s)
-- `InnerTubeCatalogClientTest.testRealCatalogSearchReturnsValidTracks`: **APROVADO** (0.85s)
-- Compilação dos 45 módulos Gradle e empacotamento do APK: **APROVADO** (`BUILD SUCCESSFUL in 1m 21s`)
+A versão Android está definida em `app/build.gradle.kts` (`versionName` e `versionCode`). O histórico de alterações está em [CHANGELOG.md](CHANGELOG.md), e as notas da versão atual estão em [RELEASE_NOTES.md](RELEASE_NOTES.md).

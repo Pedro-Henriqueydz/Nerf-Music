@@ -1284,23 +1284,25 @@ class InnerTubeCatalogClient(
             .filter { it.isNotEmpty() }
     }
 
-    private fun extractDurationFromItem(item: JSONObject, flexCols: JSONArray): String {
-        for (c in 0 until flexCols.length()) {
-            val textObj = flexCols.optJSONObject(c)
-                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                ?.optJSONObject("text") ?: continue
-            val runs = textObj.optJSONArray("runs") ?: continue
+    fun extractDurationFromItem(item: JSONObject, flexCols: JSONArray?): String {
+        if (flexCols != null) {
+            for (c in 0 until flexCols.length()) {
+                val textObj = flexCols.optJSONObject(c)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text") ?: continue
+                val runs = textObj.optJSONArray("runs") ?: continue
 
-            val segments = extractSegmentsFromRuns(runs)
-            for (segment in segments) {
-                val matched = extractDurationFromSegment(segment)
-                if (matched != null) return matched
-            }
+                val segments = extractSegmentsFromRuns(runs)
+                for (segment in segments) {
+                    val matched = extractDurationFromSegment(segment)
+                    if (matched != null) return matched
+                }
 
-            for (r in 0 until runs.length()) {
-                val runText = runs.optJSONObject(r)?.optString("text")?.trim() ?: ""
-                val matched = extractDurationFromSegment(runText)
-                if (matched != null) return matched
+                for (r in 0 until runs.length()) {
+                    val runText = runs.optJSONObject(r)?.optString("text")?.trim() ?: ""
+                    val matched = extractDurationFromSegment(runText)
+                    if (matched != null) return matched
+                }
             }
         }
 
@@ -1319,18 +1321,20 @@ class InnerTubeCatalogClient(
             }
         }
 
-        for (c in 0 until flexCols.length()) {
-            val label = flexCols.optJSONObject(c)
-                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                ?.optJSONObject("text")
-                ?.optJSONObject("accessibility")
-                ?.optJSONObject("accessibilityData")
-                ?.optString("label") ?: continue
-            val matcher = ACCESSIBILITY_DURATION_REGEX.matcher(label)
-            if (matcher.find()) {
-                val min = matcher.group(1)?.toIntOrNull() ?: 0
-                val sec = matcher.group(2)?.toIntOrNull() ?: 0
-                return String.format(Locale.US, "%02d:%02d", min, sec)
+        if (flexCols != null) {
+            for (c in 0 until flexCols.length()) {
+                val label = flexCols.optJSONObject(c)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")
+                    ?.optJSONObject("accessibility")
+                    ?.optJSONObject("accessibilityData")
+                    ?.optString("label") ?: continue
+                val matcher = ACCESSIBILITY_DURATION_REGEX.matcher(label)
+                if (matcher.find()) {
+                    val min = matcher.group(1)?.toIntOrNull() ?: 0
+                    val sec = matcher.group(2)?.toIntOrNull() ?: 0
+                    return String.format(Locale.US, "%02d:%02d", min, sec)
+                }
             }
         }
 

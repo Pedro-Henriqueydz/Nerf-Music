@@ -63,7 +63,7 @@ object SecureStorageHelper {
             "$ivBase64$IV_SEPARATOR$cipherBase64"
         } catch (e: Exception) {
             Log.e(TAG, "Falha na criptografia de credencial: ${e.message}", e)
-            plainText
+            null
         }
     }
 
@@ -90,7 +90,7 @@ object SecureStorageHelper {
             String(decryptedBytes, Charsets.UTF_8)
         } catch (e: Exception) {
             Log.e(TAG, "Falha na decriptografia de credencial: ${e.message}", e)
-            cipherTextWithIv
+            null
         }
     }
 }

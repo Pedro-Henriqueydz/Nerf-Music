@@ -1,3 +1,18 @@
+# 🎵 NERF Music v1.3.2 — Reprodução e migração mais confiáveis
+
+Esta versão corrige problemas de reprodução e torna a importação de bibliotecas mais previsível.
+
+### Correções e melhorias
+
+- **Resolução de áudio:** adiciona uma segunda fonte de resolução quando a primeira não encontra um stream e evita reutilizar streams armazenados para outra qualidade ou conexão.
+- **Migração de playlists:** atualiza playlists importadas pela identidade da fonte, evitando cópias a cada nova importação.
+- **Músicas curtidas:** adiciona faixas importadas em lote e evita duplicatas.
+- **Sessões conectadas:** só confirma a conexão após salvar a sessão com sucesso; falhas de armazenamento seguro não são tratadas como sucesso.
+- **Durações:** torna a leitura da duração mais tolerante a respostas incompletas do catálogo.
+- **Testes:** adiciona cobertura para a identidade de playlists importadas e a resolução padrão de streams.
+
+---
+
 # 🛡️ NERF Music v1.3.1 - Atualização de Segurança e Estabilidade
 
 Esta versão traz importantes aprimoramentos de segurança, proteção de dados e melhorias de estabilidade em todo o aplicativo.

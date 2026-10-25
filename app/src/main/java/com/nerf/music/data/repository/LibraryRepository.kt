@@ -33,6 +33,7 @@ interface LibraryRepository {
 
     fun isFavorite(trackId: String): Boolean
     fun toggleFavorite(track: Track): Boolean
+    fun addFavorites(tracks: List<Track>): Int
 
     fun isDownloaded(trackId: String): Boolean
     fun getDownloadedFilePath(trackId: String): String?
@@ -40,6 +41,8 @@ interface LibraryRepository {
     fun removeDownload(trackId: String): Boolean
 
     fun createPlaylist(title: String, description: String = "", initialTracks: List<Track> = emptyList()): UserPlaylist
+    /** Cria ou atualiza a playlist importada identificada pela chave estável de origem. */
+    fun upsertImportedPlaylist(sourceKey: String, title: String, description: String, tracks: List<Track>): UserPlaylist
     fun deletePlaylist(playlistId: String): Boolean
     fun updatePlaylistTitle(playlistId: String, newTitle: String): Boolean
     fun addTrackToPlaylist(playlistId: String, track: Track): Boolean
@@ -166,6 +169,18 @@ class LibraryRepositoryImpl(
         _likedTracksFlow.value = current
         saveLikedTracks(current)
         return added
+    }
+
+    override fun addFavorites(tracks: List<Track>): Int {
+        if (tracks.isEmpty()) return 0
+        val current = _likedTracksFlow.value.toMutableList()
+        val existingIds = current.map { it.id }.toSet()
+        val toAdd = tracks.filter { it.id.isNotBlank() && it.id !in existingIds }
+        if (toAdd.isEmpty()) return 0
+        current.addAll(0, toAdd)
+        _likedTracksFlow.value = current
+        saveLikedTracks(current)
+        return toAdd.size
     }
 
     private fun saveLikedTracks(tracks: List<Track>) {
@@ -393,6 +408,37 @@ class LibraryRepositoryImpl(
         _playlistsFlow.value = current
         savePlaylists(current)
         return newPlaylist
+    }
+
+    override fun upsertImportedPlaylist(
+        sourceKey: String,
+        title: String,
+        description: String,
+        tracks: List<Track>
+    ): UserPlaylist {
+        val importedId = ImportedPlaylistIdentity.idFor(sourceKey)
+        val current = _playlistsFlow.value.toMutableList()
+        val index = current.indexOfFirst { it.id == importedId }
+        val playlist = if (index >= 0) {
+            val existing = current[index]
+            existing.copy(
+                title = title.trim().ifBlank { existing.title },
+                description = description.trim(),
+                tracks = tracks,
+                customThumbnailUrl = existing.customThumbnailUrl
+            ).also { current[index] = it }
+        } else {
+            UserPlaylist(
+                id = importedId,
+                title = title.trim().ifBlank { "Playlist importada" },
+                description = description.trim(),
+                createdAtEpochMs = System.currentTimeMillis(),
+                tracks = tracks
+            ).also { current.add(0, it) }
+        }
+        _playlistsFlow.value = current
+        savePlaylists(current)
+        return playlist
     }
 
     override fun updatePlaylistTitle(playlistId: String, newTitle: String): Boolean {

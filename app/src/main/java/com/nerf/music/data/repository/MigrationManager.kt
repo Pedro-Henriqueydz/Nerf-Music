@@ -76,13 +76,19 @@ class MigrationManager(
 
     fun getYouTubeMusicAccountName(): String = prefs.getString(KEY_YTM_ACCOUNT_NAME, "Conta Google Conectada") ?: "Conta Google Conectada"
 
-    fun saveYouTubeMusicSession(cookies: String, accountName: String = "Conta Google Conectada") {
-        val encrypted = SecureStorageHelper.encrypt(cookies) ?: cookies
+    fun saveYouTubeMusicSession(cookies: String, accountName: String = "Conta Google Conectada"): Boolean {
+        if (cookies.isBlank()) return false
+        val encrypted = SecureStorageHelper.encrypt(cookies)
+        if (encrypted == null) {
+            Log.e(TAG, "Sessao do YouTube Music nao foi salva porque a criptografia falhou.")
+            return false
+        }
         prefs.edit()
             .putString(KEY_YTM_COOKIES, encrypted)
             .putString(KEY_YTM_ACCOUNT_NAME, accountName)
             .apply()
         Log.i(TAG, "Sessao do YouTube Music salva com sucesso (protegida com criptografia).")
+        return true
     }
 
     fun disconnectYouTubeMusic() {
@@ -97,13 +103,19 @@ class MigrationManager(
 
     fun getSpotifyAccountName(): String = prefs.getString(KEY_SPOTIFY_ACCOUNT_NAME, "Conta Spotify Conectada") ?: "Conta Spotify Conectada"
 
-    fun saveSpotifySession(tokenOrCookies: String, accountName: String = "Conta Spotify Conectada") {
-        val encrypted = SecureStorageHelper.encrypt(tokenOrCookies) ?: tokenOrCookies
+    fun saveSpotifySession(tokenOrCookies: String, accountName: String = "Conta Spotify Conectada"): Boolean {
+        if (tokenOrCookies.isBlank()) return false
+        val encrypted = SecureStorageHelper.encrypt(tokenOrCookies)
+        if (encrypted == null) {
+            Log.e(TAG, "Sessao do Spotify nao foi salva porque a criptografia falhou.")
+            return false
+        }
         prefs.edit()
             .putString(KEY_SPOTIFY_TOKEN, encrypted)
             .putString(KEY_SPOTIFY_ACCOUNT_NAME, accountName)
             .apply()
         Log.i(TAG, "Sessao do Spotify salva com sucesso (protegida com criptografia).")
+        return true
     }
 
     fun disconnectSpotify() {
@@ -224,10 +236,11 @@ class MigrationManager(
                     onProgress(1, 1, "Sincronizando: ${summary.title}")
                     val plTracks = fetchYtmPlaylistTracks(summary.browseId, cookies, sapisid, origin)
                     if (plTracks.isNotEmpty()) {
-                        val created = libraryRepository.createPlaylist(
+                        libraryRepository.upsertImportedPlaylist(
+                            sourceKey = "youtube_music:${summary.browseId}",
                             title = summary.title,
                             description = "Sincronizada do YouTube Music • ${plTracks.size} faixas",
-                            initialTracks = plTracks
+                            tracks = plTracks
                         )
                         totalSynced += plTracks.size
                     }
@@ -314,10 +327,11 @@ class MigrationManager(
                             val pTracks = fetchSpotifyPlaylistTracksWithToken(pId, accessToken)
                             if (pTracks.isNotEmpty()) {
                                 val matchedPl = matchRawItemsToCatalog(pTracks, onProgress)
-                                val created = libraryRepository.createPlaylist(
+                                libraryRepository.upsertImportedPlaylist(
+                                    sourceKey = "spotify:$pId",
                                     title = name,
                                     description = "Sincronizada do Spotify • ${matchedPl.size} faixas",
-                                    initialTracks = matchedPl
+                                    tracks = matchedPl
                                 )
                                 totalSynced += matchedPl.size
                             }

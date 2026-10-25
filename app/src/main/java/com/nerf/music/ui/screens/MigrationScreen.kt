@@ -362,12 +362,13 @@ fun MigrationScreen(
                                         val uri = request?.url ?: return false
                                         val host = uri.host?.lowercase() ?: return true
 
-                                        // Whitelist estrita de domínios confiáveis para autenticação OAuth/SSO
+                                        // Whitelist abrangente de domínios oficiais para autenticação OAuth/SSO
                                         val isAllowed = when (target) {
-                                            "ytm" -> host.endsWith("google.com") || host.endsWith("youtube.com") ||
-                                                    host.endsWith("gstatic.com") || host.endsWith("googleusercontent.com")
-                                            "spotify" -> host.endsWith("spotify.com") || host.endsWith("scdn.co") ||
-                                                    host.endsWith("spotifycdn.com")
+                                            "ytm" -> host.contains("google.") || host.contains("youtube.") ||
+                                                    host.contains("gstatic.") || host.contains("googleusercontent.") ||
+                                                    host.contains("recaptcha.")
+                                            "spotify" -> host.contains("spotify.") || host.contains("scdn.") ||
+                                                    host.contains("facebook.") || host.contains("apple.")
                                             else -> false
                                         }
 
@@ -381,16 +382,22 @@ fun MigrationScreen(
                                         if (target == "ytm") {
                                             val cookies = cookieManager.getCookie("https://music.youtube.com") ?: ""
                                             if (cookies.contains("SAPISID") || cookies.contains("SSID") || cookies.contains("__Secure-3PAPISID")) {
-                                                viewModel.connectYouTubeMusicAccount(cookies, "Conta Google Conectada")
-                                                showWebLoginDialog = null
-                                                Toast.makeText(ctx, "Conectado ao YouTube Music com sucesso!", Toast.LENGTH_SHORT).show()
+                                                if (viewModel.connectYouTubeMusicAccount(cookies, "Conta Google Conectada")) {
+                                                    showWebLoginDialog = null
+                                                    Toast.makeText(ctx, "Conectado ao YouTube Music com sucesso!", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(ctx, "Não foi possível proteger a sessão. Tente novamente.", Toast.LENGTH_LONG).show()
+                                                }
                                             }
                                         } else if (target == "spotify") {
                                             val cookies = cookieManager.getCookie("https://open.spotify.com") ?: ""
                                             if (cookies.contains("sp_dc") || cookies.contains("sp_t")) {
-                                                viewModel.connectSpotifyAccount(cookies, "Conta Spotify Conectada")
-                                                showWebLoginDialog = null
-                                                Toast.makeText(ctx, "Conectado ao Spotify com sucesso!", Toast.LENGTH_SHORT).show()
+                                                if (viewModel.connectSpotifyAccount(cookies, "Conta Spotify Conectada")) {
+                                                    showWebLoginDialog = null
+                                                    Toast.makeText(ctx, "Conectado ao Spotify com sucesso!", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(ctx, "Não foi possível proteger a sessão. Tente novamente.", Toast.LENGTH_LONG).show()
+                                                }
                                             }
                                         }
                                     }
