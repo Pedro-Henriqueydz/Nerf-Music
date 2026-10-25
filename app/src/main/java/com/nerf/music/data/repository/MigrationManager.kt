@@ -1,5 +1,4 @@
 package com.nerf.music.data.repository
-
 import android.content.Context
 import android.util.Log
 import com.nerf.music.data.model.SearchFilter
@@ -34,6 +33,7 @@ import java.util.regex.Pattern
  * Em ambos os modos, a importação injeta automaticamente os dados no DNA acústico do ouvinte
  * (artistas mais ouvidos e sementes favoritas), transformando a Home instantaneamente.
  */
+
 class MigrationManager(
     private val context: Context,
     private val catalogClient: InnerTubeCatalogClient = InnerTubeCatalogClient(),
@@ -50,9 +50,7 @@ class MigrationManager(
         private const val KEY_SPOTIFY_ACCOUNT_NAME = "spotify_account_name"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
-
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -60,6 +58,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // ESTADO DE CONTAS CONECTADAS
+
     // ---------------------------------------------------------------------------------------------
 
     fun isYouTubeMusicConnected(): Boolean = !prefs.getString(KEY_YTM_COOKIES, null).isNullOrBlank()
@@ -104,6 +103,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 1. SINCRONIZAÇÃO VIA CONEXÃO DIRETA: YOUTUBE MUSIC (COM PAGINAÇÃO COMPLETA)
+
     // ---------------------------------------------------------------------------------------------
 
     suspend fun syncYouTubeMusicAccount(
@@ -111,33 +111,27 @@ class MigrationManager(
     ): Result<Int> = withContext(Dispatchers.IO) {
         val cookies = prefs.getString(KEY_YTM_COOKIES, null)
             ?: return@withContext Result.failure(IllegalStateException("Nenhuma sessão do YouTube Music encontrada. Faça login primeiro."))
-
         try {
             var totalSynced = 0
             val sapisid = extractCookieValue(cookies, "SAPISID")
                 ?: extractCookieValue(cookies, "__Secure-3PAPISID")
                 ?: extractCookieValue(cookies, "__Secure-1PAPISID")
                 ?: ""
-
             val origin = "https://music.youtube.com"
-
             // 1. Sincroniza Músicas Curtidas (FEmusic_liked_videos) paginando todas as páginas
             onProgress(0, 1, "Buscando todas as suas músicas curtidas...")
             val likedTracks = mutableListOf<Track>()
             var continuationToken: String? = null
             var page = 1
-
             do {
                 val now = System.currentTimeMillis() / 1000
                 val sha1Hash = computeSha1("$now $sapisid $origin")
                 val authHeader = "SAPISIDHASH ${now}_$sha1Hash"
-
                 val url = if (continuationToken == null) {
                     "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"
                 } else {
                     "https://music.youtube.com/youtubei/v1/browse?continuation=$continuationToken&prettyPrint=false"
                 }
-
                 val payload = JSONObject().apply {
                     put("context", JSONObject().apply {
                         put("client", JSONObject().apply {
@@ -151,7 +145,6 @@ class MigrationManager(
                         put("browseId", "FEmusic_liked_videos")
                     }
                 }
-
                 val likedRequest = Request.Builder()
                     .url(url)
                     .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
@@ -161,7 +154,6 @@ class MigrationManager(
                     .header("X-Origin", origin)
                     .header("Origin", origin)
                     .build()
-
                 val likedResp = httpClient.newCall(likedRequest).execute()
                 if (likedResp.isSuccessful) {
                     val bodyStr = likedResp.body?.string().orEmpty()
@@ -174,7 +166,6 @@ class MigrationManager(
                     break
                 }
             } while (!continuationToken.isNullOrBlank())
-
             // Adiciona todas as faixas encontradas às Músicas Curtidas da biblioteca
             for ((idx, track) in likedTracks.withIndex()) {
                 onProgress(idx + 1, likedTracks.size, "Salvando: ${track.artist} - ${track.title}")
@@ -183,17 +174,14 @@ class MigrationManager(
                 }
                 totalSynced++
             }
-
             if (likedTracks.isNotEmpty()) {
                 injectImportedPreferences(likedTracks)
             }
-
             // 2. Sincroniza Playlists do Usuário (FEmusic_liked_playlists)
             onProgress(0, 1, "Buscando Playlists do YouTube Music...")
             val now = System.currentTimeMillis() / 1000
             val sha1Hash = computeSha1("$now $sapisid $origin")
             val authHeader = "SAPISIDHASH ${now}_$sha1Hash"
-
             val playlistsPayload = JSONObject().apply {
                 put("context", JSONObject().apply {
                     put("client", JSONObject().apply {
@@ -205,7 +193,6 @@ class MigrationManager(
                 })
                 put("browseId", "FEmusic_liked_playlists")
             }
-
             val plRequest = Request.Builder()
                 .url("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false")
                 .post(playlistsPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
@@ -215,7 +202,6 @@ class MigrationManager(
                 .header("X-Origin", origin)
                 .header("Origin", origin)
                 .build()
-
             val plResp = httpClient.newCall(plRequest).execute()
             if (plResp.isSuccessful) {
                 val plBodyStr = plResp.body?.string().orEmpty()
@@ -227,16 +213,13 @@ class MigrationManager(
                     if (plTracks.isNotEmpty()) {
                         val created = libraryRepository.createPlaylist(
                             title = summary.title,
-                            description = "Sincronizada do YouTube Music • ${plTracks.size} faixas"
+                            description = "Sincronizada do YouTube Music • ${plTracks.size} faixas",
+                            initialTracks = plTracks
                         )
-                        for (tr in plTracks) {
-                            libraryRepository.addTrackToPlaylist(created.id, tr)
-                            totalSynced++
-                        }
+                        totalSynced += plTracks.size
                     }
                 }
             }
-
             Result.success(totalSynced)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao sincronizar YouTube Music: ${e.message}", e)
@@ -246,6 +229,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 2. SINCRONIZAÇÃO VIA CONEXÃO DIRETA: SPOTIFY
+
     // ---------------------------------------------------------------------------------------------
 
     suspend fun syncSpotifyAccount(
@@ -253,24 +237,20 @@ class MigrationManager(
     ): Result<Int> = withContext(Dispatchers.IO) {
         val tokenOrCookies = prefs.getString(KEY_SPOTIFY_TOKEN, null)
             ?: return@withContext Result.failure(IllegalStateException("Nenhuma sessão do Spotify encontrada. Faça login primeiro."))
-
         try {
             var totalSynced = 0
             val accessToken = resolveSpotifyAccessToken(tokenOrCookies)
                 ?: return@withContext Result.failure(IllegalStateException("Não foi possível autenticar a sessão do Spotify."))
-
             // 1. Músicas Curtidas (Liked Songs com paginação)
             onProgress(0, 1, "Buscando Liked Songs do Spotify...")
             val rawItems = mutableListOf<RawImportedItem>()
             var nextUrl: String? = "https://api.spotify.com/v1/me/tracks?limit=50"
-
             while (!nextUrl.isNullOrBlank()) {
                 val likedReq = Request.Builder()
                     .url(nextUrl)
                     .header("Authorization", "Bearer $accessToken")
                     .header("User-Agent", "Mozilla/5.0")
                     .build()
-
                 val likedResp = httpClient.newCall(likedReq).execute()
                 if (likedResp.isSuccessful) {
                     val json = JSONObject(likedResp.body?.string().orEmpty())
@@ -290,7 +270,6 @@ class MigrationManager(
                     break
                 }
             }
-
             if (rawItems.isNotEmpty()) {
                 val matched = matchRawItemsToCatalog(rawItems, onProgress)
                 for (tr in matched) {
@@ -301,7 +280,6 @@ class MigrationManager(
                 }
                 injectImportedPreferences(matched)
             }
-
             // 2. Playlists do Usuário
             onProgress(0, 1, "Buscando Playlists do Spotify...")
             val plReq = Request.Builder()
@@ -309,7 +287,6 @@ class MigrationManager(
                 .header("Authorization", "Bearer $accessToken")
                 .header("User-Agent", "Mozilla/5.0")
                 .build()
-
             val plResp = httpClient.newCall(plReq).execute()
             if (plResp.isSuccessful) {
                 val json = JSONObject(plResp.body?.string().orEmpty())
@@ -324,17 +301,17 @@ class MigrationManager(
                             val pTracks = fetchSpotifyPlaylistTracksWithToken(pId, accessToken)
                             if (pTracks.isNotEmpty()) {
                                 val matchedPl = matchRawItemsToCatalog(pTracks, onProgress)
-                                val created = libraryRepository.createPlaylist(name, "Sincronizada do Spotify • ${matchedPl.size} faixas")
-                                for (tr in matchedPl) {
-                                    libraryRepository.addTrackToPlaylist(created.id, tr)
-                                    totalSynced++
-                                }
+                                val created = libraryRepository.createPlaylist(
+                                    title = name,
+                                    description = "Sincronizada do Spotify • ${matchedPl.size} faixas",
+                                    initialTracks = matchedPl
+                                )
+                                totalSynced += matchedPl.size
                             }
                         }
                     }
                 }
             }
-
             Result.success(totalSynced)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao sincronizar Spotify: ${e.message}", e)
@@ -396,6 +373,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 3. IMPORTAÇÃO POR LINK (SPOTIFY) - SEM LOGIN
+
     // ---------------------------------------------------------------------------------------------
 
     data class RawImportedItem(val title: String, val artist: String, val album: String? = null)
@@ -407,42 +385,31 @@ class MigrationManager(
         try {
             val playlistId = extractSpotifyPlaylistId(spotifyUrl)
                 ?: return@withContext Result.failure(IllegalArgumentException("Link do Spotify inválido. Certifique-se de que é um link de playlist pública."))
-
             val embedUrl = "https://open.spotify.com/embed/playlist/$playlistId"
             val request = Request.Builder()
                 .url(embedUrl)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
                 .build()
-
             val response = httpClient.newCall(request).execute()
             if (!response.isSuccessful) {
                 return@withContext Result.failure(IllegalStateException("Não foi possível acessar a playlist do Spotify (Código ${response.code})."))
             }
-
             val html = response.body?.string().orEmpty()
             val (playlistTitle, rawItems) = parseSpotifyEmbedHtml(html)
-
             if (rawItems.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("Nenhuma música encontrada na playlist pública do Spotify."))
             }
-
             val matchedTracks = matchRawItemsToCatalog(rawItems, onProgress)
             if (matchedTracks.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("Não foi possível localizar as faixas no catálogo."))
             }
-
             val finalTitle = playlistTitle.ifBlank { "Playlist do Spotify" }
             val createdPlaylist = libraryRepository.createPlaylist(
                 title = finalTitle,
-                description = "Importada do Spotify • ${matchedTracks.size} faixas"
+                description = "Importada do Spotify • ${matchedTracks.size} faixas",
+                initialTracks = matchedTracks
             )
-
-            for (track in matchedTracks) {
-                libraryRepository.addTrackToPlaylist(createdPlaylist.id, track)
-            }
-
             injectImportedPreferences(matchedTracks)
-
             Result.success(createdPlaylist)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao importar playlist do Spotify: ${e.message}", e)
@@ -466,7 +433,6 @@ class MigrationManager(
             val entity = props?.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("entity")
             val name = entity?.optString("name", "Playlist Importada") ?: "Playlist Importada"
             val trackList = entity?.optJSONArray("trackList")
-
             val items = mutableListOf<RawImportedItem>()
             if (trackList != null) {
                 for (i in 0 until trackList.length()) {
@@ -485,6 +451,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 4. IMPORTAÇÃO POR LINK (YOUTUBE MUSIC) - SEM LOGIN
+
     // ---------------------------------------------------------------------------------------------
 
     suspend fun importFromYouTubeMusicUrl(
@@ -494,30 +461,17 @@ class MigrationManager(
         try {
             val listId = extractYouTubeListId(ytmUrl)
                 ?: return@withContext Result.failure(IllegalArgumentException("Link do YouTube Music inválido. O link deve conter 'list=ID'."))
-
             val browseId = if (listId.startsWith("VL")) listId else "VL$listId"
-            val albumResult = catalogClient.getAlbumOrPlaylist(browseId).getOrNull()
-                ?: return@withContext Result.failure(IllegalStateException("Não foi possível carregar a playlist do YouTube Music."))
-
-            val playlistTitle = albumResult.title.ifBlank { "Playlist do YouTube Music" }
-            val tracks = albumResult.tracks
-
+            val (playlistTitle, tracks) = fetchPublicYtmPlaylistTracks(browseId, onProgress)
             if (tracks.isEmpty()) {
-                return@withContext Result.failure(IllegalStateException("A playlist do YouTube Music está vazia ou privada."))
+                return@withContext Result.failure(IllegalStateException("A playlist do YouTube Music está vazia, privada ou indisponível."))
             }
-
             val createdPlaylist = libraryRepository.createPlaylist(
                 title = playlistTitle,
-                description = "Importada do YouTube Music • ${tracks.size} faixas"
+                description = "Importada do YouTube Music • ${tracks.size} faixas",
+                initialTracks = tracks
             )
-
-            for ((index, track) in tracks.withIndex()) {
-                onProgress(index + 1, tracks.size, track.title)
-                libraryRepository.addTrackToPlaylist(createdPlaylist.id, track)
-            }
-
             injectImportedPreferences(tracks)
-
             Result.success(createdPlaylist)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao importar playlist do YouTube Music: ${e.message}", e)
@@ -533,6 +487,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 5. IMPORTAÇÃO DE ARQUIVO (CSV / JSON / TEXTO PURO)
+
     // ---------------------------------------------------------------------------------------------
 
     suspend fun importFromTextOrCsv(
@@ -545,24 +500,17 @@ class MigrationManager(
             if (rawItems.isEmpty()) {
                 return@withContext Result.failure(IllegalArgumentException("Nenhuma música detectada no arquivo."))
             }
-
             val matchedTracks = matchRawItemsToCatalog(rawItems, onProgress)
             if (matchedTracks.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("Nenhuma faixa pôde ser localizada no catálogo."))
             }
-
             val finalTitle = playlistTitle.ifBlank { "Playlist Importada" }
             val createdPlaylist = libraryRepository.createPlaylist(
                 title = finalTitle,
-                description = "Importada via arquivo • ${matchedTracks.size} faixas"
+                description = "Importada via arquivo • ${matchedTracks.size} faixas",
+                initialTracks = matchedTracks
             )
-
-            for (track in matchedTracks) {
-                libraryRepository.addTrackToPlaylist(createdPlaylist.id, track)
-            }
-
             injectImportedPreferences(matchedTracks)
-
             Result.success(createdPlaylist)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao importar arquivo: ${e.message}", e)
@@ -573,11 +521,9 @@ class MigrationManager(
     private fun parseCsvOrTextContent(content: String): List<RawImportedItem> {
         val items = mutableListOf<RawImportedItem>()
         val lines = content.lines().map { it.trim() }.filter { it.isNotBlank() }
-
         var isCsv = false
         var titleCol = -1
         var artistCol = -1
-
         for (line in lines) {
             val lower = line.lowercase()
             if (!isCsv && (lower.contains("title") || lower.contains("track") || lower.contains("name")) &&
@@ -589,7 +535,6 @@ class MigrationManager(
                 artistCol = cols.indexOfFirst { it.contains("artist") || it.contains("performer") }
                 continue
             }
-
             if (isCsv && titleCol != -1 && artistCol != -1) {
                 val cols = line.split(",").map { it.trim().replace("\"", "") }
                 if (cols.size > maxOf(titleCol, artistCol)) {
@@ -620,37 +565,31 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 6. MOTOR DE FUZZY MATCHING (Alta Precisão com Busca Aberta e Fallback)
-    // ---------------------------------------------------------------------------------------------
 
+    // ---------------------------------------------------------------------------------------------
     private suspend fun matchRawItemsToCatalog(
         rawItems: List<RawImportedItem>,
         onProgress: (current: Int, total: Int, trackTitle: String) -> Unit
     ): List<Track> {
         val matchedTracks = mutableListOf<Track>()
         val seenTrackIds = mutableSetOf<String>()
-
         for ((index, item) in rawItems.withIndex()) {
             onProgress(index + 1, rawItems.size, "${item.artist} - ${item.title}".trim(' ', '-'))
-
             try {
                 val cleanTitle = cleanTrackString(item.title)
                 val primaryArtist = item.artist
                     .split(",", "&", "feat", "ft", "/", ";", "•")
                     .firstOrNull()?.trim().orEmpty()
                 val cleanArtist = cleanTrackString(primaryArtist)
-
                 val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
                 var songs = catalogClient.search(query, SearchFilter.ALL).getOrNull()?.songs.orEmpty()
-
                 if (songs.isEmpty() && cleanArtist.isNotBlank()) {
                     songs = catalogClient.search(cleanTitle, SearchFilter.ALL).getOrNull()?.songs.orEmpty()
                 }
-
                 if (songs.isNotEmpty()) {
                     val bestMatch = songs.firstOrNull { candidate ->
                         isMatch(item.title, candidate.title)
                     } ?: songs.first()
-
                     if (seenTrackIds.add(bestMatch.id)) {
                         matchedTracks.add(bestMatch)
                     }
@@ -659,7 +598,6 @@ class MigrationManager(
                 Log.w(TAG, "Falha ao associar faixa ${item.title}: ${e.message}")
             }
         }
-
         return matchedTracks
     }
 
@@ -668,14 +606,12 @@ class MigrationManager(
         val t2 = cleanTrackString(candidateTitle).lowercase()
         if (t1.isEmpty() || t2.isEmpty()) return false
         if (t1 == t2 || t1.contains(t2) || t2.contains(t1)) return true
-
         val words1 = t1.split(" ").filter { it.length > 1 }.toSet()
         val words2 = t2.split(" ").filter { it.length > 1 }.toSet()
         if (words1.isNotEmpty() && words2.isNotEmpty()) {
             val common = words1.intersect(words2)
             if (common.size.toDouble() / words1.size.toDouble() >= 0.5) return true
         }
-
         return calculateSimilarity(itemTitle, candidateTitle) > 0.35
     }
 
@@ -716,6 +652,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 7. INJEÇÃO DE PREFERÊNCIAS NO DNA ACÚSTICO
+
     // ---------------------------------------------------------------------------------------------
 
     private fun injectImportedPreferences(tracks: List<Track>) {
@@ -729,6 +666,7 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
     // 8. UTILITÁRIOS E PARSERS INTERNOS DO YOUTUBE MUSIC
+
     // ---------------------------------------------------------------------------------------------
 
     private fun extractCookieValue(cookies: String, key: String): String? {
@@ -743,6 +681,87 @@ class MigrationManager(
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    private fun fetchPublicYtmPlaylistTracks(
+        browseId: String,
+        onProgress: (current: Int, total: Int, trackTitle: String) -> Unit
+    ): Pair<String, List<Track>> {
+        val tracks = mutableListOf<Track>()
+        var continuationToken: String? = null
+        var playlistTitle = "Playlist do YouTube Music"
+        var page = 1
+
+        do {
+            val url = if (continuationToken == null) {
+                "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"
+            } else {
+                "https://music.youtube.com/youtubei/v1/browse?continuation=$continuationToken&prettyPrint=false"
+            }
+
+            val payload = JSONObject().apply {
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20231204.01.00")
+                        put("hl", "pt-BR")
+                        put("gl", "BR")
+                    })
+                })
+                if (continuationToken == null) {
+                    put("browseId", browseId)
+                }
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                .header("Origin", "https://music.youtube.com")
+                .header("Referer", "https://music.youtube.com/")
+                .build()
+
+            val resp = httpClient.newCall(request).execute()
+            if (!resp.isSuccessful) break
+            val bodyStr = resp.body?.string().orEmpty()
+
+            if (page == 1) {
+                val parsedTitle = extractYtmPlaylistTitle(bodyStr)
+                if (parsedTitle.isNotBlank()) playlistTitle = parsedTitle
+            }
+
+            val (pageTracks, nextC) = parseYtmTracksAndContinuation(bodyStr, continuationToken != null)
+            tracks.addAll(pageTracks)
+            continuationToken = nextC
+            onProgress(tracks.size, tracks.size + 50, "Carregando músicas da playlist (${tracks.size} encontradas)...")
+            page++
+        } while (!continuationToken.isNullOrBlank() && page < 50)
+
+        return Pair(playlistTitle, tracks)
+    }
+
+    private fun extractYtmPlaylistTitle(jsonStr: String): String {
+        try {
+            val root = JSONObject(jsonStr)
+            val header = root.optJSONObject("header")?.optJSONObject("musicResponsiveHeaderRenderer")
+                ?: root.optJSONObject("header")?.optJSONObject("musicDetailHeaderRenderer")
+            val titleRuns = header?.optJSONObject("title")?.optJSONArray("runs")
+            if (titleRuns != null && titleRuns.length() > 0) {
+                val t = titleRuns.optJSONObject(0)?.optString("text")?.trim().orEmpty()
+                if (t.isNotBlank()) return t
+            }
+            val twoCol = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+            val tabs = twoCol?.optJSONArray("tabs")
+            val sec = tabs?.optJSONObject(0)?.optJSONObject("tabRenderer")?.optJSONObject("content")?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+            if (sec != null) {
+                for (i in 0 until sec.length()) {
+                    val s = sec.optJSONObject(i)?.optJSONObject("musicResponsiveHeaderRenderer") ?: continue
+                    val t = s.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.trim().orEmpty()
+                    if (t.isNotBlank()) return t
+                }
+            }
+        } catch (_: Exception) {}
+        return "Playlist do YouTube Music"
+    }
+
     private fun parseYtmTracksAndContinuation(
         jsonStr: String,
         isContinuation: Boolean
@@ -753,119 +772,190 @@ class MigrationManager(
         try {
             val root = JSONObject(jsonStr)
 
-            val items: JSONArray?
-            val continuationsArr: JSONArray?
+            val items = mutableListOf<JSONObject>()
+            val continuationsArr = mutableListOf<JSONObject>()
 
             if (!isContinuation) {
-                val tabs = root.optJSONObject("contents")
+                val singleTabs = root.optJSONObject("contents")
                     ?.optJSONObject("singleColumnBrowseResultsRenderer")
                     ?.optJSONArray("tabs")
-                val secContents = tabs?.optJSONObject(0)
-                    ?.optJSONObject("tabRenderer")
-                    ?.optJSONObject("content")
-                    ?.optJSONObject("sectionListRenderer")
-                    ?.optJSONArray("contents")
+                val twoCol = root.optJSONObject("contents")
+                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                val twoColTabs = twoCol?.optJSONArray("tabs")
 
-                val shelf = secContents?.optJSONObject(0)?.optJSONObject("musicShelfRenderer")
-                    ?: secContents?.optJSONObject(0)?.optJSONObject("musicPlaylistShelfRenderer")
+                var secContents: JSONArray? = null
+                if (singleTabs != null && singleTabs.length() > 0) {
+                    secContents = singleTabs.optJSONObject(0)
+                        ?.optJSONObject("tabRenderer")
+                        ?.optJSONObject("content")
+                        ?.optJSONObject("sectionListRenderer")
+                        ?.optJSONArray("contents")
+                } else if (twoCol != null) {
+                    secContents = twoCol.optJSONObject("secondaryContents")
+                        ?.optJSONObject("sectionListRenderer")
+                        ?.optJSONArray("contents")
+                    if (secContents == null && twoColTabs != null && twoColTabs.length() > 0) {
+                        secContents = twoColTabs.optJSONObject(0)
+                            ?.optJSONObject("tabRenderer")
+                            ?.optJSONObject("content")
+                            ?.optJSONObject("sectionListRenderer")
+                            ?.optJSONArray("contents")
+                    }
+                }
 
-                items = shelf?.optJSONArray("contents")
-                continuationsArr = shelf?.optJSONArray("continuations")
+                if (secContents != null) {
+                    for (i in 0 until secContents.length()) {
+                        val sec = secContents.optJSONObject(i) ?: continue
+                        val shelf = sec.optJSONObject("musicPlaylistShelfRenderer")
+                            ?: sec.optJSONObject("musicShelfRenderer")
+                        if (shelf != null) {
+                            val shelfItems = shelf.optJSONArray("contents")
+                            if (shelfItems != null) {
+                                for (j in 0 until shelfItems.length()) {
+                                    shelfItems.optJSONObject(j)?.let { items.add(it) }
+                                }
+                            }
+                            val conts = shelf.optJSONArray("continuations")
+                            if (conts != null) {
+                                for (k in 0 until conts.length()) {
+                                    conts.optJSONObject(k)?.let { continuationsArr.add(it) }
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 val continuationContents = root.optJSONObject("continuationContents")
                 val shelfC = continuationContents?.optJSONObject("musicShelfContinuation")
                     ?: continuationContents?.optJSONObject("musicPlaylistShelfContinuation")
 
-                items = shelfC?.optJSONArray("contents")
-                continuationsArr = shelfC?.optJSONArray("continuations")
+                if (shelfC != null) {
+                    val shelfItems = shelfC.optJSONArray("contents")
+                    if (shelfItems != null) {
+                        for (j in 0 until shelfItems.length()) {
+                            shelfItems.optJSONObject(j)?.let { items.add(it) }
+                        }
+                    }
+                    val conts = shelfC.optJSONArray("continuations")
+                    if (conts != null) {
+                        for (k in 0 until conts.length()) {
+                            conts.optJSONObject(k)?.let { continuationsArr.add(it) }
+                        }
+                    }
+                }
+
+                val actions = root.optJSONArray("onResponseReceivedActions")
+                if (actions != null) {
+                    for (aIdx in 0 until actions.length()) {
+                        val action = actions.optJSONObject(aIdx) ?: continue
+                        val append = action.optJSONObject("appendContinuationItemsAction") ?: continue
+                        val contItems = append.optJSONArray("continuationItems") ?: continue
+                        for (ci in 0 until contItems.length()) {
+                            contItems.optJSONObject(ci)?.let { items.add(it) }
+                        }
+                    }
+                }
             }
 
-            if (continuationsArr != null && continuationsArr.length() > 0) {
-                nextContinuationToken = continuationsArr.optJSONObject(0)
-                    ?.optJSONObject("nextContinuationData")
+            if (continuationsArr.isNotEmpty()) {
+                val token = continuationsArr[0]
+                    .optJSONObject("nextContinuationData")
                     ?.optString("continuation")
+                if (!token.isNullOrBlank()) {
+                    nextContinuationToken = token
+                }
             }
 
-            if (items != null) {
-                for (c in 0 until items.length()) {
-                    val mfr = items.optJSONObject(c)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
-                    val flexCols = mfr.optJSONArray("flexColumns") ?: continue
-                    if (flexCols.length() == 0) continue
+            for (it in items) {
+                val contRenderer = it.optJSONObject("continuationItemRenderer")
+                if (contRenderer != null) {
+                    val token = contRenderer.optJSONObject("continuationEndpoint")
+                        ?.optJSONObject("continuationCommand")
+                        ?.optString("token")
+                    if (!token.isNullOrBlank()) {
+                        nextContinuationToken = token
+                    }
+                }
+            }
 
-                    val col0Runs = flexCols.optJSONObject(0)
+            for (item in items) {
+                val mfr = item.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                val flexCols = mfr.optJSONArray("flexColumns") ?: continue
+                if (flexCols.length() == 0) continue
+
+                val col0Runs = flexCols.optJSONObject(0)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")
+                    ?.optJSONArray("runs") ?: continue
+                val title = col0Runs.optJSONObject(0)?.optString("text")?.trim().orEmpty()
+                if (title.isBlank() || title.contains("aleatório", ignoreCase = true) || title.contains("aleatorio", ignoreCase = true)) continue
+
+                val col1Runs = if (flexCols.length() > 1) {
+                    flexCols.optJSONObject(1)
                         ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                         ?.optJSONObject("text")
-                        ?.optJSONArray("runs") ?: continue
-                    val title = col0Runs.optJSONObject(0)?.optString("text")?.trim().orEmpty()
-                    if (title.isBlank() || title.contains("aleatório", ignoreCase = true) || title.contains("aleatorio", ignoreCase = true)) continue
+                        ?.optJSONArray("runs")
+                } else null
+                val artist = col1Runs?.optJSONObject(0)?.optString("text")?.trim().orEmpty().ifBlank { "YouTube Music" }
 
-                    val col1Runs = if (flexCols.length() > 1) {
-                        flexCols.optJSONObject(1)
-                            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                            ?.optJSONObject("text")
-                            ?.optJSONArray("runs")
-                    } else null
-                    val artist = col1Runs?.optJSONObject(0)?.optString("text")?.trim().orEmpty().ifBlank { "YouTube Music" }
-
-                    var duration = "--:--"
-                    val fixedCols = mfr.optJSONArray("fixedColumns")
-                    if (fixedCols != null && fixedCols.length() > 0) {
-                        val durText = fixedCols.optJSONObject(0)
-                            ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
-                            ?.optJSONObject("text")
-                            ?.optJSONArray("runs")
-                            ?.optJSONObject(0)
-                            ?.optString("text")
-                        if (!durText.isNullOrBlank()) {
-                            duration = InnerTubeCatalogClient.normalizeDurationText(durText)
-                        }
+                var duration = "--:--"
+                val fixedCols = mfr.optJSONArray("fixedColumns")
+                if (fixedCols != null && fixedCols.length() > 0) {
+                    val durText = fixedCols.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
+                        ?.optJSONObject("text")
+                        ?.optJSONArray("runs")
+                        ?.optJSONObject(0)
+                        ?.optString("text")
+                    if (!durText.isNullOrBlank()) {
+                        duration = InnerTubeCatalogClient.normalizeDurationText(durText)
                     }
+                }
 
-                    var videoId = mfr.optJSONObject("playlistItemData")?.optString("videoId").orEmpty()
-                    if (videoId.isBlank()) {
-                        videoId = mfr.optJSONObject("overlay")
-                            ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                            ?.optJSONObject("content")
-                            ?.optJSONObject("musicPlayButtonRenderer")
-                            ?.optJSONObject("playNavigationEndpoint")
-                            ?.optJSONObject("watchEndpoint")
-                            ?.optString("videoId").orEmpty()
-                    }
-                    if (videoId.isBlank() && col0Runs.length() > 0) {
-                        videoId = col0Runs.optJSONObject(0)
-                            ?.optJSONObject("navigationEndpoint")
-                            ?.optJSONObject("watchEndpoint")
-                            ?.optString("videoId").orEmpty()
-                    }
+                var videoId = mfr.optJSONObject("playlistItemData")?.optString("videoId").orEmpty()
+                if (videoId.isBlank()) {
+                    videoId = mfr.optJSONObject("overlay")
+                        ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                        ?.optJSONObject("content")
+                        ?.optJSONObject("musicPlayButtonRenderer")
+                        ?.optJSONObject("playNavigationEndpoint")
+                        ?.optJSONObject("watchEndpoint")
+                        ?.optString("videoId").orEmpty()
+                }
+                if (videoId.isBlank() && col0Runs.length() > 0) {
+                    videoId = col0Runs.optJSONObject(0)
+                        ?.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("watchEndpoint")
+                        ?.optString("videoId").orEmpty()
+                }
 
-                    if (videoId.isNotBlank()) {
-                        var thumbUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
-                        val thumbs = mfr.optJSONObject("thumbnail")
-                            ?.optJSONObject("musicThumbnailRenderer")
-                            ?.optJSONObject("thumbnail")
-                            ?.optJSONArray("thumbnails")
-                        if (thumbs != null && thumbs.length() > 0) {
-                            val lastThumb = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url").orEmpty()
-                            if (lastThumb.isNotBlank()) {
-                                thumbUrl = if (lastThumb.contains("=w") && lastThumb.contains("-h")) {
-                                    lastThumb.replace(Regex("=w\\d+-h\\d+"), "=w544-h544")
-                                } else {
-                                    lastThumb
-                                }
+                if (videoId.isNotBlank()) {
+                    var thumbUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                    val thumbs = mfr.optJSONObject("thumbnail")
+                        ?.optJSONObject("musicThumbnailRenderer")
+                        ?.optJSONObject("thumbnail")
+                        ?.optJSONArray("thumbnails")
+                    if (thumbs != null && thumbs.length() > 0) {
+                        val lastThumb = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url").orEmpty()
+                        if (lastThumb.isNotBlank()) {
+                            thumbUrl = if (lastThumb.contains("=w") && lastThumb.contains("-h")) {
+                                lastThumb.replace(Regex("=w\\d+-h\\d+"), "=w544-h544")
+                            } else {
+                                lastThumb
                             }
                         }
-
-                        list.add(
-                            Track(
-                                id = videoId,
-                                title = title,
-                                artist = artist,
-                                thumbnailUrl = thumbUrl,
-                                durationText = duration,
-                                sourceIdentifier = "INNERTUBE_WEB_REMIX"
-                            )
-                        )
                     }
+
+                    list.add(
+                        Track(
+                            id = videoId,
+                            title = title,
+                            artist = artist,
+                            thumbnailUrl = thumbUrl,
+                            durationText = duration,
+                            sourceIdentifier = "INNERTUBE_WEB_REMIX"
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -884,14 +974,12 @@ class MigrationManager(
             val tabs = root.optJSONObject("contents")
                 ?.optJSONObject("singleColumnBrowseResultsRenderer")
                 ?.optJSONArray("tabs") ?: return emptyList()
-
             for (t in 0 until tabs.length()) {
                 val tab = tabs.optJSONObject(t) ?: continue
                 val secContents = tab.optJSONObject("tabRenderer")
                     ?.optJSONObject("content")
                     ?.optJSONObject("sectionListRenderer")
                     ?.optJSONArray("contents") ?: continue
-
                 for (s in 0 until secContents.length()) {
                     val sec = secContents.optJSONObject(s) ?: continue
                     val gridItems = sec.optJSONObject("gridRenderer")?.optJSONArray("items") ?: continue
@@ -922,19 +1010,16 @@ class MigrationManager(
     ): List<Track> {
         val tracks = mutableListOf<Track>()
         var continuationToken: String? = null
-
         try {
             do {
                 val now = System.currentTimeMillis() / 1000
                 val sha1Hash = computeSha1("$now $sapisid $origin")
                 val authHeader = "SAPISIDHASH ${now}_$sha1Hash"
-
                 val url = if (continuationToken == null) {
                     "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"
                 } else {
                     "https://music.youtube.com/youtubei/v1/browse?continuation=$continuationToken&prettyPrint=false"
                 }
-
                 val payload = JSONObject().apply {
                     put("context", JSONObject().apply {
                         put("client", JSONObject().apply {
@@ -948,7 +1033,6 @@ class MigrationManager(
                         put("browseId", browseId)
                     }
                 }
-
                 val request = Request.Builder()
                     .url(url)
                     .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
@@ -958,7 +1042,6 @@ class MigrationManager(
                     .header("X-Origin", origin)
                     .header("Origin", origin)
                     .build()
-
                 val resp = httpClient.newCall(request).execute()
                 if (resp.isSuccessful) {
                     val (pageTracks, nextC) = parseYtmTracksAndContinuation(resp.body?.string().orEmpty(), continuationToken != null)
