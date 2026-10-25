@@ -232,6 +232,10 @@ class AudioPlayerService : MediaSessionService() {
         }
         private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+        fun setPrefetchContext(context: Context) {
+            serviceAppContext = context.applicationContext
+        }
+
         // The resolved URL depends on the active network and quality preferences. Keep separate
         // entries so changing those settings cannot reuse a stream selected for the old profile.
         private fun streamCacheKey(videoId: String): String {

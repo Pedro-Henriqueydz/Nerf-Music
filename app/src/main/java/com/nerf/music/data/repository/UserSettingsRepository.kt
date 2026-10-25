@@ -122,7 +122,7 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
     private val _downloadAudioQuality = MutableStateFlow(loadDownloadAudioQuality())
     override val downloadAudioQuality: StateFlow<DownloadAudioQuality> = _downloadAudioQuality.asStateFlow()
 
-    private val _isSmartDownloadsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, true))
+    private val _isSmartDownloadsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, false))
     override val isSmartDownloadsEnabled: StateFlow<Boolean> = _isSmartDownloadsEnabled.asStateFlow()
 
     private val _smartDownloadsLimit = MutableStateFlow(prefs.getInt(KEY_SMART_DOWNLOADS_LIMIT, 100))
@@ -145,7 +145,7 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
             KEY_WIFI_AUDIO_QUALITY -> _wifiAudioQuality.value = loadWifiAudioQuality()
             KEY_CELLULAR_AUDIO_QUALITY -> _cellularAudioQuality.value = loadCellularAudioQuality()
             KEY_DOWNLOAD_AUDIO_QUALITY -> _downloadAudioQuality.value = loadDownloadAudioQuality()
-            KEY_SMART_DOWNLOADS_ENABLED -> _isSmartDownloadsEnabled.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, true)
+            KEY_SMART_DOWNLOADS_ENABLED -> _isSmartDownloadsEnabled.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, false)
             KEY_SMART_DOWNLOADS_LIMIT -> _smartDownloadsLimit.value = prefs.getInt(KEY_SMART_DOWNLOADS_LIMIT, 100)
             KEY_SMART_DOWNLOADS_WIFI_ONLY -> _isSmartDownloadsWifiOnly.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, true)
         }

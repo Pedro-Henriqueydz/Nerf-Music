@@ -789,6 +789,20 @@ class MigrationManager(
         return "Playlist do YouTube Music"
     }
 
+    private fun parseDurationToSeconds(durationText: String): Long {
+        if (durationText.isBlank() || durationText == "--:--") return 0L
+        val parts = durationText.split(':').map { it.toLongOrNull() ?: return 0L }
+        return when (parts.size) {
+            2 -> if (parts[1] in 0L..59L) parts[0] * 60L + parts[1] else 0L
+            3 -> if (parts[1] in 0L..59L && parts[2] in 0L..59L) {
+                parts[0] * 3600L + parts[1] * 60L + parts[2]
+            } else {
+                0L
+            }
+            else -> 0L
+        }
+    }
+
     private fun parseYtmTracksAndContinuation(
         jsonStr: String,
         isContinuation: Boolean
@@ -925,19 +939,7 @@ class MigrationManager(
                 } else null
                 val artist = col1Runs?.optJSONObject(0)?.optString("text")?.trim().orEmpty().ifBlank { "YouTube Music" }
 
-                var duration = "--:--"
-                val fixedCols = mfr.optJSONArray("fixedColumns")
-                if (fixedCols != null && fixedCols.length() > 0) {
-                    val durText = fixedCols.optJSONObject(0)
-                        ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
-                        ?.optJSONObject("text")
-                        ?.optJSONArray("runs")
-                        ?.optJSONObject(0)
-                        ?.optString("text")
-                    if (!durText.isNullOrBlank()) {
-                        duration = InnerTubeCatalogClient.normalizeDurationText(durText)
-                    }
-                }
+                val duration = catalogClient.extractDurationFromItem(mfr, flexCols)
 
                 var videoId = mfr.optJSONObject("playlistItemData")?.optString("videoId").orEmpty()
                 if (videoId.isBlank()) {
@@ -980,6 +982,7 @@ class MigrationManager(
                             artist = artist,
                             thumbnailUrl = thumbUrl,
                             durationText = duration,
+                            durationSeconds = parseDurationToSeconds(duration),
                             sourceIdentifier = "INNERTUBE_WEB_REMIX"
                         )
                     )

@@ -418,10 +418,35 @@ class LibraryRepositoryImpl(
     ): UserPlaylist {
         val importedId = ImportedPlaylistIdentity.idFor(sourceKey)
         val current = _playlistsFlow.value.toMutableList()
-        val index = current.indexOfFirst { it.id == importedId }
+        val normalizedTitle = title.trim()
+        val sourceMarker = synchronizedImportMarker(sourceKey)
+        val stableIndex = current.indexOfFirst { it.id == importedId }
+        val legacyCandidates = if (stableIndex >= 0 || sourceMarker == null) {
+            emptyList()
+        } else {
+            current.indices.filter { index ->
+                val candidate = current[index]
+                candidate.title.trim().equals(normalizedTitle, ignoreCase = true) &&
+                    candidate.description.substringBefore('•').trim().equals(sourceMarker, ignoreCase = true)
+            }
+        }
+        val incomingTrackIds = tracks.map { it.id }.toSet()
+        val legacyIndex = when {
+            legacyCandidates.isEmpty() -> -1
+            else -> {
+                val ranked = legacyCandidates.map { index ->
+                    index to current[index].tracks.count { it.id in incomingTrackIds }
+                }
+                val highestOverlap = ranked.maxOf { it.second }
+                val bestMatches = ranked.filter { it.second == highestOverlap }
+                bestMatches.singleOrNull()?.takeIf { highestOverlap > 0 }?.first ?: -1
+            }
+        }
+        val index = if (stableIndex >= 0) stableIndex else legacyIndex
         val playlist = if (index >= 0) {
             val existing = current[index]
             existing.copy(
+                id = importedId,
                 title = title.trim().ifBlank { existing.title },
                 description = description.trim(),
                 tracks = tracks,
@@ -436,9 +461,35 @@ class LibraryRepositoryImpl(
                 tracks = tracks
             ).also { current.add(0, it) }
         }
+
+        // Old versions synced these same playlists with random local IDs. Once their stable
+        // counterpart exists, remove only other same-source, same-title rows with identical
+        // track IDs so a repeated sync does not leave a second copy in the library.
+        val incomingTrackIdList = tracks.map { it.id }.sorted()
+        val duplicateIndexes = current.indices.filter { duplicateIndex ->
+            if (current[duplicateIndex].id == importedId || sourceMarker == null) return@filter false
+            val candidate = current[duplicateIndex]
+            candidate.title.trim().equals(playlist.title.trim(), ignoreCase = true) &&
+                candidate.description.substringBefore('•').trim().equals(sourceMarker, ignoreCase = true) &&
+                candidate.tracks.map { it.id }.sorted() == incomingTrackIdList
+        }
+        duplicateIndexes.sortedDescending().forEach(current::removeAt)
+        if (legacyIndex >= 0 && legacyIndex != stableIndex) {
+            Log.i(TAG, "Playlist importada existente adotada para sync estável: ${playlist.title}")
+        }
+        if (duplicateIndexes.isNotEmpty()) {
+            Log.i(TAG, "${duplicateIndexes.size} cópia(s) antiga(s) idêntica(s) removida(s) no sync de ${playlist.title}")
+        }
+
         _playlistsFlow.value = current
         savePlaylists(current)
         return playlist
+    }
+
+    private fun synchronizedImportMarker(sourceKey: String): String? = when {
+        sourceKey.startsWith("youtube_music:") -> "Sincronizada do YouTube Music"
+        sourceKey.startsWith("spotify:") -> "Sincronizada do Spotify"
+        else -> null
     }
 
     override fun updatePlaylistTitle(playlistId: String, newTitle: String): Boolean {

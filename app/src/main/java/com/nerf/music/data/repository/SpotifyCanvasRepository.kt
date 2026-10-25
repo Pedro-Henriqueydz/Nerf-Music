@@ -36,6 +36,7 @@ class SpotifyCanvasRepositoryImpl(
     // Cache em memória (ConcurrentHashMap não aceita valores null)
     private val canvasCache = ConcurrentHashMap<String, String>()
     private val negativeCache = ConcurrentHashMap<String, Boolean>()
+    private val lookupLocks = ConcurrentHashMap<String, Mutex>()
 
     override fun getCachedCanvasUrl(title: String, artist: String): String? {
         val cleanTitle = cleanTrackTitle(title)
@@ -48,64 +49,70 @@ class SpotifyCanvasRepositoryImpl(
         val cleanTitle = cleanTrackTitle(title)
         val cleanArtist = cleanArtistName(artist)
         val cacheKey = "$cleanTitle|$cleanArtist".lowercase()
-
-        canvasCache[cacheKey]?.let { cachedUrl ->
-            Log.d(TAG, "Canvas retornado do cache positivo para '$cleanTitle' - '$cleanArtist'")
-            return@withContext Result.success(cachedUrl)
-        }
-        if (negativeCache.containsKey(cacheKey)) {
-            Log.d(TAG, "Faixa '$cleanTitle' - '$cleanArtist' está no cache negativo (sem Canvas)")
-            return@withContext Result.success(null)
-        }
+        val lookupLock = lookupLocks.computeIfAbsent(cacheKey) { Mutex() }
+        lookupLock.lock()
 
         try {
-            Log.i(TAG, "Iniciando resolução de Spotify Canvas para: '$cleanTitle' por '$cleanArtist'")
-
-            val (accessToken, clientToken) = ensureTokens()
-            if (accessToken == null || clientToken == null) {
-                Log.w(TAG, "Falha temporária ao obter tokens do Spotify Web Player (access=${accessToken != null}, client=${clientToken != null})")
+            canvasCache[cacheKey]?.let { cachedUrl ->
+                Log.d(TAG, "Canvas retornado do cache positivo para '$cleanTitle' - '$cleanArtist'")
+                return@withContext Result.success(cachedUrl)
+            }
+            if (negativeCache.containsKey(cacheKey)) {
+                Log.d(TAG, "Faixa '$cleanTitle' - '$cleanArtist' está no cache negativo (sem Canvas)")
                 return@withContext Result.success(null)
             }
 
-            // 1. Pesquisa o trackId na API interna Pathfinder do Spotify
-            var trackId = searchSpotifyTrackId(cleanTitle, cleanArtist, accessToken, clientToken)
-            var fetchResult = trackId?.let { fetchCanvasWithStatus(it) }
+            try {
+                Log.i(TAG, "Iniciando resolução de Spotify Canvas para: '$cleanTitle' por '$cleanArtist'")
 
-            // 2. Fallback: se o título tiver sufixos entre parênteses como "(extended mix)" e não achou Canvas, tenta o título base
-            val strippedTitle = stripParentheses(cleanTitle)
-            if ((fetchResult == null || fetchResult is CanvasStatus.NotFound) && strippedTitle.isNotBlank() && !strippedTitle.equals(cleanTitle, ignoreCase = true)) {
-                Log.i(TAG, "Tentando busca secundária sem parênteses: '$strippedTitle' por '$cleanArtist'")
-                val fallbackTrackId = searchSpotifyTrackId(strippedTitle, cleanArtist, accessToken, clientToken)
-                if (!fallbackTrackId.isNullOrBlank() && fallbackTrackId != trackId) {
-                    trackId = fallbackTrackId
-                    fetchResult = fetchCanvasWithStatus(fallbackTrackId)
+                val (accessToken, clientToken) = ensureTokens()
+                if (accessToken == null || clientToken == null) {
+                    Log.w(TAG, "Falha temporária ao obter tokens do Spotify Web Player (access=${accessToken != null}, client=${clientToken != null})")
+                    return@withContext Result.success(null)
                 }
-            }
 
-            when (fetchResult) {
-                is CanvasStatus.Success -> {
-                    canvasCache[cacheKey] = fetchResult.url
-                    Log.i(TAG, "Canvas MP4 obtido com sucesso para '$cleanTitle' (trackId=$trackId): ${fetchResult.url}")
-                    Result.success(fetchResult.url)
+                // 1. Pesquisa o trackId na API interna Pathfinder do Spotify
+                var trackId = searchSpotifyTrackId(cleanTitle, cleanArtist, accessToken, clientToken)
+                var fetchResult = trackId?.let { fetchCanvasWithStatus(it) }
+
+                // 2. Fallback: se o título tiver sufixos entre parênteses como "(extended mix)" e não achou Canvas, tenta o título base
+                val strippedTitle = stripParentheses(cleanTitle)
+                if ((fetchResult == null || fetchResult is CanvasStatus.NotFound) && strippedTitle.isNotBlank() && !strippedTitle.equals(cleanTitle, ignoreCase = true)) {
+                    Log.i(TAG, "Tentando busca secundária sem parênteses: '$strippedTitle' por '$cleanArtist'")
+                    val fallbackTrackId = searchSpotifyTrackId(strippedTitle, cleanArtist, accessToken, clientToken)
+                    if (!fallbackTrackId.isNullOrBlank() && fallbackTrackId != trackId) {
+                        trackId = fallbackTrackId
+                        fetchResult = fetchCanvasWithStatus(fallbackTrackId)
+                    }
                 }
-                is CanvasStatus.NotFound -> {
-                    negativeCache[cacheKey] = true
-                    Log.i(TAG, "Faixa '$cleanTitle' (trackId=$trackId) confirmada sem Canvas no Spotify.")
-                    Result.success(null)
+
+                when (fetchResult) {
+                    is CanvasStatus.Success -> {
+                        canvasCache[cacheKey] = fetchResult.url
+                        Log.i(TAG, "Canvas MP4 obtido com sucesso para '$cleanTitle' (trackId=$trackId): ${fetchResult.url}")
+                        Result.success(fetchResult.url)
+                    }
+                    is CanvasStatus.NotFound -> {
+                        negativeCache[cacheKey] = true
+                        Log.i(TAG, "Faixa '$cleanTitle' (trackId=$trackId) confirmada sem Canvas no Spotify.")
+                        Result.success(null)
+                    }
+                    is CanvasStatus.ServerError -> {
+                        Log.w(TAG, "Falha de servidor ao resolver Canvas para '$cleanTitle' (trackId=$trackId): ${fetchResult.code}. Não adicionado ao cache negativo.")
+                        Result.success(null)
+                    }
+                    null -> {
+                        Log.i(TAG, "Faixa '$cleanTitle' não localizada no catálogo do Spotify.")
+                        negativeCache[cacheKey] = true
+                        Result.success(null)
+                    }
                 }
-                is CanvasStatus.ServerError -> {
-                    Log.w(TAG, "Falha de servidor ao resolver Canvas para '$cleanTitle' (trackId=$trackId): ${fetchResult.code}. Não adicionado ao cache negativo.")
-                    Result.success(null)
-                }
-                null -> {
-                    Log.i(TAG, "Faixa '$cleanTitle' não localizada no catálogo do Spotify.")
-                    negativeCache[cacheKey] = true
-                    Result.success(null)
-                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Erro ao buscar Canvas para $cleanTitle - $cleanArtist: ${e.message}", e)
+                Result.failure(e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Erro ao buscar Canvas para $cleanTitle - $cleanArtist: ${e.message}", e)
-            Result.failure(e)
+        } finally {
+            lookupLock.unlock()
         }
     }
 

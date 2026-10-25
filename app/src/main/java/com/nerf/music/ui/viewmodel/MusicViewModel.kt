@@ -22,6 +22,7 @@ import com.nerf.music.data.model.AlbumDetail
 import com.nerf.music.data.model.ArtistDetail
 import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeSection
+import com.nerf.music.data.model.HomeSectionStyle
 import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.SearchFilter
@@ -148,7 +149,7 @@ class MusicViewModel(
     private val _downloadAudioQuality = MutableStateFlow(DownloadAudioQuality.LOSSLESS)
     val downloadAudioQuality: StateFlow<DownloadAudioQuality> = _downloadAudioQuality.asStateFlow()
 
-    private val _isSmartDownloadsEnabled = MutableStateFlow(true)
+    private val _isSmartDownloadsEnabled = MutableStateFlow(false)
     val isSmartDownloadsEnabled: StateFlow<Boolean> = _isSmartDownloadsEnabled.asStateFlow()
 
     private val _smartDownloadsLimit = MutableStateFlow(100)
@@ -194,6 +195,7 @@ class MusicViewModel(
     val currentLyricsLine: StateFlow<String?> = _currentLyricsLine.asStateFlow()
 
     private var canvasFetchJob: Job? = null
+    private var homeCanvasPrefetchJob: Job? = null
     private var lyricsFetchJob: Job? = null
     private val streamResolver = NewPipeStreamResolver()
     private val _searchQuery = MutableStateFlow("")
@@ -319,6 +321,7 @@ class MusicViewModel(
         if (applicationContext == null) {
             applicationContext = context.applicationContext
         }
+        AudioPlayerService.setPrefetchContext(context.applicationContext)
         if (userSettingsRepository == null) {
             val settingsRepo = UserSettingsRepositoryImpl(context.applicationContext)
             userSettingsRepository = settingsRepo
@@ -348,6 +351,7 @@ class MusicViewModel(
             val cachedHome = historyRepo.getCachedHomeFeed()
             if (cachedHome.isNotEmpty() && _homeSections.value.isEmpty()) {
                 _homeSections.value = cachedHome
+                prefetchHomeMedia(cachedHome)
             }
             _searchHistory.value = historyRepo.getSearchHistory()
             checkPostUpdateChangelog(historyRepo)
@@ -468,17 +472,7 @@ class MusicViewModel(
                 _isLoadingHome.value = false
                 historyRepo?.saveCachedHomeFeed(synthesizedFeed.sections)
 
-                // Pré-aquecimento preditivo de streaming (Zero Latency Buffer):
-                // Pré-resolve em segundo plano as faixas prioritárias com maior probabilidade de clique
-                val topCandidates = synthesizedFeed.sections
-                    .flatMap { it.items }
-                    .filter { it.id.isNotBlank() && !it.id.startsWith("shortcut_") && !it.id.startsWith("downloads_") }
-                    .distinctBy { it.id }
-                    .take(4)
-
-                for (candidate in topCandidates) {
-                    AudioPlayerService.prefetchTrack(candidate.id)
-                }
+                prefetchHomeMedia(synthesizedFeed.sections)
             }.onFailure {
                 // Fallback com sintese local caso nao haja conexao com o catalogo
                 val fallbackSynthesized = homeFeedSynthesizer.synthesizeHomeFeed(
@@ -490,10 +484,51 @@ class MusicViewModel(
                 )
                 if (fallbackSynthesized.sections.isNotEmpty()) {
                     _homeSections.value = fallbackSynthesized.sections
+                    prefetchHomeMedia(fallbackSynthesized.sections)
                     _isLoadingHome.value = false
                 } else {
                     _homeError.value = "Não foi possível carregar o feed inicial."
                     _isLoadingHome.value = false
+                }
+            }
+        }
+    }
+
+    /** Resolves streams and Canvas for the first home picks before a track is tapped. */
+    private fun prefetchHomeMedia(sections: List<HomeSection>) {
+        homeCanvasPrefetchJob?.cancel()
+        homeCanvasPrefetchJob = null
+
+        val speedDialTracks = sections
+            .firstOrNull { it.style == HomeSectionStyle.SPEED_DIAL }
+            ?.items
+            .orEmpty()
+        val homeTracks = (speedDialTracks + sections.flatMap { it.items })
+            .filter { it.id.isNotBlank() && !it.id.startsWith("shortcut_") && !it.id.startsWith("downloads_") }
+            .distinctBy { it.id }
+            .take(9)
+
+        homeTracks.forEach { AudioPlayerService.prefetchTrack(it.id) }
+
+        val settings = userSettingsRepository
+        val canvasEnabled = settings?.isCanvasEnabled?.value ?: _isCanvasEnabled.value
+        if (!canvasEnabled) return
+
+        val wifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        val context = applicationContext
+        if (wifiOnly && context != null && !NetworkUtils.isConnectedToWifi(context)) return
+
+        homeCanvasPrefetchJob = viewModelScope.launch(Dispatchers.IO) {
+            homeTracks.take(4).forEach { track ->
+                launch canvasLookup@{
+                    if (!isActive) return@canvasLookup
+                    try {
+                        spotifyCanvasRepository.getCanvasUrl(track.title, track.artist)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.d("MusicViewModel", "Pré-carregamento de Canvas ignorado para ${track.title}: ${e.message}")
+                    }
                 }
             }
         }
