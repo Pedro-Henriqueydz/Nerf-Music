@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   build-and-release:
+    # Ignore force-updates of existing tags during history cleanup.
+    if: github.event.created == true
     runs-on: ubuntu-latest
 
     steps:
@@ -22,13 +24,30 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Restore release signing key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$RELEASE_KEYSTORE_BASE64"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nerf-release.jks"
+          chmod 600 "$RUNNER_TEMP/nerf-release.jks"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
       - name: Build Release APK
+        env:
+          RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/nerf-release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
           ./gradlew assembleRelease
+
+      - name: Remove release signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/nerf-release.jks"
 
       - name: Rename generated APK
         run: |

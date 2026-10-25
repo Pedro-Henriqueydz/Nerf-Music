@@ -12,6 +12,7 @@
 .DS_Store
 /build
 /app/build
+/app/nerf-release.jks
 /captures
 .externalNativeBuild
 .cxx

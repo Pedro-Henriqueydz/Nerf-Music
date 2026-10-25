@@ -21,7 +21,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("nerf-release.jks")
+            storeFile = file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "nerf-release.jks")
             storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: ""
             keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: ""
             keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: ""
@@ -31,9 +31,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("release")
-        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")
