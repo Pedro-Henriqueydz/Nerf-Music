@@ -7,6 +7,7 @@ import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebView
+import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -347,6 +348,8 @@ fun MigrationScreen(
                                 )
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
                                 settings.userAgentString =
                                     "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
 
@@ -355,6 +358,22 @@ fun MigrationScreen(
                                 cookieManager.setAcceptThirdPartyCookies(this, true)
 
                                 webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                        val uri = request?.url ?: return false
+                                        val host = uri.host?.lowercase() ?: return true
+
+                                        // Whitelist estrita de domínios confiáveis para autenticação OAuth/SSO
+                                        val isAllowed = when (target) {
+                                            "ytm" -> host.endsWith("google.com") || host.endsWith("youtube.com") ||
+                                                    host.endsWith("gstatic.com") || host.endsWith("googleusercontent.com")
+                                            "spotify" -> host.endsWith("spotify.com") || host.endsWith("scdn.co") ||
+                                                    host.endsWith("spotifycdn.com")
+                                            else -> false
+                                        }
+
+                                        return !isAllowed
+                                    }
+
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         super.onPageFinished(view, url)
                                         if (url == null) return

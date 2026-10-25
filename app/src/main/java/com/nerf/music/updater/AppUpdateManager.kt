@@ -121,8 +121,14 @@ class AppUpdateManager(
                 ?.takeIf { it.isNotEmpty() } ?: return null
 
             val assets = root["assets"] as? JsonArray ?: return null
-            val firstAsset = assets.firstOrNull() as? JsonObject ?: return null
-            val browserDownloadUrl = (firstAsset["browser_download_url"] as? JsonPrimitive)
+            // Valida e filtra estritamente por assets que sejam arquivos .apk com URL segura HTTPS
+            val apkAsset = assets.filterIsInstance<JsonObject>().firstOrNull { asset ->
+                val name = (asset["name"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                val url = (asset["browser_download_url"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                name.endsWith(".apk", ignoreCase = true) && url.startsWith("https://", ignoreCase = true)
+            } ?: return null
+
+            val browserDownloadUrl = (apkAsset["browser_download_url"] as? JsonPrimitive)
                 ?.contentOrNull?.trim()
                 ?.takeIf { it.isNotEmpty() } ?: return null
 
@@ -217,6 +223,27 @@ class AppUpdateManager(
         onStatusMessage: (String) -> Unit = {}
     ) {
         try {
+            if (!apkFile.exists() || apkFile.length() <= 0L) {
+                onStatusMessage("Arquivo de atualização não encontrado.")
+                return
+            }
+
+            // Validação de integridade do diretório (prevenção contra Path Traversal)
+            val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            if (downloadsDir == null || !apkFile.canonicalPath.startsWith(downloadsDir.canonicalPath)) {
+                Log.e(TAG, "Tentativa de instalação fora do diretório autorizado de downloads.")
+                onStatusMessage("Arquivo de atualização inválido ou não seguro.")
+                return
+            }
+
+            // Validação estrutural do APK e confirmação de packageName compatível antes da instalação
+            val archiveInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+            if (archiveInfo == null || archiveInfo.packageName != context.packageName) {
+                Log.e(TAG, "APK baixado não corresponde ao pacote do aplicativo (${archiveInfo?.packageName} != ${context.packageName})")
+                onStatusMessage("Arquivo de atualização corrompido ou inválido.")
+                return
+            }
+
             val authority = "${context.packageName}.fileprovider"
             val apkUri = FileProvider.getUriForFile(context, authority, apkFile)
 

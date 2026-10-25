@@ -1,5 +1,6 @@
 package com.nerf.music.data.repository
 import android.content.Context
+import com.nerf.music.util.SecureStorageHelper
 import android.util.Log
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.Track
@@ -61,16 +62,27 @@ class MigrationManager(
 
     // ---------------------------------------------------------------------------------------------
 
-    fun isYouTubeMusicConnected(): Boolean = !prefs.getString(KEY_YTM_COOKIES, null).isNullOrBlank()
+        private fun getDecryptedYtmCookies(): String? {
+        val raw = prefs.getString(KEY_YTM_COOKIES, null) ?: return null
+        return SecureStorageHelper.decrypt(raw)
+    }
+
+    private fun getDecryptedSpotifyToken(): String? {
+        val raw = prefs.getString(KEY_SPOTIFY_TOKEN, null) ?: return null
+        return SecureStorageHelper.decrypt(raw)
+    }
+
+    fun isYouTubeMusicConnected(): Boolean = !getDecryptedYtmCookies().isNullOrBlank()
 
     fun getYouTubeMusicAccountName(): String = prefs.getString(KEY_YTM_ACCOUNT_NAME, "Conta Google Conectada") ?: "Conta Google Conectada"
 
     fun saveYouTubeMusicSession(cookies: String, accountName: String = "Conta Google Conectada") {
+        val encrypted = SecureStorageHelper.encrypt(cookies) ?: cookies
         prefs.edit()
-            .putString(KEY_YTM_COOKIES, cookies)
+            .putString(KEY_YTM_COOKIES, encrypted)
             .putString(KEY_YTM_ACCOUNT_NAME, accountName)
             .apply()
-        Log.i(TAG, "Sessão do YouTube Music salva com sucesso.")
+        Log.i(TAG, "Sessao do YouTube Music salva com sucesso (protegida com criptografia).")
     }
 
     fun disconnectYouTubeMusic() {
@@ -78,19 +90,20 @@ class MigrationManager(
             .remove(KEY_YTM_COOKIES)
             .remove(KEY_YTM_ACCOUNT_NAME)
             .apply()
-        Log.i(TAG, "Sessão do YouTube Music desconectada.")
+        Log.i(TAG, "Sessao do YouTube Music desconectada.")
     }
 
-    fun isSpotifyConnected(): Boolean = !prefs.getString(KEY_SPOTIFY_TOKEN, null).isNullOrBlank()
+    fun isSpotifyConnected(): Boolean = !getDecryptedSpotifyToken().isNullOrBlank()
 
     fun getSpotifyAccountName(): String = prefs.getString(KEY_SPOTIFY_ACCOUNT_NAME, "Conta Spotify Conectada") ?: "Conta Spotify Conectada"
 
     fun saveSpotifySession(tokenOrCookies: String, accountName: String = "Conta Spotify Conectada") {
+        val encrypted = SecureStorageHelper.encrypt(tokenOrCookies) ?: tokenOrCookies
         prefs.edit()
-            .putString(KEY_SPOTIFY_TOKEN, tokenOrCookies)
+            .putString(KEY_SPOTIFY_TOKEN, encrypted)
             .putString(KEY_SPOTIFY_ACCOUNT_NAME, accountName)
             .apply()
-        Log.i(TAG, "Sessão do Spotify salva com sucesso.")
+        Log.i(TAG, "Sessao do Spotify salva com sucesso (protegida com criptografia).")
     }
 
     fun disconnectSpotify() {
@@ -98,7 +111,7 @@ class MigrationManager(
             .remove(KEY_SPOTIFY_TOKEN)
             .remove(KEY_SPOTIFY_ACCOUNT_NAME)
             .apply()
-        Log.i(TAG, "Sessão do Spotify desconectada.")
+        Log.i(TAG, "Sessao do Spotify desconectada.")
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -109,7 +122,7 @@ class MigrationManager(
     suspend fun syncYouTubeMusicAccount(
         onProgress: (current: Int, total: Int, trackTitle: String) -> Unit
     ): Result<Int> = withContext(Dispatchers.IO) {
-        val cookies = prefs.getString(KEY_YTM_COOKIES, null)
+        val cookies = getDecryptedYtmCookies()
             ?: return@withContext Result.failure(IllegalStateException("Nenhuma sessão do YouTube Music encontrada. Faça login primeiro."))
         try {
             var totalSynced = 0
@@ -235,7 +248,7 @@ class MigrationManager(
     suspend fun syncSpotifyAccount(
         onProgress: (current: Int, total: Int, trackTitle: String) -> Unit
     ): Result<Int> = withContext(Dispatchers.IO) {
-        val tokenOrCookies = prefs.getString(KEY_SPOTIFY_TOKEN, null)
+        val tokenOrCookies = getDecryptedSpotifyToken()
             ?: return@withContext Result.failure(IllegalStateException("Nenhuma sessão do Spotify encontrada. Faça login primeiro."))
         try {
             var totalSynced = 0
