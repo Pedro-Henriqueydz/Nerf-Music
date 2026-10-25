@@ -103,7 +103,7 @@ class MigrationManager(
     }
 
     // ---------------------------------------------------------------------------------------------
-    // 1. SINCRONIZAÇÃO VIA CONEXÃO DIRETA: YOUTUBE MUSIC
+    // 1. SINCRONIZAÇÃO VIA CONEXÃO DIRETA: YOUTUBE MUSIC (COM PAGINAÇÃO COMPLETA)
     // ---------------------------------------------------------------------------------------------
 
     suspend fun syncYouTubeMusicAccount(
@@ -120,43 +120,64 @@ class MigrationManager(
                 ?: ""
 
             val origin = "https://music.youtube.com"
-            val now = System.currentTimeMillis() / 1000
-            val sha1Hash = computeSha1("$now $sapisid $origin")
-            val authHeader = "SAPISIDHASH ${now}_$sha1Hash"
 
-            // 1. Sincroniza Músicas Curtidas (FEmusic_liked_videos)
-            onProgress(0, 1, "Buscando Músicas Curtidas do YouTube Music...")
-            val likedPayload = JSONObject().apply {
-                put("context", JSONObject().apply {
-                    put("client", JSONObject().apply {
-                        put("clientName", "WEB_REMIX")
-                        put("clientVersion", "1.20240909.01.00")
-                        put("hl", "pt")
-                        put("gl", "BR")
-                    })
-                })
-                put("browseId", "FEmusic_liked_videos")
-            }
-
-            val likedRequest = Request.Builder()
-                .url("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false")
-                .post(likedPayload.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-                .header("Cookie", cookies)
-                .header("Authorization", authHeader)
-                .header("X-Origin", origin)
-                .header("Origin", origin)
-                .build()
-
-            val likedResp = httpClient.newCall(likedRequest).execute()
+            // 1. Sincroniza Músicas Curtidas (FEmusic_liked_videos) paginando todas as páginas
+            onProgress(0, 1, "Buscando todas as suas músicas curtidas...")
             val likedTracks = mutableListOf<Track>()
-            if (likedResp.isSuccessful) {
-                val bodyStr = likedResp.body?.string().orEmpty()
-                likedTracks.addAll(parseYtmLikedTracksJson(bodyStr))
-            }
+            var continuationToken: String? = null
+            var page = 1
 
+            do {
+                val now = System.currentTimeMillis() / 1000
+                val sha1Hash = computeSha1("$now $sapisid $origin")
+                val authHeader = "SAPISIDHASH ${now}_$sha1Hash"
+
+                val url = if (continuationToken == null) {
+                    "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"
+                } else {
+                    "https://music.youtube.com/youtubei/v1/browse?continuation=$continuationToken&prettyPrint=false"
+                }
+
+                val payload = JSONObject().apply {
+                    put("context", JSONObject().apply {
+                        put("client", JSONObject().apply {
+                            put("clientName", "WEB_REMIX")
+                            put("clientVersion", "1.20240909.01.00")
+                            put("hl", "pt")
+                            put("gl", "BR")
+                        })
+                    })
+                    if (continuationToken == null) {
+                        put("browseId", "FEmusic_liked_videos")
+                    }
+                }
+
+                val likedRequest = Request.Builder()
+                    .url(url)
+                    .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    .header("Cookie", cookies)
+                    .header("Authorization", authHeader)
+                    .header("X-Origin", origin)
+                    .header("Origin", origin)
+                    .build()
+
+                val likedResp = httpClient.newCall(likedRequest).execute()
+                if (likedResp.isSuccessful) {
+                    val bodyStr = likedResp.body?.string().orEmpty()
+                    val (pageTracks, nextContinuation) = parseYtmTracksAndContinuation(bodyStr, continuationToken != null)
+                    likedTracks.addAll(pageTracks)
+                    continuationToken = nextContinuation
+                    onProgress(likedTracks.size, likedTracks.size + (if (continuationToken != null) 30 else 0), "Carregadas ${likedTracks.size} músicas curtidas...")
+                    page++
+                } else {
+                    break
+                }
+            } while (!continuationToken.isNullOrBlank())
+
+            // Adiciona todas as faixas encontradas às Músicas Curtidas da biblioteca
             for ((idx, track) in likedTracks.withIndex()) {
-                onProgress(idx + 1, likedTracks.size, "Curtidas: ${track.artist} - ${track.title}")
+                onProgress(idx + 1, likedTracks.size, "Salvando: ${track.artist} - ${track.title}")
                 if (!libraryRepository.isFavorite(track.id)) {
                     libraryRepository.toggleFavorite(track)
                 }
@@ -169,6 +190,10 @@ class MigrationManager(
 
             // 2. Sincroniza Playlists do Usuário (FEmusic_liked_playlists)
             onProgress(0, 1, "Buscando Playlists do YouTube Music...")
+            val now = System.currentTimeMillis() / 1000
+            val sha1Hash = computeSha1("$now $sapisid $origin")
+            val authHeader = "SAPISIDHASH ${now}_$sha1Hash"
+
             val playlistsPayload = JSONObject().apply {
                 put("context", JSONObject().apply {
                     put("client", JSONObject().apply {
@@ -198,7 +223,7 @@ class MigrationManager(
                 for (summary in playlistSummaries) {
                     if (summary.browseId.isBlank() || summary.browseId == "VLLM") continue
                     onProgress(1, 1, "Sincronizando: ${summary.title}")
-                    val plTracks = fetchYtmPlaylistTracks(summary.browseId, cookies, authHeader, origin)
+                    val plTracks = fetchYtmPlaylistTracks(summary.browseId, cookies, sapisid, origin)
                     if (plTracks.isNotEmpty()) {
                         val created = libraryRepository.createPlaylist(
                             title = summary.title,
@@ -234,28 +259,35 @@ class MigrationManager(
             val accessToken = resolveSpotifyAccessToken(tokenOrCookies)
                 ?: return@withContext Result.failure(IllegalStateException("Não foi possível autenticar a sessão do Spotify."))
 
-            // 1. Músicas Curtidas (Liked Songs)
+            // 1. Músicas Curtidas (Liked Songs com paginação)
             onProgress(0, 1, "Buscando Liked Songs do Spotify...")
-            val likedReq = Request.Builder()
-                .url("https://api.spotify.com/v1/me/tracks?limit=50")
-                .header("Authorization", "Bearer $accessToken")
-                .header("User-Agent", "Mozilla/5.0")
-                .build()
-
-            val likedResp = httpClient.newCall(likedReq).execute()
             val rawItems = mutableListOf<RawImportedItem>()
-            if (likedResp.isSuccessful) {
-                val json = JSONObject(likedResp.body?.string().orEmpty())
-                val items = json.optJSONArray("items")
-                if (items != null) {
-                    for (i in 0 until items.length()) {
-                        val tObj = items.optJSONObject(i)?.optJSONObject("track") ?: continue
-                        val title = tObj.optString("name", "")
-                        val artist = tObj.optJSONArray("artists")?.optJSONObject(0)?.optString("name", "") ?: ""
-                        if (title.isNotBlank()) {
-                            rawItems.add(RawImportedItem(title, artist))
+            var nextUrl: String? = "https://api.spotify.com/v1/me/tracks?limit=50"
+
+            while (!nextUrl.isNullOrBlank()) {
+                val likedReq = Request.Builder()
+                    .url(nextUrl)
+                    .header("Authorization", "Bearer $accessToken")
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build()
+
+                val likedResp = httpClient.newCall(likedReq).execute()
+                if (likedResp.isSuccessful) {
+                    val json = JSONObject(likedResp.body?.string().orEmpty())
+                    val items = json.optJSONArray("items")
+                    if (items != null) {
+                        for (i in 0 until items.length()) {
+                            val tObj = items.optJSONObject(i)?.optJSONObject("track") ?: continue
+                            val title = tObj.optString("name", "")
+                            val artist = tObj.optJSONArray("artists")?.optJSONObject(0)?.optString("name", "") ?: ""
+                            if (title.isNotBlank()) {
+                                rawItems.add(RawImportedItem(title, artist))
+                            }
                         }
                     }
+                    nextUrl = json.optString("next", null)
+                } else {
+                    break
                 }
             }
 
@@ -289,18 +321,13 @@ class MigrationManager(
                         val pId = pObj.optString("id", "")
                         if (pId.isNotBlank()) {
                             onProgress(i + 1, items.length(), "Sincronizando: $name")
-                            val embedUrl = "https://open.spotify.com/embed/playlist/$pId"
-                            val emReq = Request.Builder().url(embedUrl).build()
-                            val emResp = httpClient.newCall(emReq).execute()
-                            if (emResp.isSuccessful) {
-                                val (_, pRawItems) = parseSpotifyEmbedHtml(emResp.body?.string().orEmpty())
-                                if (pRawItems.isNotEmpty()) {
-                                    val matchedPl = matchRawItemsToCatalog(pRawItems, onProgress)
-                                    val created = libraryRepository.createPlaylist(name, "Sincronizada do Spotify • ${matchedPl.size} faixas")
-                                    for (tr in matchedPl) {
-                                        libraryRepository.addTrackToPlaylist(created.id, tr)
-                                        totalSynced++
-                                    }
+                            val pTracks = fetchSpotifyPlaylistTracksWithToken(pId, accessToken)
+                            if (pTracks.isNotEmpty()) {
+                                val matchedPl = matchRawItemsToCatalog(pTracks, onProgress)
+                                val created = libraryRepository.createPlaylist(name, "Sincronizada do Spotify • ${matchedPl.size} faixas")
+                                for (tr in matchedPl) {
+                                    libraryRepository.addTrackToPlaylist(created.id, tr)
+                                    totalSynced++
                                 }
                             }
                         }
@@ -332,6 +359,39 @@ class MigrationManager(
             return if (token.isNotBlank()) token else null
         }
         return null
+    }
+
+    private fun fetchSpotifyPlaylistTracksWithToken(playlistId: String, accessToken: String): List<RawImportedItem> {
+        val list = mutableListOf<RawImportedItem>()
+        var nextUrl: String? = "https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=100"
+        while (!nextUrl.isNullOrBlank()) {
+            try {
+                val req = Request.Builder()
+                    .url(nextUrl)
+                    .header("Authorization", "Bearer $accessToken")
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build()
+                val resp = httpClient.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val json = JSONObject(resp.body?.string().orEmpty())
+                    val items = json.optJSONArray("items") ?: break
+                    for (i in 0 until items.length()) {
+                        val tObj = items.optJSONObject(i)?.optJSONObject("track") ?: continue
+                        val title = tObj.optString("name", "")
+                        val artist = tObj.optJSONArray("artists")?.optJSONObject(0)?.optString("name", "") ?: ""
+                        if (title.isNotBlank()) {
+                            list.add(RawImportedItem(title, artist))
+                        }
+                    }
+                    nextUrl = json.optString("next", null)
+                } else {
+                    break
+                }
+            } catch (_: Exception) {
+                break
+            }
+        }
+        return list
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -579,7 +639,6 @@ class MigrationManager(
                     .firstOrNull()?.trim().orEmpty()
                 val cleanArtist = cleanTrackString(primaryArtist)
 
-                // Utiliza SearchFilter.ALL para cobrir faixas recentes e "Melhor Resultado"
                 val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
                 var songs = catalogClient.search(query, SearchFilter.ALL).getOrNull()?.songs.orEmpty()
 
@@ -589,7 +648,7 @@ class MigrationManager(
 
                 if (songs.isNotEmpty()) {
                     val bestMatch = songs.firstOrNull { candidate ->
-                        calculateSimilarity(item.title, candidate.title) > 0.40
+                        isMatch(item.title, candidate.title)
                     } ?: songs.first()
 
                     if (seenTrackIds.add(bestMatch.id)) {
@@ -604,10 +663,27 @@ class MigrationManager(
         return matchedTracks
     }
 
+    private fun isMatch(itemTitle: String, candidateTitle: String): Boolean {
+        val t1 = cleanTrackString(itemTitle).lowercase()
+        val t2 = cleanTrackString(candidateTitle).lowercase()
+        if (t1.isEmpty() || t2.isEmpty()) return false
+        if (t1 == t2 || t1.contains(t2) || t2.contains(t1)) return true
+
+        val words1 = t1.split(" ").filter { it.length > 1 }.toSet()
+        val words2 = t2.split(" ").filter { it.length > 1 }.toSet()
+        if (words1.isNotEmpty() && words2.isNotEmpty()) {
+            val common = words1.intersect(words2)
+            if (common.size.toDouble() / words1.size.toDouble() >= 0.5) return true
+        }
+
+        return calculateSimilarity(itemTitle, candidateTitle) > 0.35
+    }
+
     private fun cleanTrackString(text: String): String {
         return text.replace(Regex("(?i)\\(.*?(feat|ft|remix|version|official|lyric).*?\\)"), "")
             .replace(Regex("(?i)\\[.*?\\]"), "")
             .replace(Regex("[^a-zA-Z0-9À-ÿ\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
             .trim()
     }
 
@@ -644,7 +720,7 @@ class MigrationManager(
 
     private fun injectImportedPreferences(tracks: List<Track>) {
         if (tracks.isEmpty()) return
-        val topPicks = tracks.take(25)
+        val topPicks = tracks.take(30)
         for (track in topPicks) {
             userHistoryRepository.recordTrackPlayed(track)
         }
@@ -667,81 +743,136 @@ class MigrationManager(
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    private fun parseYtmLikedTracksJson(jsonStr: String): List<Track> {
+    private fun parseYtmTracksAndContinuation(
+        jsonStr: String,
+        isContinuation: Boolean
+    ): Pair<List<Track>, String?> {
         val list = mutableListOf<Track>()
+        var nextContinuationToken: String? = null
+
         try {
             val root = JSONObject(jsonStr)
-            val tabs = root.optJSONObject("contents")
-                ?.optJSONObject("singleColumnBrowseResultsRenderer")
-                ?.optJSONArray("tabs") ?: return emptyList()
 
-            for (t in 0 until tabs.length()) {
-                val tab = tabs.optJSONObject(t) ?: continue
-                val secContents = tab.optJSONObject("tabRenderer")
+            val items: JSONArray?
+            val continuationsArr: JSONArray?
+
+            if (!isContinuation) {
+                val tabs = root.optJSONObject("contents")
+                    ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                    ?.optJSONArray("tabs")
+                val secContents = tabs?.optJSONObject(0)
+                    ?.optJSONObject("tabRenderer")
                     ?.optJSONObject("content")
                     ?.optJSONObject("sectionListRenderer")
-                    ?.optJSONArray("contents") ?: continue
+                    ?.optJSONArray("contents")
 
-                for (s in 0 until secContents.length()) {
-                    val sec = secContents.optJSONObject(s) ?: continue
-                    val shelf = sec.optJSONObject("musicShelfRenderer")
-                        ?: sec.optJSONObject("musicPlaylistShelfRenderer") ?: continue
+                val shelf = secContents?.optJSONObject(0)?.optJSONObject("musicShelfRenderer")
+                    ?: secContents?.optJSONObject(0)?.optJSONObject("musicPlaylistShelfRenderer")
 
-                    val contents = shelf.optJSONArray("contents") ?: continue
-                    for (c in 0 until contents.length()) {
-                        val mfr = contents.optJSONObject(c)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
-                        val flexCols = mfr.optJSONArray("flexColumns") ?: continue
-                        if (flexCols.length() == 0) continue
+                items = shelf?.optJSONArray("contents")
+                continuationsArr = shelf?.optJSONArray("continuations")
+            } else {
+                val continuationContents = root.optJSONObject("continuationContents")
+                val shelfC = continuationContents?.optJSONObject("musicShelfContinuation")
+                    ?: continuationContents?.optJSONObject("musicPlaylistShelfContinuation")
 
-                        val col0Runs = flexCols.optJSONObject(0)
+                items = shelfC?.optJSONArray("contents")
+                continuationsArr = shelfC?.optJSONArray("continuations")
+            }
+
+            if (continuationsArr != null && continuationsArr.length() > 0) {
+                nextContinuationToken = continuationsArr.optJSONObject(0)
+                    ?.optJSONObject("nextContinuationData")
+                    ?.optString("continuation")
+            }
+
+            if (items != null) {
+                for (c in 0 until items.length()) {
+                    val mfr = items.optJSONObject(c)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                    val flexCols = mfr.optJSONArray("flexColumns") ?: continue
+                    if (flexCols.length() == 0) continue
+
+                    val col0Runs = flexCols.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")
+                        ?.optJSONArray("runs") ?: continue
+                    val title = col0Runs.optJSONObject(0)?.optString("text")?.trim().orEmpty()
+                    if (title.isBlank() || title.contains("aleatório", ignoreCase = true) || title.contains("aleatorio", ignoreCase = true)) continue
+
+                    val col1Runs = if (flexCols.length() > 1) {
+                        flexCols.optJSONObject(1)
                             ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
                             ?.optJSONObject("text")
-                            ?.optJSONArray("runs") ?: continue
-                        val title = col0Runs.optJSONObject(0)?.optString("text")?.trim().orEmpty()
-                        if (title.isBlank() || title.contains("aleatório", ignoreCase = true)) continue
+                            ?.optJSONArray("runs")
+                    } else null
+                    val artist = col1Runs?.optJSONObject(0)?.optString("text")?.trim().orEmpty().ifBlank { "YouTube Music" }
 
-                        val col1Runs = if (flexCols.length() > 1) {
-                            flexCols.optJSONObject(1)
-                                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
-                                ?.optJSONObject("text")
-                                ?.optJSONArray("runs")
-                        } else null
-                        val artist = col1Runs?.optJSONObject(0)?.optString("text")?.trim().orEmpty().ifBlank { "YouTube Music" }
+                    var duration = "--:--"
+                    val fixedCols = mfr.optJSONArray("fixedColumns")
+                    if (fixedCols != null && fixedCols.length() > 0) {
+                        val durText = fixedCols.optJSONObject(0)
+                            ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
+                            ?.optJSONObject("text")
+                            ?.optJSONArray("runs")
+                            ?.optJSONObject(0)
+                            ?.optString("text")
+                        if (!durText.isNullOrBlank()) {
+                            duration = InnerTubeCatalogClient.normalizeDurationText(durText)
+                        }
+                    }
 
-                        var videoId = mfr.optJSONObject("overlay")
+                    var videoId = mfr.optJSONObject("playlistItemData")?.optString("videoId").orEmpty()
+                    if (videoId.isBlank()) {
+                        videoId = mfr.optJSONObject("overlay")
                             ?.optJSONObject("musicItemThumbnailOverlayRenderer")
                             ?.optJSONObject("content")
                             ?.optJSONObject("musicPlayButtonRenderer")
                             ?.optJSONObject("playNavigationEndpoint")
                             ?.optJSONObject("watchEndpoint")
                             ?.optString("videoId").orEmpty()
+                    }
+                    if (videoId.isBlank() && col0Runs.length() > 0) {
+                        videoId = col0Runs.optJSONObject(0)
+                            ?.optJSONObject("navigationEndpoint")
+                            ?.optJSONObject("watchEndpoint")
+                            ?.optString("videoId").orEmpty()
+                    }
 
-                        if (videoId.isBlank() && col0Runs.length() > 0) {
-                            videoId = col0Runs.optJSONObject(0)
-                                ?.optJSONObject("navigationEndpoint")
-                                ?.optJSONObject("watchEndpoint")
-                                ?.optString("videoId").orEmpty()
+                    if (videoId.isNotBlank()) {
+                        var thumbUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                        val thumbs = mfr.optJSONObject("thumbnail")
+                            ?.optJSONObject("musicThumbnailRenderer")
+                            ?.optJSONObject("thumbnail")
+                            ?.optJSONArray("thumbnails")
+                        if (thumbs != null && thumbs.length() > 0) {
+                            val lastThumb = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url").orEmpty()
+                            if (lastThumb.isNotBlank()) {
+                                thumbUrl = if (lastThumb.contains("=w") && lastThumb.contains("-h")) {
+                                    lastThumb.replace(Regex("=w\\d+-h\\d+"), "=w544-h544")
+                                } else {
+                                    lastThumb
+                                }
+                            }
                         }
 
-                        if (videoId.isNotBlank()) {
-                            list.add(
-                                Track(
-                                    id = videoId,
-                                    title = title,
-                                    artist = artist,
-                                    thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
-                                    durationText = "--:--",
-                                    sourceIdentifier = "INNERTUBE_WEB_REMIX"
-                                )
+                        list.add(
+                            Track(
+                                id = videoId,
+                                title = title,
+                                artist = artist,
+                                thumbnailUrl = thumbUrl,
+                                durationText = duration,
+                                sourceIdentifier = "INNERTUBE_WEB_REMIX"
                             )
-                        }
+                        )
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Erro ao analisar JSON de faixas curtidas do YTM: ${e.message}", e)
+            Log.e(TAG, "Erro ao analisar faixas e continuação do YTM: ${e.message}", e)
         }
-        return list
+
+        return Pair(list, nextContinuationToken)
     }
 
     data class PlaylistSummary(val title: String, val browseId: String)
@@ -786,39 +917,60 @@ class MigrationManager(
     private fun fetchYtmPlaylistTracks(
         browseId: String,
         cookies: String,
-        authHeader: String,
+        sapisid: String,
         origin: String
     ): List<Track> {
+        val tracks = mutableListOf<Track>()
+        var continuationToken: String? = null
+
         try {
-            val payload = JSONObject().apply {
-                put("context", JSONObject().apply {
-                    put("client", JSONObject().apply {
-                        put("clientName", "WEB_REMIX")
-                        put("clientVersion", "1.20240909.01.00")
-                        put("hl", "pt")
-                        put("gl", "BR")
+            do {
+                val now = System.currentTimeMillis() / 1000
+                val sha1Hash = computeSha1("$now $sapisid $origin")
+                val authHeader = "SAPISIDHASH ${now}_$sha1Hash"
+
+                val url = if (continuationToken == null) {
+                    "https://music.youtube.com/youtubei/v1/browse?prettyPrint=false"
+                } else {
+                    "https://music.youtube.com/youtubei/v1/browse?continuation=$continuationToken&prettyPrint=false"
+                }
+
+                val payload = JSONObject().apply {
+                    put("context", JSONObject().apply {
+                        put("client", JSONObject().apply {
+                            put("clientName", "WEB_REMIX")
+                            put("clientVersion", "1.20240909.01.00")
+                            put("hl", "pt")
+                            put("gl", "BR")
+                        })
                     })
-                })
-                put("browseId", browseId)
-            }
+                    if (continuationToken == null) {
+                        put("browseId", browseId)
+                    }
+                }
 
-            val request = Request.Builder()
-                .url("https://music.youtube.com/youtubei/v1/browse?prettyPrint=false")
-                .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-                .header("Cookie", cookies)
-                .header("Authorization", authHeader)
-                .header("X-Origin", origin)
-                .header("Origin", origin)
-                .build()
+                val request = Request.Builder()
+                    .url(url)
+                    .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    .header("Cookie", cookies)
+                    .header("Authorization", authHeader)
+                    .header("X-Origin", origin)
+                    .header("Origin", origin)
+                    .build()
 
-            val resp = httpClient.newCall(request).execute()
-            if (resp.isSuccessful) {
-                return parseYtmLikedTracksJson(resp.body?.string().orEmpty())
-            }
+                val resp = httpClient.newCall(request).execute()
+                if (resp.isSuccessful) {
+                    val (pageTracks, nextC) = parseYtmTracksAndContinuation(resp.body?.string().orEmpty(), continuationToken != null)
+                    tracks.addAll(pageTracks)
+                    continuationToken = nextC
+                } else {
+                    break
+                }
+            } while (!continuationToken.isNullOrBlank())
         } catch (e: Exception) {
             Log.w(TAG, "Erro ao carregar faixas da playlist $browseId: ${e.message}")
         }
-        return emptyList()
+        return tracks
     }
 }

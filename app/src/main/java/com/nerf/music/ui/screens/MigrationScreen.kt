@@ -646,6 +646,16 @@ private fun AnonymousLinkCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            Text(
+                text = "Nota: No modo anônimo, o Spotify limita links públicos da web a 100 faixas. Para playlists completas com mais de 100 músicas, conecte sua conta Spotify acima ou importe um arquivo .csv/.txt.",
+                fontFamily = YouTubeSansFontFamily,
+                color = Color(0xFF999999),
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
