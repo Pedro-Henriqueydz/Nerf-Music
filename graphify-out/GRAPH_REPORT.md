@@ -1,17 +1,17 @@
 # Graph Report - Nerf Music  (2026-10-27)
 
 ## Corpus Check
-- 97 files · ~105,164 words
+- 97 files · ~105,160 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 25 file(s) not represented in the graph (top: .xml 12, .otf 5, (none) 2)
 
 ## Summary
-- 1726 nodes · 4081 edges · 73 communities (38 shown, 35 thin omitted)
+- 1726 nodes · 4082 edges · 73 communities (38 shown, 35 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 61 edges (avg confidence: 0.89)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `40f6faa9`
+- Built from commit: `d28ae38e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -269,16 +269,16 @@ Nodes (15): QueueExpansionState, COLLAPSED, EXPANDED, HALF_EXPANDED, Connectivit
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `MusicViewModel` connect `MusicViewModel` to `SearchResult`, `MigrationManager`, `SettingsScreen.kt`, `AppUpdateManager.kt`, `HomeSection`, `ArtistScreen`, `LyricsData`, `DownloadedTrackEntity`, `HomeScreen.kt`, `.syncTimelineState`, `.playTrack`, `MainScreen.kt`, `SearchScreen.kt`, `LibraryScreen.kt`, `SpotifyCanvasRepositoryImpl`, `FullPlayerSheet`, `Track`, `MusicViewModel.kt`, `ExploreScreen.kt`, `MigrationScreen`, `SmartDownloadWorker.kt`, `DownloadAudioQuality`, `DataSaverMode`, `ArtistScreen.kt`, `AudioQuality`, `UserSettingsRepository`, `Track`, `.loadHomeFeed`, `SmartDownloadManager`, `NewPipeStreamResolver.kt`, `.isConnectedToWifi`, `.loadCanvasVideo`, `TrackRelatedData`, `MusicRepository`, `.clearStreamCache`, `QueueAndConnectivityChallengerTest`?**
-  _High betweenness centrality (0.232) - this node is a cross-community bridge._
+  _High betweenness centrality (0.237) - this node is a cross-community bridge._
 - **What connects `SPEED_DIAL`, `QUICK_PICKS_GRID`, `TWO_ROW_CAROUSEL` to the rest of the system?**
   _54 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `PlayerScreen.kt` be split into smaller, more focused modules?**
   _Cohesion score 0.023106840539922215 - nodes in this community are weakly interconnected._
 - **Why does `Track` connect `Track` to `SearchResult`, `PlayerScreen.kt`, `AudioMetadataTagger`, `MigrationManager`, `MusicViewModel`, `HomeSection`, `ArtistScreen`, `DownloadChunkRangeStressTest.kt`, `DownloadedTrackEntity`, `HomeScreen.kt`, `.syncTimelineState`, `.playTrack`, `MainScreen.kt`, `SearchScreen.kt`, `LibraryScreen.kt`, `UserHistoryRepositoryImpl`, `FullPlayerSheet`, `Track`, `LibraryRepositoryImpl`, `MusicViewModel.kt`, `AudioCoreDownloadsCrossfadeQualityTest.kt`, `InnerTubeCatalogClient.kt`, `LibraryRepository.kt`, `InnerTubeCatalogClientTest`, `ArtistScreen.kt`, `SmartDownloadManager`, `MusicRepositoryImpl`, `InnerTubeCatalogClient`, `AudioMetadataTaggerTest.kt`, `.isConnectedToWifi`, `.loadCanvasVideo`, `TrackRelatedData`, `MusicRepository`, `AudioMetadataTagger.kt`?**
-  _High betweenness centrality (0.191) - this node is a cross-community bridge._
+  _High betweenness centrality (0.188) - this node is a cross-community bridge._
 - **Should `MigrationManager` be split into smaller, more focused modules?**
   _Cohesion score 0.06753246753246753 - nodes in this community are weakly interconnected._
 - **Why does `AudioQuality` connect `AudioQuality` to `InnerTubeCatalogClient.kt`, `SettingsScreen.kt`, `MimeAndContainerDetectionStressTest.kt`, `InnerTubeStreamResolver`, `MusicViewModel`, `CompositeStreamResolver`, `DownloadChunkRangeStressTest.kt`, `LyricsData`, `UserSettingsRepository`, `.clearStreamCache`, `AudioPlayerService.kt`, `NewPipeStreamResolver.kt`, `MusicViewModel.kt`, `UserSettingsRepositoryImpl`, `AudioCoreDownloadsCrossfadeQualityTest`, `AudioCoreDownloadsCrossfadeQualityTest.kt`?**
-  _High betweenness centrality (0.113) - this node is a cross-community bridge._
+  _High betweenness centrality (0.115) - this node is a cross-community bridge._
 - **Should `SettingsScreen.kt` be split into smaller, more focused modules?**
   _Cohesion score 0.09158249158249158 - nodes in this community are weakly interconnected._

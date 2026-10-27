@@ -757,11 +757,14 @@ class AudioPlayerService : MediaSessionService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.i(TAG, "onTaskRemoved disparado: usuário encerrou o app na lista de recentes. Parando reprodução e serviço.")
         val player = mediaSession?.player
-        // Permite que a reprodução em segundo plano continue caso a música esteja ativa
-        if (player == null || (!player.isPlaying && !player.playWhenReady)) {
-            stopSelf()
-        }
+        player?.pause()
+        player?.stop()
+        player?.clearMediaItems()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onDestroy() {
