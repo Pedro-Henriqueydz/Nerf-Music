@@ -1,0 +1,566 @@
+{
+  ".github/workflows/release.yml": {
+    "mtime": 1792938134.6914916,
+    "seen": 1793073119.884678,
+    "ast_hash": "0e21cd3b13111533df9b1f6a16156c6f",
+    "semantic_hash": ""
+  },
+  "app/build.gradle.kts": {
+    "mtime": 1793077457.5139995,
+    "seen": 1793078642.35365,
+    "ast_hash": "2e2331a7f3f3680613edc4951bd79732",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/MainActivity.kt": {
+    "mtime": 1793065332.3276868,
+    "seen": 1793073119.884678,
+    "ast_hash": "3fa3fd244f62174b827ee48ac473c838",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/NerfMusicApp.kt": {
+    "mtime": 1793065332.3276868,
+    "seen": 1793073119.884678,
+    "ast_hash": "714fe478ffb59bb7ce6ce00290bb6180",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/AlbumDetail.kt": {
+    "mtime": 1793065332.3291914,
+    "seen": 1793073119.884678,
+    "ast_hash": "dc57ecba8950b71941bfa5363edb3378",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/Artist.kt": {
+    "mtime": 1792524285.4000804,
+    "seen": 1793073119.884678,
+    "ast_hash": "48d875910ba76f917dbd1a8e7d5234ca",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/ArtistDetail.kt": {
+    "mtime": 1792630813.3261733,
+    "seen": 1793073119.884678,
+    "ast_hash": "d1b7ed53eb8ac2758e5a15f9216cd966",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/DownloadedTrack.kt": {
+    "mtime": 1793077457.5160365,
+    "seen": 1793078642.35365,
+    "ast_hash": "d8b93878b6b35c2010b689f7f06ed289",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/HomeSection.kt": {
+    "mtime": 1792863340.192585,
+    "seen": 1793073119.884678,
+    "ast_hash": "791f78a3ea34094942ae942b9ef19d38",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/LyricsData.kt": {
+    "mtime": 1793065332.3291914,
+    "seen": 1793073119.884678,
+    "ast_hash": "184f0ea954eb759b97445f81e14b75c8",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/PlaybackState.kt": {
+    "mtime": 1792709843.0721064,
+    "seen": 1793073119.884678,
+    "ast_hash": "dc0082b81e4a38eb7096acd61d7fae7d",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/SearchFilter.kt": {
+    "mtime": 1792524292.6954803,
+    "seen": 1793073119.884678,
+    "ast_hash": "12015b92a6fddfd07150a88478637fc5",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/SearchResult.kt": {
+    "mtime": 1792524301.3453164,
+    "seen": 1793073119.884678,
+    "ast_hash": "44fbeff904a78565e368d1aa9ab02393",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/Track.kt": {
+    "mtime": 1793065332.330783,
+    "seen": 1793073119.884678,
+    "ast_hash": "7c83a8ac8748100ea63b253cde647be6",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/TrackRelatedData.kt": {
+    "mtime": 1792709843.0748026,
+    "seen": 1793073119.884678,
+    "ast_hash": "5a805853d79350d89842c21bede2836a",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/UpNextResult.kt": {
+    "mtime": 1792709843.0768445,
+    "seen": 1793073119.884678,
+    "ast_hash": "426b492962dd26f2edf8dbc3df1cf545",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/model/UserPlaylist.kt": {
+    "mtime": 1792786567.3561573,
+    "seen": 1793073119.884678,
+    "ast_hash": "f724840298595e5f7fee766303a38fb0",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/network/InnerTubeCatalogClient.kt": {
+    "mtime": 1793077457.5170653,
+    "seen": 1793078642.35365,
+    "ast_hash": "eba3b6c40b607d535031d95ab97f830f",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/HomeFeedSynthesizer.kt": {
+    "mtime": 1792891654.8744388,
+    "seen": 1793073119.884678,
+    "ast_hash": "8ce5646d32416f0cf9607c291c5cbfae",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/ImportedPlaylistIdentity.kt": {
+    "mtime": 1792938945.395914,
+    "seen": 1793073119.884678,
+    "ast_hash": "d462e662d82e679790ad2c3682f663ff",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/LibraryRepository.kt": {
+    "mtime": 1793093498.4057956,
+    "seen": 1793093864.7769806,
+    "ast_hash": "eb23f451c7892728a2220fefd100057d",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/LyricsRepository.kt": {
+    "mtime": 1793077457.5180845,
+    "seen": 1793078642.35365,
+    "ast_hash": "59d8cc354709e059276f65b77cf1c0e0",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/MigrationManager.kt": {
+    "mtime": 1792944641.604749,
+    "seen": 1793073119.884678,
+    "ast_hash": "4610731ecf62dcb67a045e5e53ab4e1f",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/MusicRepository.kt": {
+    "mtime": 1793065332.3333125,
+    "seen": 1793073119.884678,
+    "ast_hash": "368f9061ea54c7ad43088d0937ee94eb",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/MusicRepositoryImpl.kt": {
+    "mtime": 1793065332.3348234,
+    "seen": 1793073119.884678,
+    "ast_hash": "395211ed65cd8a925f9a4cb0cdb295cf",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/SmartDownloadManager.kt": {
+    "mtime": 1793065332.3358245,
+    "seen": 1793073119.884678,
+    "ast_hash": "33cf9260f731e4b49a94021969405348",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/SpotifyCanvasRepository.kt": {
+    "mtime": 1793065332.336327,
+    "seen": 1793073119.884678,
+    "ast_hash": "9eb1fd689c3c0354a26a17275771689b",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/UpdateRepository.kt": {
+    "mtime": 1792546269.9043045,
+    "seen": 1793073119.884678,
+    "ast_hash": "03efd99feb5b451c563ef5711c95d6ac",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/UserAffinityRepository.kt": {
+    "mtime": 1792863340.1967127,
+    "seen": 1793073119.884678,
+    "ast_hash": "b2876aed79a3e2ee6e5718390caeec11",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/UserHistoryRepository.kt": {
+    "mtime": 1792863340.1977408,
+    "seen": 1793073119.884678,
+    "ast_hash": "af4b44ac7991034c277cea3b8b80d887",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/repository/UserSettingsRepository.kt": {
+    "mtime": 1793091932.6315954,
+    "seen": 1793093864.7769806,
+    "ast_hash": "b8341bd7283547addc5fd94a8742cda8",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/player/AudioPlayerService.kt": {
+    "mtime": 1793093300.294522,
+    "seen": 1793093864.7769806,
+    "ast_hash": "6c172dd6e4ca1e6e08642c8af0b0a233",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/player/CompositeStreamResolver.kt": {
+    "mtime": 1793093424.502147,
+    "seen": 1793093864.7769806,
+    "ast_hash": "a7219bc7acabb80b31f7da0aaf348cd0",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/player/InnerTubeStreamResolver.kt": {
+    "mtime": 1793074580.0002167,
+    "seen": 1793075997.4492521,
+    "ast_hash": "70d7f9d7fe9aa6f2406f28d2a9b1b470",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/player/NewPipeStreamResolver.kt": {
+    "mtime": 1793074580.001341,
+    "seen": 1793075997.4492521,
+    "ast_hash": "ccf72dea0cd8f1c9ab372b0e5b58a247",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/player/OkHttpDownloader.kt": {
+    "mtime": 1792845395.1067567,
+    "seen": 1793073119.884678,
+    "ast_hash": "4d2d2d272589b0d058fa39033534f34e",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/player/SmartRadioEngine.kt": {
+    "mtime": 1792863340.1997585,
+    "seen": 1793073119.884678,
+    "ast_hash": "59682331f0ef1d01f503999d7c5860d9",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/player/StreamResolver.kt": {
+    "mtime": 1792873984.5972564,
+    "seen": 1793073119.884678,
+    "ast_hash": "4789efbb587ac8d2a8f6a2f2af7a63db",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/components/AnimatedEqualizerBars.kt": {
+    "mtime": 1792797413.4928539,
+    "seen": 1793073119.884678,
+    "ast_hash": "f0a007fda206e6a6b44db5461ee0582b",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/AlbumScreen.kt": {
+    "mtime": 1792797413.494388,
+    "seen": 1793073119.884678,
+    "ast_hash": "8baacabcec6c555fa3947413d8462fa7",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/ArtistScreen.kt": {
+    "mtime": 1792805759.7330453,
+    "seen": 1793073119.884678,
+    "ast_hash": "a5d733ba3725e7bc669d2c2b90f3fe93",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/ExploreScreen.kt": {
+    "mtime": 1792805759.7340727,
+    "seen": 1793073119.884678,
+    "ast_hash": "a10017f7f5d4edf81e076e902c73d962",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/HomeScreen.kt": {
+    "mtime": 1793091932.6326165,
+    "seen": 1793093864.7769806,
+    "ast_hash": "be9d01a6b9694d7ae8d81c26bd943f28",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/LibraryScreen.kt": {
+    "mtime": 1792786567.3607795,
+    "seen": 1793073119.884678,
+    "ast_hash": "b6216408189de5265de34ceca5da93f5",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/MainScreen.kt": {
+    "mtime": 1793091932.6326165,
+    "seen": 1793093864.7769806,
+    "ast_hash": "e931e4c97254f0f5d635fce60e75d939",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/MigrationScreen.kt": {
+    "mtime": 1792938945.4022968,
+    "seen": 1793073119.884678,
+    "ast_hash": "530aed06cb0b77811b5fb3d593e70239",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/PlayerScreen.kt": {
+    "mtime": 1793091932.634126,
+    "seen": 1793093864.7769806,
+    "ast_hash": "99da5040c69b2800f02a527f9101783b",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/PlaylistOptionsBottomSheet.kt": {
+    "mtime": 1792786567.3638268,
+    "seen": 1793073119.884678,
+    "ast_hash": "4cf4d8584d273c514e19607ee8968398",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/SaveToPlaylistSheet.kt": {
+    "mtime": 1792786567.3643372,
+    "seen": 1793073119.884678,
+    "ast_hash": "b8f7e30ab26aa630b47a3f9854c2b494",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/SearchScreen.kt": {
+    "mtime": 1792630813.3407345,
+    "seen": 1793073119.884678,
+    "ast_hash": "0c224d2733da6c29ee1ae74874d0dd4e",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/screens/SettingsScreen.kt": {
+    "mtime": 1793091932.634126,
+    "seen": 1793093864.7769806,
+    "ast_hash": "6102a9ebd4d619be48d430bc2e340235",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/theme/Color.kt": {
+    "mtime": 1792863340.2017784,
+    "seen": 1793073119.884678,
+    "ast_hash": "26ca0723f26d6ee5fb13193a6799767b",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/theme/Theme.kt": {
+    "mtime": 1792545105.8360758,
+    "seen": 1793073119.884678,
+    "ast_hash": "399cd77bb35f2832862fb85604dbef77",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/theme/Type.kt": {
+    "mtime": 1792778196.6429963,
+    "seen": 1793073119.884678,
+    "ast_hash": "09ebfba5b834667e56b8d3e9f52ae0e1",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/viewmodel/MusicViewModel.kt": {
+    "mtime": 1793093390.6320655,
+    "seen": 1793093864.7769806,
+    "ast_hash": "7914bb049e8a1b2bb86d443c0eabe94a",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/updater/AppUpdateManager.kt": {
+    "mtime": 1792926248.6197453,
+    "seen": 1793073119.884678,
+    "ast_hash": "708cd48ac08b98cb07903569136eafe9",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/updater/UpdateCheckWorker.kt": {
+    "mtime": 1792711516.3128512,
+    "seen": 1793073119.884678,
+    "ast_hash": "da6b302c26a0af032d64a27b025e26cb",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/updater/UpdateNotificationHelper.kt": {
+    "mtime": 1792711516.313365,
+    "seen": 1793073119.884678,
+    "ast_hash": "689e5fa1850b0378c4da6811952e8a32",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/NetworkUtils.kt": {
+    "mtime": 1793091932.637146,
+    "seen": 1793093864.7769806,
+    "ast_hash": "a1b2f895d6711169c14876302e23310b",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/SecureStorageHelper.kt": {
+    "mtime": 1792938945.4038234,
+    "seen": 1793073119.884678,
+    "ast_hash": "c6d19aa3a378b668fe6ec0048430042a",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/SmartDownloadNotificationHelper.kt": {
+    "mtime": 1792881303.8612106,
+    "seen": 1793073119.884678,
+    "ast_hash": "920573f88a16c01c32d9c70d78dd13e7",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/StorageUtils.kt": {
+    "mtime": 1792851917.2785122,
+    "seen": 1793073119.884678,
+    "ast_hash": "af74eb3bb790e9cc8014c6e6706c65f2",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/work/SmartDownloadWorker.kt": {
+    "mtime": 1792873984.601394,
+    "seen": 1793073119.884678,
+    "ast_hash": "a7ac95f638a067c2138f0727deb882cf",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/AppUpdateManagerTest.kt": {
+    "mtime": 1792546269.9088902,
+    "seen": 1793073119.884678,
+    "ast_hash": "791b2bfc29ef538904d1713befc5c054",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/DefaultStreamResolverTest.kt": {
+    "mtime": 1793074580.0039098,
+    "seen": 1793075997.4492521,
+    "ast_hash": "0427796eb1720127095765c29561061f",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/ImportedPlaylistIdentityTest.kt": {
+    "mtime": 1792938945.4058855,
+    "seen": 1793073119.884678,
+    "ast_hash": "7100ef8dfa0c3d22060038da9eebc9f8",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/InnerTubeCatalogClientTest.kt": {
+    "mtime": 1793077457.5211248,
+    "seen": 1793078642.3541532,
+    "ast_hash": "c06c5b851205a7fcbcb797d286e592f7",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/InnerTubeStreamResolverTest.kt": {
+    "mtime": 1793074580.0049324,
+    "seen": 1793075997.4492521,
+    "ast_hash": "ab8a9b37a57ba33ed0d6ac49f6d022d2",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/NewPipeStreamResolverTest.kt": {
+    "mtime": 1792530466.6570237,
+    "seen": 1793073119.884678,
+    "ast_hash": "4bd25b68b11736542dc19591582c3172",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/PlayerUiUtilsTest.kt": {
+    "mtime": 1792533265.5145862,
+    "seen": 1793073119.884678,
+    "ast_hash": "264d8997d183af6ceedd9660b185d77e",
+    "semantic_hash": ""
+  },
+  "build.gradle.kts": {
+    "mtime": 1793077457.524176,
+    "seen": 1793078642.3541532,
+    "ast_hash": "fc5df6addc7485d5f8dfa7f32645019c",
+    "semantic_hash": ""
+  },
+  "gradlew": {
+    "mtime": 1792537817.0235622,
+    "seen": 1793073119.884678,
+    "ast_hash": "f092910dfa8e47c5a37a452c3f6baf8a",
+    "semantic_hash": ""
+  },
+  "settings.gradle.kts": {
+    "mtime": 1792530466.6585622,
+    "seen": 1793073119.884678,
+    "ast_hash": "39a6fd7507734e57486e5313575dc6fa",
+    "semantic_hash": ""
+  },
+  "CHANGELOG.md": {
+    "mtime": 1792948037.7774491,
+    "seen": 1793073119.884678,
+    "ast_hash": "b8b83833c84096e212490f65b6cf3fa8",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1792938945.3928626,
+    "seen": 1793073119.884678,
+    "ast_hash": "a6d2cc43559265b28bd102f327f8c242",
+    "semantic_hash": ""
+  },
+  "RELEASE_NOTES.md": {
+    "mtime": 1792948043.5320709,
+    "seen": 1793073119.884678,
+    "ast_hash": "df843dbfcc2bd81c7efecd652d3eabb3",
+    "semantic_hash": ""
+  },
+  "app/src/main/res/drawable/ic_nerf_logo.png": {
+    "mtime": 1792545105.840152,
+    "seen": 1793073119.884678,
+    "ast_hash": "6259ac118e7d5993a8c6b2effa3bbf5d",
+    "semantic_hash": ""
+  },
+  "app/src/main/res/drawable/logo_png.png": {
+    "mtime": 1792545105.8427188,
+    "seen": 1793073119.884678,
+    "ast_hash": "67398b95a98724692649cc601a09606c",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/CrossfadeEmpiricalTest.kt": {
+    "mtime": 1793074580.0033977,
+    "seen": 1793075997.4492521,
+    "ast_hash": "205759811358fb1586eb1f7e3f554334",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/DownloadChunkRangeStressTest.kt": {
+    "mtime": 1793074580.0044186,
+    "seen": 1793075997.4492521,
+    "ast_hash": "256cfdae9186f45384f3c9b62c82d5ce",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/MimeAndContainerDetectionStressTest.kt": {
+    "mtime": 1793074580.0049324,
+    "seen": 1793075997.4492521,
+    "ast_hash": "4624e1407ed901049b235ff0bfe4a484",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/StreamQualitySelectorStressTest.kt": {
+    "mtime": 1793074580.0054421,
+    "seen": 1793075997.4492521,
+    "ast_hash": "43c2a72aed46ea905877ff5fe7f31ac1",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/db/AppDatabase.kt": {
+    "mtime": 1793077457.5145068,
+    "seen": 1793078642.35365,
+    "ast_hash": "7eb57efc7569a0a353ff3ef21b8b66db",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/db/DownloadedTrackDao.kt": {
+    "mtime": 1793077457.5150168,
+    "seen": 1793078642.35365,
+    "ast_hash": "9842b76a1fe56b077623ff38d290ff79",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/data/db/DownloadedTrackEntity.kt": {
+    "mtime": 1793077457.5155256,
+    "seen": 1793078642.35365,
+    "ast_hash": "cc2c42cfb88aad642f78eb9871382e50",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/LyricsRepositorySanitizationTest.kt": {
+    "mtime": 1793077457.5226645,
+    "seen": 1793078642.3541532,
+    "ast_hash": "9916f645f4de297229662f5aed1e75a0",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/RoomDownloadedTrackEntityTest.kt": {
+    "mtime": 1793077457.524176,
+    "seen": 1793078642.3541532,
+    "ast_hash": "47dab28bc39d7b883b9cc45a9948ea21",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/ConnectivityObserver.kt": {
+    "mtime": 1793093624.4969776,
+    "seen": 1793093864.7769806,
+    "ast_hash": "b514b799856a54c2f528e79e8d9ea205",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/InnerTubeParserAdversarialStressTest.kt": {
+    "mtime": 1793077457.5226645,
+    "seen": 1793078642.3541532,
+    "ast_hash": "1e125dfe3113463c0f920f732ead2cbc",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/LyricsNullSanitizationStressTest.kt": {
+    "mtime": 1793077457.5226645,
+    "seen": 1793078642.3541532,
+    "ast_hash": "cc825fa1f367836af10decacc6103f90",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/PersistenceAndOrphanScannerStressTest.kt": {
+    "mtime": 1793077457.5226645,
+    "seen": 1793078642.3541532,
+    "ast_hash": "8738068efe7ee893d7ad4ab42dcf3b29",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/AudioCoreDownloadsCrossfadeQualityTest.kt": {
+    "mtime": 1793093802.474965,
+    "seen": 1793093864.7769806,
+    "ast_hash": "7ed315637d3dda975cb567edb3e26bc1",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/Block3EmpiricalChallengeTest.kt": {
+    "mtime": 1793093692.4779298,
+    "seen": 1793093864.7769806,
+    "ast_hash": "f19360bfba25034c283beca564e90234",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/QueueAndConnectivityChallengerTest.kt": {
+    "mtime": 1793079407.6175995,
+    "seen": 1793093864.7769806,
+    "ast_hash": "46d7affbd18c819cbf3dfc17d6b3cdda",
+    "semantic_hash": ""
+  }
+}

@@ -674,34 +674,56 @@ class MusicViewModel(
     private fun trackToMediaItem(track: Track): MediaItem {
         trackMetadataMap[track.id] = track
         val downloaded = libraryRepository?.downloadedTracksFlow?.value?.firstOrNull { it.track.id == track.id }
-        val localArtFile = applicationContext?.let { ctx ->
-            java.io.File(ctx.filesDir, "offline_audio/${track.id}.jpg")
+        val ctx = applicationContext
+        val localArtFile = when {
+            downloaded?.localArtworkPath != null && java.io.File(downloaded.localArtworkPath).exists() ->
+                java.io.File(downloaded.localArtworkPath)
+            ctx != null && java.io.File(ctx.filesDir, "offline_audio/${track.id}.jpg").exists() ->
+                java.io.File(ctx.filesDir, "offline_audio/${track.id}.jpg")
+            else -> null
         }
-        val artworkUri = if (downloaded?.localArtworkPath != null && java.io.File(downloaded.localArtworkPath).exists()) {
-            Uri.parse("file://${downloaded.localArtworkPath}")
-        } else if (localArtFile != null && localArtFile.exists()) {
-            Uri.parse("file://${localArtFile.absolutePath}")
+
+        // Lê bytes de arte local de forma segura para notificação direta e lockscreen sem falha IPC de permissão
+        val artworkBytes: ByteArray? = localArtFile?.let { f ->
+            try {
+                if (f.length() in 1..500_000) f.readBytes() else null
+            } catch (_: Exception) { null }
+        }
+
+        val artworkUri = if (localArtFile != null && ctx != null) {
+            try {
+                androidx.core.content.FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", localArtFile)
+            } catch (_: Exception) {
+                null
+            }
         } else {
             val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
             artworkUrl?.let { Uri.parse(it) }
         }
+
         val extras = Bundle().apply {
             putString(EXTRA_DURATION_TEXT, track.durationText)
             putLong(EXTRA_DURATION_SECONDS, track.durationSeconds)
-            putString(EXTRA_THUMBNAIL_URL, artworkUri?.toString() ?: track.thumbnailUrl)
+            putString(EXTRA_THUMBNAIL_URL, localArtFile?.absolutePath?.let { "file://$it" } ?: artworkUri?.toString() ?: track.thumbnailUrl)
         }
-        val metadata = MediaMetadata.Builder()
+
+        val metadataBuilder = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist)
             .setAlbumTitle(track.album)
-            .setArtworkUri(artworkUri)
             .setExtras(extras)
-            .build()
+
+        if (artworkBytes != null) {
+            metadataBuilder.setArtworkData(artworkBytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+        }
+        if (artworkUri != null) {
+            metadataBuilder.setArtworkUri(artworkUri)
+        }
 
         return MediaItem.Builder()
             .setMediaId(track.id)
             .setUri(AudioPlayerService.buildTrackUri(track.id))
-            .setMediaMetadata(metadata)
+            .setMediaMetadata(metadataBuilder.build())
             .build()
     }
 
@@ -1272,8 +1294,13 @@ class MusicViewModel(
                 currentPositionMs = 0L,
                 isBuffering = true
             )
-            controller.seekToDefaultPosition(index)
-            controller.play()
+            val service = AudioPlayerService.getInstance()
+            if (service != null && controller.isPlaying) {
+                service.smoothTransitionTo(index)
+            } else {
+                controller.seekToDefaultPosition(index)
+                controller.play()
+            }
         }
     }
 
@@ -1357,14 +1384,20 @@ class MusicViewModel(
         val count = controller.mediaItemCount
         if (count <= 0) return
 
-        if (controller.hasNextMediaItem()) {
-            controller.seekToNextMediaItem()
-            controller.play()
+        val targetIndex = if (controller.hasNextMediaItem()) {
+            controller.nextMediaItemIndex
         } else if (count > 1) {
-            controller.seekToDefaultPosition(0)
-            controller.play()
+            0
         } else {
             seekTo(0L)
+            return
+        }
+
+        val service = AudioPlayerService.getInstance()
+        if (service != null && controller.isPlaying) {
+            service.smoothTransitionTo(targetIndex)
+        } else {
+            controller.seekToDefaultPosition(targetIndex)
             controller.play()
         }
     }
@@ -1379,14 +1412,21 @@ class MusicViewModel(
             return
         }
 
-        if (controller.hasPreviousMediaItem()) {
-            controller.seekToPreviousMediaItem()
-            controller.play()
+        val targetIndex = if (controller.hasPreviousMediaItem()) {
+            controller.previousMediaItemIndex
         } else if (count > 1) {
-            controller.seekToDefaultPosition(count - 1)
-            controller.play()
+            count - 1
         } else {
             seekTo(0L)
+            return
+        }
+
+        val service = AudioPlayerService.getInstance()
+        if (service != null && controller.isPlaying) {
+            service.smoothTransitionTo(targetIndex)
+        } else {
+            controller.seekToDefaultPosition(targetIndex)
+            controller.play()
         }
     }
 
@@ -1399,14 +1439,21 @@ class MusicViewModel(
         val count = controller.mediaItemCount
         if (count <= 0) return
 
-        if (controller.hasPreviousMediaItem()) {
-            controller.seekToPreviousMediaItem()
-            controller.play()
+        val targetIndex = if (controller.hasPreviousMediaItem()) {
+            controller.previousMediaItemIndex
         } else if (count > 1) {
-            controller.seekToDefaultPosition(count - 1)
-            controller.play()
+            count - 1
         } else {
             seekTo(0L)
+            return
+        }
+
+        val service = AudioPlayerService.getInstance()
+        if (service != null && controller.isPlaying) {
+            service.smoothTransitionTo(targetIndex)
+        } else {
+            controller.seekToDefaultPosition(targetIndex)
+            controller.play()
         }
     }
 
@@ -1926,6 +1973,7 @@ class MusicViewModel(
     fun setDataSaverMode(mode: DataSaverMode) {
         _dataSaverMode.value = mode
         userSettingsRepository?.setDataSaverMode(mode)
+        AudioPlayerService.clearStreamCache()
     }
 
     fun setDownloadOverCellular(enabled: Boolean) {
@@ -1936,16 +1984,19 @@ class MusicViewModel(
     fun setWifiAudioQuality(quality: AudioQuality) {
         _wifiAudioQuality.value = quality
         userSettingsRepository?.setWifiAudioQuality(quality)
+        AudioPlayerService.clearStreamCache()
     }
 
     fun setCellularAudioQuality(quality: AudioQuality) {
         _cellularAudioQuality.value = quality
         userSettingsRepository?.setCellularAudioQuality(quality)
+        AudioPlayerService.clearStreamCache()
     }
 
     fun setDownloadAudioQuality(quality: DownloadAudioQuality) {
         _downloadAudioQuality.value = quality
         userSettingsRepository?.setDownloadAudioQuality(quality)
+        AudioPlayerService.clearStreamCache()
     }
 
     fun setSmartDownloadsEnabled(enabled: Boolean) {

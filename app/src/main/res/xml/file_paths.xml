@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Compartilhamento estrito apenas para o diretório de download de APKs do auto-atualizador -->
+    <!-- Compartilhamento estrito para atualizações e arquivos de áudio -->
     <external-files-path
         name="update_downloads"
         path="Download/" />
+    <files-path
+        name="offline_audio"
+        path="offline_audio/" />
 </paths>

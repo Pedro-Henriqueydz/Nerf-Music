@@ -23,6 +23,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.nerf.music.data.repository.AudioQuality
+import com.nerf.music.data.repository.LibraryRepositoryImpl
 import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import com.nerf.music.util.NetworkUtils
@@ -105,6 +107,19 @@ class AudioPlayerService : MediaSessionService() {
         }
     }
 
+    fun smoothTransitionTo(targetIndex: Int, customFadeMs: Long? = null) {
+        if (!::activePlayer.isInitialized) return
+        if (targetIndex !in 0 until activePlayer.mediaItemCount) return
+        val crossfadeSec = getCrossfadeSeconds()
+        val automix = isAutomixEnabled()
+        val fadeMs = customFadeMs ?: when {
+            crossfadeSec > 0 -> (crossfadeSec * 1000L).coerceAtMost(2000L)
+            automix -> 800L
+            else -> 400L
+        }
+        executeCrossfade(targetIndex, fadeMs, isSkip = true)
+    }
+
     private fun checkAndTriggerTransition() {
         if (isCrossfading) return
         if (!activePlayer.isPlaying) return
@@ -133,22 +148,34 @@ class AudioPlayerService : MediaSessionService() {
         val triggerThresholdMs = effectiveFadeMs + 600L
 
         if (remainingMs in 100..triggerThresholdMs) {
-            executeCrossfade(nextIndex, effectiveFadeMs)
+            executeCrossfade(nextIndex, effectiveFadeMs, isSkip = false)
         }
     }
 
     @OptIn(UnstableApi::class)
-    private fun executeCrossfade(nextIndex: Int, fadeDurationMs: Long) {
-        if (isCrossfading) return
+    private fun executeCrossfade(nextIndex: Int, fadeDurationMs: Long, isSkip: Boolean = false) {
+        if (nextIndex !in 0 until activePlayer.mediaItemCount) return
+        if (isCrossfading) {
+            // Se já houver um crossfade ocorrendo e um novo comando de skip for recebido, finaliza o anterior com segurança
+            crossfadeJob?.cancel()
+            val prevFading = fadingPlayer
+            fadingPlayer = null
+            prevFading?.let {
+                it.stop()
+                it.volume = 1f
+            }
+            isCrossfading = false
+        }
         isCrossfading = true
-        Log.i(TAG, "Iniciando Crossfade dinâmico em tempo real: ${fadeDurationMs}ms para o índice $nextIndex")
+        Log.i(TAG, "Iniciando Crossfade dinâmico em tempo real: ${fadeDurationMs}ms para o índice $nextIndex (isSkip=$isSkip)")
 
         try {
             val outgoingPlayer = activePlayer
-            val incomingPlayer = auxiliaryPlayer ?: createExoPlayer(handleAudioFocus = true).also { auxiliaryPlayer = it }
+            val incomingPlayer = auxiliaryPlayer ?: createExoPlayer(handleAudioFocus = false).also { auxiliaryPlayer = it }
 
-            // Mantém o incomingPlayer segurando handleAudioFocus = true desde o início da transição
-            incomingPlayer.setAudioAttributes(audioAttributes, true)
+            // IMPORTANTE: incomingPlayer NÃO deve solicitar AudioFocus do sistema durante o crossfade,
+            // impedindo que o AudioManager envie AUDIOFOCUS_LOSS para o outgoingPlayer e pause a música abruptamente!
+            incomingPlayer.setAudioAttributes(audioAttributes, false)
 
             // Previne que o outgoingPlayer avance automaticamente para a próxima faixa
             outgoingPlayer.repeatMode = Player.REPEAT_MODE_OFF
@@ -166,16 +193,25 @@ class AudioPlayerService : MediaSessionService() {
 
             crossfadeJob?.cancel()
             crossfadeJob = serviceScope.launch {
-                // Pre-aquece o auxiliaryPlayer até STATE_READY antes de iniciar a rampa de volume
+                // Pre-aquece o incomingPlayer até STATE_READY antes de iniciar a rampa de volume
                 var waitTime = 0
                 while (incomingPlayer.playbackState != Player.STATE_READY && waitTime < 2500) {
-                    delay(35)
-                    waitTime += 35
+                    delay(30)
+                    waitTime += 30
                 }
 
-                // Limita a duração do crossfade ao tempo restante real do outgoingPlayer
-                val remainingMs = (outgoingPlayer.duration - outgoingPlayer.currentPosition).coerceAtLeast(100L)
-                val effectiveFadeMs = fadeDurationMs.coerceAtMost(remainingMs)
+                if (incomingPlayer.playbackState != Player.STATE_READY && incomingPlayer.playbackState != Player.STATE_BUFFERING) {
+                    Log.w(TAG, "incomingPlayer não atingiu STATE_READY a tempo (${incomingPlayer.playbackState}). Abortando crossfade.")
+                    incomingPlayer.stop()
+                    outgoingPlayer.volume = 1f
+                    outgoingPlayer.pauseAtEndOfMediaItems = false
+                    isCrossfading = false
+                    return@launch
+                }
+
+                // Limita a duração do crossfade ao tempo restante real do outgoingPlayer (ou fade padrão em skip)
+                val remainingMs = if (isSkip) fadeDurationMs else (outgoingPlayer.duration - outgoingPlayer.currentPosition).coerceAtLeast(100L)
+                val effectiveFadeMs = fadeDurationMs.coerceAtMost(remainingMs).coerceAtLeast(200L)
 
                 // Atualiza a MediaSession para o player recebedor
                 fadingPlayer = outgoingPlayer
@@ -191,20 +227,19 @@ class AudioPlayerService : MediaSessionService() {
                     val volOut = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
                     val volIn = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
 
-                    outgoingPlayer.volume = volOut
-                    incomingPlayer.volume = volIn
+                    outgoingPlayer.volume = volOut.coerceIn(0f, 1f)
+                    incomingPlayer.volume = volIn.coerceIn(0f, 1f)
 
                     if (progress >= 1f) break
                     delay(20)
                 }
 
-                // Transfere o foco de áudio de forma segura: desativa handleAudioFocus no outgoing ANTES do stop(),
-                // impedindo que o ExoPlayer abandone o foco de áudio do sistema
-                outgoingPlayer.setAudioAttributes(audioAttributes, false)
+                // Transfere o foco de áudio de forma segura: outgoing é parado e incoming assume o foco exclusivo
                 outgoingPlayer.stop()
                 outgoingPlayer.pauseAtEndOfMediaItems = false
                 outgoingPlayer.volume = 1f
                 incomingPlayer.volume = 1f
+                incomingPlayer.setAudioAttributes(audioAttributes, true)
 
                 auxiliaryPlayer = outgoingPlayer
                 fadingPlayer = null
@@ -230,31 +265,67 @@ class AudioPlayerService : MediaSessionService() {
         private const val STREAM_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
+        private var instance: AudioPlayerService? = null
+        fun getInstance(): AudioPlayerService? = instance
+
         fun buildTrackUri(videoId: String): Uri = Uri.parse("$NERF_URI_SCHEME://track/$videoId")
 
         private data class CachedStreamUrl(val url: String, val timestampMs: Long)
         private val streamUrlCache = ConcurrentHashMap<String, CachedStreamUrl>()
         private val inFlightResolutions = ConcurrentHashMap<String, Deferred<String>>()
         private var serviceAppContext: Context? = null
-        private val globalStreamResolver: StreamResolver by lazy {
-            createDefaultStreamResolver(serviceAppContext)
+        private var streamResolverInstance: StreamResolver? = null
+
+        private fun getStreamResolver(): StreamResolver {
+            return streamResolverInstance ?: synchronized(this) {
+                streamResolverInstance ?: createDefaultStreamResolver(serviceAppContext).also {
+                    streamResolverInstance = it
+                }
+            }
         }
+
         private val prefetchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun setPrefetchContext(context: Context) {
-            serviceAppContext = context.applicationContext
+            val appCtx = context.applicationContext
+            serviceAppContext = appCtx
+            if (streamResolverInstance == null) {
+                streamResolverInstance = createDefaultStreamResolver(appCtx)
+            }
+        }
+
+        fun getTargetAudioQuality(context: Context): AudioQuality {
+            val prefs = context.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
+            val dataSaverStr = prefs.getString("key_data_saver_mode", "ALWAYS_OFF") ?: "ALWAYS_OFF"
+            val isWifi = NetworkUtils.isConnectedToWifi(context)
+
+            if (dataSaverStr == "ALWAYS_ON" || (dataSaverStr == "AUTOMATIC" && !isWifi)) {
+                return AudioQuality.LOW
+            }
+
+            val qualityKey = if (isWifi) "key_wifi_audio_quality" else "key_cellular_audio_quality"
+            val defaultQuality = if (isWifi) AudioQuality.HIGH.name else AudioQuality.AUTOMATIC.name
+            val qualityStr = prefs.getString(qualityKey, defaultQuality) ?: defaultQuality
+
+            val quality = try {
+                AudioQuality.valueOf(qualityStr)
+            } catch (_: Exception) {
+                if (isWifi) AudioQuality.HIGH else AudioQuality.AUTOMATIC
+            }
+
+            return if (quality == AudioQuality.AUTOMATIC) {
+                if (isWifi) AudioQuality.HIGH else AudioQuality.NORMAL
+            } else {
+                quality
+            }
         }
 
         // The resolved URL depends on the active network and quality preferences. Keep separate
         // entries so changing those settings cannot reuse a stream selected for the old profile.
         private fun streamCacheKey(videoId: String): String {
             val context = serviceAppContext
-            val prefs = context?.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
-            val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: true
-            val qualityKey = if (isWifi) "key_wifi_audio_quality" else "key_cellular_audio_quality"
-            val dataSaver = prefs?.getString("key_data_saver_mode", "ALWAYS_OFF") ?: "ALWAYS_OFF"
-            val quality = prefs?.getString(qualityKey, "AUTOMATIC") ?: "AUTOMATIC"
-            return "$videoId|$dataSaver|$quality|$isWifi"
+            val targetQuality = context?.let { getTargetAudioQuality(it) } ?: AudioQuality.HIGH
+            return "$videoId|${targetQuality.name}"
         }
 
         fun isStreamCached(videoId: String): Boolean {
@@ -269,9 +340,10 @@ class AudioPlayerService : MediaSessionService() {
             if (videoId.isBlank()) return
             val checkDir = offlineCheckDir ?: serviceAppContext?.filesDir
             if (checkDir != null) {
-                val existsOffline = listOf("m4a", "opus", "webm").any { ext ->
+                val possibleExtensions = listOf("webm", "m4a", "opus", "mp4", "ogg", "mp3", "aac")
+                val existsOffline = possibleExtensions.any { ext ->
                     val f = File(checkDir, "offline_audio/$videoId.$ext")
-                    f.exists() && f.length() > 0
+                    f.exists() && f.length() > 1024L
                 }
                 if (existsOffline) {
                     Log.i(TAG, "Faixa $videoId já existe offline no disco. Ignorando pre-fetch de rede.")
@@ -285,6 +357,7 @@ class AudioPlayerService : MediaSessionService() {
                 return
             }
 
+            val targetQuality = context?.let { getTargetAudioQuality(it) } ?: AudioQuality.HIGH
             val cacheKey = streamCacheKey(videoId)
             val now = System.currentTimeMillis()
             val cached = streamUrlCache[cacheKey]
@@ -295,12 +368,12 @@ class AudioPlayerService : MediaSessionService() {
 
             val deferred = prefetchScope.async {
                 try {
-                    Log.i(TAG, "Pre-fetching stream URL em background para: $videoId")
-                    val result = globalStreamResolver.resolveStreamUrl(videoId)
+                    Log.i(TAG, "Pre-fetching stream URL em background para: $videoId (qualidade=$targetQuality)")
+                    val result = getStreamResolver().resolveStreamUrl(videoId, targetQuality)
                     val url = result.getOrNull()
                     if (!url.isNullOrBlank()) {
                         streamUrlCache[cacheKey] = CachedStreamUrl(url, System.currentTimeMillis())
-                        Log.i(TAG, "Pre-fetch de áudio concluído com sucesso para: $videoId")
+                        Log.i(TAG, "Pre-fetch de áudio concluído com sucesso para: $videoId (qualidade=$targetQuality)")
                         url
                     } else {
                         throw IOException("URL vazia retornada para $videoId")
@@ -319,11 +392,13 @@ class AudioPlayerService : MediaSessionService() {
          * Resolve a URL de streaming ou aguarda uma pre-busca já em andamento, garantindo 0 requisições duplicadas.
          */
         fun resolveOrAwaitStreamUrl(videoId: String): String {
+            val context = serviceAppContext
+            val targetQuality = context?.let { getTargetAudioQuality(it) } ?: AudioQuality.HIGH
             val cacheKey = streamCacheKey(videoId)
             val now = System.currentTimeMillis()
             val cached = streamUrlCache[cacheKey]
             if (cached != null && (now - cached.timestampMs) < CACHE_TTL_MS) {
-                Log.i(TAG, "Stream URL obtida diretamente do cache instantâneo para: $videoId")
+                Log.i(TAG, "Stream URL obtida diretamente do cache instantâneo para: $videoId (qualidade=$targetQuality)")
                 return cached.url
             }
 
@@ -335,7 +410,7 @@ class AudioPlayerService : MediaSessionService() {
                         existing.await()
                     } catch (e: Exception) {
                         Log.w(TAG, "Pre-fetch em voo falhou, re-tentando JIT: ${e.message}")
-                        val retryUrl = globalStreamResolver.resolveStreamUrl(videoId).getOrThrow()
+                        val retryUrl = getStreamResolver().resolveStreamUrl(videoId, targetQuality).getOrThrow()
                         streamUrlCache[cacheKey] = CachedStreamUrl(retryUrl, System.currentTimeMillis())
                         retryUrl
                     }
@@ -343,8 +418,8 @@ class AudioPlayerService : MediaSessionService() {
             }
 
             val deferred = prefetchScope.async {
-                Log.i(TAG, "Resolvendo URL de stream JIT para: $videoId")
-                val result = globalStreamResolver.resolveStreamUrl(videoId).getOrThrow()
+                Log.i(TAG, "Resolvendo URL de stream JIT para: $videoId (qualidade=$targetQuality)")
+                val result = getStreamResolver().resolveStreamUrl(videoId, targetQuality).getOrThrow()
                 streamUrlCache[cacheKey] = CachedStreamUrl(result, System.currentTimeMillis())
                 result
             }
@@ -356,6 +431,13 @@ class AudioPlayerService : MediaSessionService() {
                     inFlightResolutions.remove(cacheKey)
                 }
             }
+        }
+
+        fun clearStreamCache() {
+            streamUrlCache.clear()
+            inFlightResolutions.values.forEach { it.cancel() }
+            inFlightResolutions.clear()
+            Log.i(TAG, "Cache de streams limpo com sucesso.")
         }
 
         fun evictCache(videoId: String) {
@@ -449,12 +531,30 @@ class AudioPlayerService : MediaSessionService() {
                 reason: Int
             ) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK && isCrossfading) {
-                    // Se o usuário buscar na timeline durante um crossfade, cancela a transição e restaura volume
+                    // Se o usuário buscar na timeline durante um crossfade, encerra a transição sem colapso abrupto
                     crossfadeJob?.cancel()
-                    fadingPlayer?.stop()
+                    val oldFading = fadingPlayer
                     fadingPlayer = null
-                    activePlayer.volume = 1f
                     isCrossfading = false
+                    serviceScope.launch {
+                        oldFading?.let { fp ->
+                            val startVol = fp.volume
+                            for (step in 1..4) {
+                                delay(12)
+                                fp.volume = (startVol * (1f - step / 4f)).coerceIn(0f, 1f)
+                            }
+                            fp.stop()
+                            fp.volume = 1f
+                        }
+                    }
+                    serviceScope.launch {
+                        val startVol = activePlayer.volume
+                        for (step in 1..5) {
+                            delay(16)
+                            activePlayer.volume = (startVol + (1f - startVol) * (step / 5f)).coerceIn(0f, 1f)
+                        }
+                        activePlayer.volume = 1f
+                    }
                 }
             }
 
@@ -478,6 +578,7 @@ class AudioPlayerService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        instance = this
         serviceAppContext = applicationContext
 
         settingsRepository = UserSettingsRepositoryImpl(this)
@@ -506,14 +607,44 @@ class AudioPlayerService : MediaSessionService() {
                         ?: uri.host?.takeIf { it.isNotBlank() }
                         ?: throw IOException("VideoId ausente na URI: $uri")
 
-                    // 1. Verifica se a faixa já foi baixada offline no disco (.m4a, .opus, .webm)
-                    val possibleExtensions = listOf("m4a", "opus", "webm")
-                    val offlineFile = possibleExtensions
+                    // 1. Procura em todas as localizações e extensões possíveis (.webm, .m4a, .opus, .mp4, .ogg, .mp3, .aac)
+                    val possibleExtensions = listOf("webm", "m4a", "opus", "mp4", "ogg", "mp3", "aac")
+                    var offlineFile: File? = possibleExtensions
                         .map { ext -> File(filesDir, "offline_audio/$videoId.$ext") }
-                        .firstOrNull { it.exists() && it.length() > 0 }
+                        .firstOrNull { it.exists() && it.length() > 1024L }
+
+                    if (offlineFile == null && serviceAppContext != null) {
+                        offlineFile = possibleExtensions
+                            .map { ext -> File(serviceAppContext!!.filesDir, "offline_audio/$videoId.$ext") }
+                            .firstOrNull { it.exists() && it.length() > 1024L }
+                    }
+
+                    if (offlineFile == null && serviceAppContext != null) {
+                        offlineFile = possibleExtensions
+                            .map { ext -> File(serviceAppContext!!.getExternalFilesDir(null), "offline_audio/$videoId.$ext") }
+                            .firstOrNull { it.exists() && it.length() > 1024L }
+                    }
+
+                    if (offlineFile == null) {
+                        val dt = LibraryRepositoryImpl.sharedDownloadedTracksFlow.value.firstOrNull { it.track.id == videoId }
+                        if (dt != null) {
+                            val f = File(dt.localFilePath)
+                            if (f.exists() && f.length() > 1024L) {
+                                offlineFile = f
+                            }
+                        }
+                    }
+
                     if (offlineFile != null) {
-                        Log.i(TAG, "Reproduzindo faixa offline local: ${offlineFile.absolutePath}")
+                        Log.i(TAG, "Reproduzindo faixa offline local: ${offlineFile.absolutePath} (${offlineFile.length()} bytes)")
                         return@Resolver dataSpec.buildUpon().setUri(Uri.fromFile(offlineFile)).build()
+                    }
+
+                    // Se não for arquivo offline, valida conexão antes de tentar resolver
+                    val context = serviceAppContext ?: applicationContext
+                    if (!NetworkUtils.isNetworkAvailable(context)) {
+                        Log.w(TAG, "Dispositivo offline e faixa $videoId não encontrada em offline_audio.")
+                        throw IOException("Faixa não disponível offline no dispositivo.")
                     }
 
                     val resolvedUrl = resolveOrAwaitStreamUrl(videoId)
@@ -561,6 +692,9 @@ class AudioPlayerService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        if (instance == this) {
+            instance = null
+        }
         serviceScope.cancel()
         transitionMonitorJob?.cancel()
         crossfadeJob?.cancel()

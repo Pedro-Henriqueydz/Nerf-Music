@@ -236,19 +236,25 @@ class LibraryRepositoryImpl(
 
     override fun isDownloaded(trackId: String): Boolean {
         val dt = _downloadedTracksFlow.value.firstOrNull { it.track.id == trackId }
-        if (dt != null && File(dt.localFilePath).exists()) return true
-        val possibleExts = listOf("opus", "m4a", "webm")
-        return possibleExts.any { ext -> File(downloadsDir, "$trackId.$ext").exists() }
+        if (dt != null) {
+            val f = File(dt.localFilePath)
+            if (f.exists() && f.length() > 0L) return true
+        }
+        val possibleExts = listOf("opus", "m4a", "webm", "mp4")
+        return possibleExts.any { ext ->
+            val f = File(downloadsDir, "$trackId.$ext")
+            f.exists() && f.length() > 0L
+        }
     }
 
     override fun getDownloadedFilePath(trackId: String): String? {
         val dt = _downloadedTracksFlow.value.firstOrNull { it.track.id == trackId }
         if (dt != null) {
             val f = File(dt.localFilePath)
-            if (f.exists()) return dt.localFilePath
+            if (f.exists() && f.length() > 0L) return dt.localFilePath
         }
-        val possibleExts = listOf("opus", "m4a", "webm")
-        val fallback = possibleExts.map { File(downloadsDir, "$trackId.$it") }.firstOrNull { it.exists() }
+        val possibleExts = listOf("opus", "m4a", "webm", "mp4")
+        val fallback = possibleExts.map { File(downloadsDir, "$trackId.$it") }.firstOrNull { it.exists() && it.length() > 0L }
         return fallback?.absolutePath
     }
 

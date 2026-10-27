@@ -60,7 +60,12 @@ class CompositeStreamResolver(
     }
 
     private fun determineEffectiveQuality(targetQuality: AudioQuality?): AudioQuality? {
-        val ctx = context ?: return targetQuality
+        // Se a qualidade foi explicitamente especificada (ex: download em Lossless/Alta), preserva a qualidade alvo
+        if (targetQuality != null) {
+            return targetQuality
+        }
+
+        val ctx = context ?: return null
         val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         val dataSaverName = prefs.getString("key_data_saver_mode", DataSaverMode.ALWAYS_OFF.name)
@@ -72,13 +77,9 @@ class CompositeStreamResolver(
 
         val isWifi = NetworkUtils.isConnectedToWifi(ctx)
 
-        // Se a Economia de Dados estiver ativa, força AudioQuality.LOW
+        // Se a Economia de Dados estiver ativa, força AudioQuality.LOW para streaming
         if (dataSaver == DataSaverMode.ALWAYS_ON || (dataSaver == DataSaverMode.AUTOMATIC && !isWifi)) {
             return AudioQuality.LOW
-        }
-
-        if (targetQuality != null) {
-            return targetQuality
         }
 
         return if (isWifi) {
