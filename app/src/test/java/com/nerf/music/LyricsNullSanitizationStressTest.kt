@@ -292,4 +292,64 @@ class LyricsNullSanitizationStressTest {
         assertFalse("hasPlain must be false for JSONObject.NULL", hasPlain)
         assertFalse("Candidate must not qualify as having lyrics", hasSynced || hasPlain)
     }
+
+    // =========================================================================
+    // 5. INNERTUBE PARSE LYRICS RESPONSE LITERAL NULL SANITIZATION
+    // =========================================================================
+
+    @Test
+    fun testParseLyricsResponseOmitsLiteralNullAndReturnsNull() {
+        val client = com.nerf.music.data.network.InnerTubeCatalogClient()
+
+        val nullVariants = listOf("null", "Null", "NULL", "  Null  ", "Letra não disponível", "Lyrics not available")
+        for (variant in nullVariants) {
+            val fixture = """
+            {
+              "contents": {
+                "sectionListRenderer": {
+                  "contents": [
+                    {
+                      "musicDescriptionShelfRenderer": {
+                        "description": { "runs": [{ "text": "$variant" }] },
+                        "footer": { "runs": [{ "text": "Musixmatch" }] }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+
+            val result = client.parseLyricsResponse(fixture, "vid_stress_null")
+            assertNull("parseLyricsResponse must return null for literal '$variant'", result)
+        }
+    }
+
+    @Test
+    fun testLyricsDataHasValidLyricsProperty() {
+        val emptySynced = LyricsData(trackId = "t1", isSynced = true, syncedLines = emptyList(), plainLyrics = null)
+        assertFalse("Empty synced lyrics must be invalid", emptySynced.hasValidLyrics)
+
+        val nullVersesSynced = LyricsData(
+            trackId = "t2",
+            isSynced = true,
+            syncedLines = listOf(SyncedLyricsLine(1000L, "Null"), SyncedLyricsLine(2000L, "null")),
+            plainLyrics = null
+        )
+        assertFalse("Synced lyrics containing only 'null' variations must be invalid", nullVersesSynced.hasValidLyrics)
+
+        val nullPlain = LyricsData(trackId = "t3", isSynced = false, plainLyrics = "Null", syncedLines = emptyList())
+        assertFalse("Plain lyrics equal to 'Null' must be invalid", nullPlain.hasValidLyrics)
+
+        val validPlain = LyricsData(trackId = "t4", isSynced = false, plainLyrics = "Valid lyrics line", syncedLines = emptyList())
+        assertTrue("Plain lyrics with real text must be valid", validPlain.hasValidLyrics)
+
+        val validSynced = LyricsData(
+            trackId = "t5",
+            isSynced = true,
+            syncedLines = listOf(SyncedLyricsLine(1000L, "Hello world")),
+            plainLyrics = null
+        )
+        assertTrue("Synced lyrics with real verse must be valid", validSynced.hasValidLyrics)
+    }
 }

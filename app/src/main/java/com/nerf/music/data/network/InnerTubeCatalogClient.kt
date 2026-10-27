@@ -270,7 +270,12 @@ class InnerTubeCatalogClient(
                         textBuilder.append(runObj?.optString("text").orEmpty())
                     }
                     val fullText = textBuilder.toString().trim()
-                    if (fullText.isNotBlank()) {
+                    val isLiteralNullOrEmpty = fullText.isBlank() ||
+                            fullText.equals("null", ignoreCase = true) ||
+                            fullText.equals("letra não disponível", ignoreCase = true) ||
+                            fullText.equals("lyrics not available", ignoreCase = true)
+
+                    if (!isLiteralNullOrEmpty) {
                         val footerRuns = shelf.optJSONObject("footer")?.optJSONArray("runs")
                         val footerBuilder = StringBuilder()
                         if (footerRuns != null) {

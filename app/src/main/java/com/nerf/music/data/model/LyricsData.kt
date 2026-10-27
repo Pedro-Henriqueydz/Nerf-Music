@@ -15,4 +15,13 @@ data class LyricsData(
     val plainLyrics: String? = null,
     val syncedLines: List<SyncedLyricsLine> = emptyList(),
     val source: String = "LRCLIB"
-)
+) {
+    val hasValidLyrics: Boolean
+        get() {
+            val hasValidSynced = isSynced && syncedLines.any { line ->
+                line.text.isNotBlank() && !line.text.trim().equals("null", ignoreCase = true)
+            }
+            val hasValidPlain = !plainLyrics.isNullOrBlank() && !plainLyrics.trim().equals("null", ignoreCase = true)
+            return hasValidSynced || hasValidPlain
+        }
+}

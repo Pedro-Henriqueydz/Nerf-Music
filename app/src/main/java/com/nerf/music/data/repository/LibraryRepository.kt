@@ -30,6 +30,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import java.util.UUID
+import java.util.Locale
+import android.os.Environment
+import com.nerf.music.util.AudioMetadataTagger
 
 interface LibraryRepository {
     val likedTracksFlow: StateFlow<List<Track>>
@@ -451,11 +454,13 @@ class LibraryRepositoryImpl(
 
             // Baixa o companion artwork para persistência offline
             var artworkLocalPath: String? = null
-            if (!track.thumbnailUrl.isNullOrBlank() && !track.thumbnailUrl.startsWith("file://")) {
-                val artworkFile = File(downloadsDir, "${track.id}.jpg")
+            val artworkFile = File(downloadsDir, "${track.id}.jpg")
+            val candidateArtUrl = track.highResThumbnailUrl?.takeIf { it.isNotBlank() } ?: track.thumbnailUrl
+
+            if (!candidateArtUrl.isNullOrBlank() && !candidateArtUrl.startsWith("file://")) {
                 try {
                     val artReq = Request.Builder()
-                        .url(track.thumbnailUrl)
+                        .url(candidateArtUrl)
                         .get()
                         .build()
                     httpClient.newCall(artReq).execute().use { artResp ->
@@ -473,8 +478,20 @@ class LibraryRepositoryImpl(
                 } catch (e: Exception) {
                     Log.w(TAG, "Falha ao baixar artwork de ${track.id}: ${e.message}")
                 }
-            } else if (File(downloadsDir, "${track.id}.jpg").exists()) {
-                artworkLocalPath = File(downloadsDir, "${track.id}.jpg").absolutePath
+            } else if (artworkFile.exists() && artworkFile.length() > 0) {
+                artworkLocalPath = artworkFile.absolutePath
+            }
+
+            // Embuti metadados (Título, Artista, Álbum e Arte da Capa) diretamente no arquivo físico de áudio
+            try {
+                AudioMetadataTagger.embedMetadata(
+                    audioFile = destFile,
+                    track = track,
+                    artworkFile = if (artworkFile.exists() && artworkFile.length() > 0) artworkFile else null
+                )
+                AudioMetadataTagger.scanFileWithMediaScanner(context, destFile)
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha ao embutir metadados/artwork em ${destFile.name}: ${e.message}")
             }
 
             val effectiveThumbnail = artworkLocalPath?.let { "file://$it" } ?: track.thumbnailUrl
@@ -551,17 +568,47 @@ class LibraryRepositoryImpl(
     override suspend fun syncDownloadsWithDisk(): Int = withContext(Dispatchers.IO) {
         var reconciledCount = 0
         try {
-            // 1. Escaneia offline_audio por arquivos de áudio válidos
-            val audioExtensions = setOf("opus", "m4a", "webm")
-            val diskFiles = downloadsDir.listFiles { file ->
-                file.isFile && file.extension.lowercase() in audioExtensions
-            }?.toList().orEmpty()
+            // 1. Escaneia offline_audio e pastas de armazenamento local por arquivos de áudio válidos
+            val audioExtensions = setOf("opus", "m4a", "webm", "mp3", "ogg", "flac", "aac")
+            val scanDirs = mutableListOf(downloadsDir)
+            try {
+                val appFiles = File(context.applicationContext.filesDir, "offline_audio")
+                if (appFiles.exists() && appFiles.isDirectory && !scanDirs.contains(appFiles)) {
+                    scanDirs.add(appFiles)
+                }
+                val extFiles = context.applicationContext.getExternalFilesDir(null)
+                if (extFiles != null) {
+                    val extAudioDir = File(extFiles, "offline_audio")
+                    if (extAudioDir.exists() && extAudioDir.isDirectory && !scanDirs.contains(extAudioDir)) {
+                        scanDirs.add(extAudioDir)
+                    }
+                }
+                val publicMusic = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                if (publicMusic != null) {
+                    val nerfMusicDir = File(publicMusic, "NerfMusic")
+                    if (nerfMusicDir.exists() && nerfMusicDir.isDirectory && !scanDirs.contains(nerfMusicDir)) {
+                        scanDirs.add(nerfMusicDir)
+                    }
+                }
+                val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (publicDownloads != null) {
+                    val nerfDownDir = File(publicDownloads, "NerfMusic")
+                    if (nerfDownDir.exists() && nerfDownDir.isDirectory && !scanDirs.contains(nerfDownDir)) {
+                        scanDirs.add(nerfDownDir)
+                    }
+                }
+            } catch (_: Exception) {}
 
             val diskFilesByTrackId = mutableMapOf<String, File>()
-            for (file in diskFiles) {
-                val trackId = file.nameWithoutExtension
-                if (trackId.isNotBlank()) {
-                    diskFilesByTrackId[trackId] = file
+            for (dir in scanDirs) {
+                val files = dir.listFiles { file ->
+                    file.isFile && file.extension.lowercase() in audioExtensions && file.length() >= 512L
+                }?.toList().orEmpty()
+                for (file in files) {
+                    val trackId = file.nameWithoutExtension
+                    if (trackId.isNotBlank() && !diskFilesByTrackId.containsKey(trackId)) {
+                        diskFilesByTrackId[trackId] = file
+                    }
                 }
             }
 
@@ -587,38 +634,77 @@ class LibraryRepositoryImpl(
                 }
             }
 
-            // 4. Recupera arquivos órfãos no disco que não constam no banco
+            // 4. Recupera arquivos órfãos no disco que não constam no banco e extrai metadados ID3/MP4/Artwork
             val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
             val recentTracks = try { historyRepo.getRecentlyPlayed() } catch (_: Exception) { emptyList() }
             val recentMap = recentTracks.associateBy { it.id }
 
             for ((trackId, file) in diskFilesByTrackId) {
-                val artFile = File(downloadsDir, "$trackId.jpg")
-                val localArtPath = if (artFile.exists() && artFile.length() > 0) artFile.absolutePath else null
+                val artFile = File(file.parentFile ?: downloadsDir, "$trackId.jpg")
+                val fallbackDownloadsArt = File(downloadsDir, "$trackId.jpg")
+                var localArtPath = when {
+                    artFile.exists() && artFile.length() > 0 -> artFile.absolutePath
+                    fallbackDownloadsArt.exists() && fallbackDownloadsArt.length() > 0 -> fallbackDownloadsArt.absolutePath
+                    else -> null
+                }
+
+                // Extração dinâmica de tags ID3/MP4 e arte embutida caso não haja dados completos
+                val extracted = try {
+                    AudioMetadataTagger.extractMetadata(file)
+                } catch (_: Throwable) {
+                    null
+                }
+
+                // Se houver arte embutida no áudio e o companion .jpg não existir fisicamente, salva no disco
+                if (localArtPath == null && extracted?.artworkBytes != null && extracted.artworkBytes.isNotEmpty()) {
+                    try {
+                        val companionArt = File(downloadsDir, "$trackId.jpg")
+                        FileOutputStream(companionArt).use { it.write(extracted.artworkBytes) }
+                        if (companionArt.exists() && companionArt.length() > 0) {
+                            localArtPath = companionArt.absolutePath
+                        }
+                    } catch (e: Exception) {
+                        Log.d(TAG, "Falha ao persistir imagem embutida de $trackId: ${e.message}")
+                    }
+                }
 
                 if (!dbTrackIds.contains(trackId)) {
                     val knownTrack = recentMap[trackId] ?: _likedTracksFlow.value.firstOrNull { it.id == trackId }
-                    val track = knownTrack ?: Track(
-                        id = trackId,
-                        title = "Faixa offline $trackId",
-                        artist = "Áudio Local",
-                        thumbnailUrl = localArtPath?.let { "file://$it" },
-                        durationText = "--:--",
-                        durationSeconds = 0L
-                    )
+
+                    val finalTitle = knownTrack?.title
+                        ?: extracted?.title
+                        ?: "Faixa offline $trackId"
+
+                    val finalArtist = knownTrack?.artist
+                        ?: extracted?.artist
+                        ?: "Áudio Local"
+
+                    val finalAlbum = knownTrack?.album ?: extracted?.album
+
+                    val finalDurationSec = when {
+                        knownTrack != null && knownTrack.durationSeconds > 0L -> knownTrack.durationSeconds
+                        extracted != null && extracted.durationMs > 0L -> extracted.durationMs / 1000L
+                        else -> 0L
+                    }
+
+                    val finalDurationText = when {
+                        knownTrack != null && knownTrack.durationText.isNotBlank() && knownTrack.durationText != "--:--" -> knownTrack.durationText
+                        finalDurationSec > 0L -> String.format(Locale.getDefault(), "%02d:%02d", finalDurationSec / 60, finalDurationSec % 60)
+                        else -> "--:--"
+                    }
 
                     val newEntity = DownloadedTrackEntity(
                         id = trackId,
-                        title = track.title,
-                        artist = track.artist,
-                        album = track.album,
-                        thumbnailUrl = track.thumbnailUrl,
-                        durationText = track.durationText,
-                        durationSeconds = track.durationSeconds,
-                        sourceIdentifier = track.sourceIdentifier,
-                        playlistId = track.playlistId,
-                        browseId = track.browseId,
-                        artistBrowseId = track.artistBrowseId,
+                        title = finalTitle,
+                        artist = finalArtist,
+                        album = finalAlbum,
+                        thumbnailUrl = localArtPath?.let { "file://$it" } ?: knownTrack?.thumbnailUrl,
+                        durationText = finalDurationText,
+                        durationSeconds = finalDurationSec,
+                        sourceIdentifier = knownTrack?.sourceIdentifier ?: "OFFLINE_DISK",
+                        playlistId = knownTrack?.playlistId,
+                        browseId = knownTrack?.browseId,
+                        artistBrowseId = knownTrack?.artistBrowseId,
                         localFilePath = file.absolutePath,
                         downloadedAtEpochMs = file.lastModified(),
                         fileSizeBytes = file.length(),
@@ -629,9 +715,32 @@ class LibraryRepositoryImpl(
                     reconciledCount++
                 } else {
                     val existingEntity = currentDbEntities.firstOrNull { it.id == trackId }
-                    if (existingEntity != null && existingEntity.localArtworkPath.isNullOrBlank() && localArtPath != null) {
-                        downloadedTrackDao.update(existingEntity.copy(localArtworkPath = localArtPath))
-                        reconciledCount++
+                    if (existingEntity != null) {
+                        var needsUpdate = false
+                        var updatedEntity = existingEntity
+
+                        if (existingEntity.localArtworkPath.isNullOrBlank() && localArtPath != null) {
+                            updatedEntity = updatedEntity.copy(
+                                localArtworkPath = localArtPath,
+                                thumbnailUrl = "file://$localArtPath"
+                            )
+                            needsUpdate = true
+                        }
+
+                        // Se a entidade tinha título ou artista genérico de fallback, atualiza com as tags lidas
+                        if (existingEntity.title.startsWith("Faixa offline") && !extracted?.title.isNullOrBlank()) {
+                            updatedEntity = updatedEntity.copy(
+                                title = extracted!!.title!!,
+                                artist = extracted.artist ?: updatedEntity.artist,
+                                album = extracted.album ?: updatedEntity.album
+                            )
+                            needsUpdate = true
+                        }
+
+                        if (needsUpdate) {
+                            downloadedTrackDao.update(updatedEntity)
+                            reconciledCount++
+                        }
                     }
                 }
             }

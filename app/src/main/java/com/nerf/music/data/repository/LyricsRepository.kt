@@ -99,12 +99,13 @@ class LyricsRepositoryImpl(
             }
             Log.i(TAG, "Resultado da busca de letras: isSynced=${lyricsData?.isSynced}, linhas=${lyricsData?.syncedLines?.size}")
 
-            if (lyricsData != null) {
+            if (lyricsData != null && lyricsData.hasValidLyrics) {
                 cache[trackId] = lyricsData
+                Result.success(lyricsData)
             } else {
                 negativeCache[trackId] = true
+                Result.success(null)
             }
-            Result.success(lyricsData)
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao buscar letras para $title - $artist", e)
             Result.failure(e)

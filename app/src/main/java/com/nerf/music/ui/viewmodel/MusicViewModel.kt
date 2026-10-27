@@ -1813,9 +1813,41 @@ class MusicViewModel(
         relatedFetchJob = viewModelScope.launch {
             _isLoadingRelated.value = true
             _trackRelatedData.value = null
-            repository.getTrackRelated(relatedBrowseId).onSuccess { data ->
-                if (data.sections.isEmpty()) {
+            try {
+                repository.getTrackRelated(relatedBrowseId).onSuccess { data ->
+                    val nonEmptySections = data.sections.filter { it.items.isNotEmpty() }
+                    if (nonEmptySections.isEmpty()) {
+                        val currentArtist = _playbackState.value.currentTrack?.artist
+                        if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
+                            try {
+                                val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
+                                val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
+                                if (fallbackTracks.isNotEmpty()) {
+                                    val fallbackSection = RelatedSection(
+                                        title = "Mais de $currentArtist",
+                                        items = fallbackTracks,
+                                        style = HomeSectionStyle.QUICK_PICKS_GRID
+                                    )
+                                    val enrichedData = data.copy(sections = listOf(fallbackSection))
+                                    _trackRelatedData.value = enrichedData
+                                    fallbackTracks.forEach { trackMetadataMap[it.id] = it }
+                                    return@launch
+                                }
+                            } catch (e: Exception) {
+                                Log.w("MusicViewModel", "Fallback artist top songs search failed: ${e.message}")
+                            }
+                        }
+                        _trackRelatedData.value = data.copy(sections = emptyList())
+                    } else {
+                        _trackRelatedData.value = data.copy(sections = nonEmptySections)
+                        nonEmptySections.forEach { section ->
+                            section.items.forEach { trackMetadataMap[it.id] = it }
+                        }
+                    }
+                }.onFailure { error ->
+                    Log.w("MusicViewModel", "Erro ao buscar conteudo relacionado: " + error.message)
                     val currentArtist = _playbackState.value.currentTrack?.artist
+                    var handledFallback = false
                     if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
                         try {
                             val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
@@ -1826,25 +1858,32 @@ class MusicViewModel(
                                     items = fallbackTracks,
                                     style = HomeSectionStyle.QUICK_PICKS_GRID
                                 )
-                                val enrichedData = data.copy(sections = listOf(fallbackSection))
-                                _trackRelatedData.value = enrichedData
+                                _trackRelatedData.value = TrackRelatedData(sections = listOf(fallbackSection))
                                 fallbackTracks.forEach { trackMetadataMap[it.id] = it }
-                                _isLoadingRelated.value = false
-                                return@launch
+                                handledFallback = true
                             }
                         } catch (e: Exception) {
-                            Log.w("MusicViewModel", "Fallback artist top songs search failed: ${e.message}")
+                            Log.w("MusicViewModel", "Fallback artist top songs search on error failed: ${e.message}")
                         }
                     }
+                    if (!handledFallback) {
+                        _trackRelatedData.value = TrackRelatedData(sections = emptyList())
+                    }
                 }
-                _trackRelatedData.value = data
-                data.sections.forEach { section ->
-                    section.items.forEach { trackMetadataMap[it.id] = it }
-                }
+            } finally {
                 _isLoadingRelated.value = false
-            }.onFailure { error ->
-                Log.w("MusicViewModel", "Erro ao buscar conteudo relacionado: " + error.message)
+            }
+        }
+    }
+
+    fun loadTrackRelatedFallback() {
+        relatedFetchJob?.cancel()
+        relatedFetchJob = viewModelScope.launch {
+            _isLoadingRelated.value = true
+            _trackRelatedData.value = null
+            try {
                 val currentArtist = _playbackState.value.currentTrack?.artist
+                var handled = false
                 if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
                     try {
                         val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
@@ -1857,39 +1896,18 @@ class MusicViewModel(
                             )
                             _trackRelatedData.value = TrackRelatedData(sections = listOf(fallbackSection))
                             fallbackTracks.forEach { trackMetadataMap[it.id] = it }
+                            handled = true
                         }
                     } catch (e: Exception) {
-                        Log.w("MusicViewModel", "Fallback artist top songs search on error failed: ${e.message}")
+                        Log.w("MusicViewModel", "Fallback related songs search failed: ${e.message}")
                     }
                 }
+                if (!handled) {
+                    _trackRelatedData.value = TrackRelatedData(sections = emptyList())
+                }
+            } finally {
                 _isLoadingRelated.value = false
             }
-        }
-    }
-
-    fun loadTrackRelatedFallback() {
-        relatedFetchJob?.cancel()
-        relatedFetchJob = viewModelScope.launch {
-            _isLoadingRelated.value = true
-            val currentArtist = _playbackState.value.currentTrack?.artist
-            if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
-                try {
-                    val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
-                    val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
-                    if (fallbackTracks.isNotEmpty()) {
-                        val fallbackSection = RelatedSection(
-                            title = "Mais de $currentArtist",
-                            items = fallbackTracks,
-                            style = HomeSectionStyle.QUICK_PICKS_GRID
-                        )
-                        _trackRelatedData.value = TrackRelatedData(sections = listOf(fallbackSection))
-                        fallbackTracks.forEach { trackMetadataMap[it.id] = it }
-                    }
-                } catch (e: Exception) {
-                    Log.w("MusicViewModel", "Fallback related songs search failed: ${e.message}")
-                }
-            }
-            _isLoadingRelated.value = false
         }
     }
 
@@ -2436,9 +2454,9 @@ class MusicViewModel(
             )
             val data = res.getOrNull()
             val cleanData = data?.let { d ->
-                val cleanPlain = if (d.plainLyrics.isNullOrBlank() || d.plainLyrics.equals("null", ignoreCase = true)) null else d.plainLyrics
-                val cleanSynced = d.syncedLines.filter { !it.text.equals("null", ignoreCase = true) }
-                d.copy(plainLyrics = cleanPlain, syncedLines = cleanSynced)
+                val cleanPlain = if (d.plainLyrics.isNullOrBlank() || d.plainLyrics.trim().equals("null", ignoreCase = true)) null else d.plainLyrics.trim()
+                val cleanSynced = d.syncedLines.filter { it.text.isNotBlank() && !it.text.trim().equals("null", ignoreCase = true) }
+                if (cleanPlain == null && cleanSynced.isEmpty()) null else d.copy(plainLyrics = cleanPlain, syncedLines = cleanSynced)
             }
             _currentLyrics.value = cleanData
             updateCurrentLyricsLine(_playbackState.value.currentPositionMs)

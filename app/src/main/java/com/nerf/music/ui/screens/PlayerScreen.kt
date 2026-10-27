@@ -2708,7 +2708,15 @@ fun PlayerRelatedSheetContent(
 
         HorizontalDivider(color = Color(0xFF262626), thickness = 1.dp)
 
-        if (isLoading && relatedData == null) {
+        val validSections = remember(relatedData) {
+            relatedData?.sections?.map { sec ->
+                sec.copy(items = sec.items.filter { it.id.isNotBlank() }.distinctBy { it.id })
+            }?.filter { it.items.isNotEmpty() }.orEmpty()
+        }
+        val hasBio = !relatedData?.aboutArtistDescription.isNullOrBlank()
+        val hasContent = validSections.isNotEmpty() || hasBio
+
+        if (isLoading && !hasContent) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2721,19 +2729,41 @@ fun PlayerRelatedSheetContent(
                     modifier = Modifier.size(36.dp)
                 )
             }
-        } else if (relatedData == null || (relatedData.sections.isEmpty() && relatedData.aboutArtistDescription.isNullOrBlank())) {
+        } else if (!hasContent) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .weight(1f)
+                    .padding(horizontal = 32.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "Nenhuma recomendação disponível no momento.",
-                    fontFamily = YouTubeSansFontFamily,
-                    fontSize = 14.sp,
-                    color = YtmTextSecondary
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null,
+                        tint = YtmWhite.copy(alpha = 0.35f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "Nenhuma recomendação disponível",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = YtmWhite
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Não encontramos músicas ou artistas relacionados para esta faixa.",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontSize = 13.sp,
+                        color = YtmTextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         } else {
             LazyColumn(
@@ -2742,7 +2772,7 @@ fun PlayerRelatedSheetContent(
                     .weight(1f),
                 contentPadding = PaddingValues(vertical = 12.dp)
             ) {
-                items(relatedData.sections) { section ->
+                items(validSections) { section ->
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2769,7 +2799,7 @@ fun PlayerRelatedSheetContent(
                                 contentPadding = PaddingValues(horizontal = 20.dp),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                items(section.items, key = { it.id }) { item ->
+                                items(section.items, key = { it.id.ifBlank { "${it.hashCode()}" } }) { item ->
                                     HomeSongCard(
                                         track = item,
                                         isPlaying = item.id == currentPlayingId,
@@ -2790,7 +2820,7 @@ fun PlayerRelatedSheetContent(
                     }
                 }
 
-                if (!relatedData.aboutArtistDescription.isNullOrBlank()) {
+                if (!relatedData?.aboutArtistDescription.isNullOrBlank()) {
                     item {
                         Column(
                             modifier = Modifier
@@ -2801,7 +2831,7 @@ fun PlayerRelatedSheetContent(
                                 .padding(16.dp)
                         ) {
                             Text(
-                                text = relatedData.aboutArtistHeader ?: "Sobre o artista",
+                                text = relatedData?.aboutArtistHeader ?: "Sobre o artista",
                                 fontFamily = YouTubeSansFontFamily,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
@@ -2809,7 +2839,7 @@ fun PlayerRelatedSheetContent(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = relatedData.aboutArtistDescription,
+                                text = relatedData?.aboutArtistDescription.orEmpty(),
                                 fontFamily = YouTubeSansFontFamily,
                                 fontSize = 13.sp,
                                 lineHeight = 19.sp,
@@ -3096,8 +3126,8 @@ private fun AppleMusicLyricsView(
                     )
                 }
         ) {
-            val hasSyncedLyrics = lyrics != null && lyrics.isSynced && lyrics.syncedLines.isNotEmpty()
-            val hasPlainLyrics = lyrics != null && !lyrics.plainLyrics.isNullOrBlank() && !lyrics.plainLyrics.equals("null", ignoreCase = true)
+            val hasSyncedLyrics = lyrics != null && lyrics.isSynced && lyrics.syncedLines.any { it.text.isNotBlank() && !it.text.trim().equals("null", ignoreCase = true) }
+            val hasPlainLyrics = lyrics != null && !lyrics.plainLyrics.isNullOrBlank() && !lyrics.plainLyrics.trim().equals("null", ignoreCase = true)
 
             if (hasSyncedLyrics) {
                 LazyColumn(

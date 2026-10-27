@@ -194,6 +194,21 @@ fun SettingsScreen(
                     onOpenStorage = { currentSubScreen = SettingsSubScreen.STORAGE },
                     onOpenMigration = { currentSubScreen = SettingsSubScreen.MIGRATION },
                     onOpenAbout = { currentSubScreen = SettingsSubScreen.ABOUT },
+                    onSyncDownloads = { onDone ->
+                        viewModel.syncDownloadsWithDisk { count ->
+                            val msg = if (count > 0) {
+                                "Sincronização concluída: $count faixas reconciliadas."
+                            } else {
+                                "Downloads sincronizados: nenhuma nova faixa encontrada."
+                            }
+                            android.widget.Toast.makeText(
+                                context,
+                                msg,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            onDone()
+                        }
+                    },
                     modifier = modifier
                 )
             }
@@ -317,6 +332,7 @@ private fun SettingsMainContent(
     onOpenStorage: () -> Unit,
     onOpenMigration: () -> Unit,
     onOpenAbout: () -> Unit,
+    onSyncDownloads: ((() -> Unit) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val allSearchableItems = remember {
@@ -327,6 +343,7 @@ private fun SettingsMainContent(
             SearchableSetting("Qualidade em dados móveis", "Reduz o consumo de rede no 4G/5G", "Qualidade da mídia", SettingsSubScreen.MEDIA_QUALITY),
             SearchableSetting("Qualidade dos downloads (Lossless)", "Lossless / Máxima Fidelidade, Muito alta, Alta ou Normal", "Qualidade da mídia", SettingsSubScreen.MEDIA_QUALITY),
             SearchableSetting("Downloads Inteligentes (Smart Downloads)", "Limite de músicas, apenas no Wi-Fi e sincronização automática", "Armazenamento", SettingsSubScreen.STORAGE),
+            SearchableSetting("Sincronizar Downloads", "Recuperar músicas órfãs e sincronizar arquivos locais com a biblioteca", "Armazenamento", SettingsSubScreen.STORAGE),
             SearchableSetting("Crossfade", "Transição suave e sobreposição entre faixas (0s-12s)", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Reprodução sem pausas (Gapless)", "Elimina o silêncio entre músicas consecutivas", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Automix", "Transições fluidas inteligentes em playlists", "Reprodução", SettingsSubScreen.PLAYBACK),
@@ -643,8 +660,17 @@ private fun SettingsMainContent(
                 SpotifyCategoryRow(
                     icon = Icons.Default.Storage,
                     title = "Armazenamento",
-                    subtitle = "Espaço ocupado • Limpar cache do app",
+                    subtitle = "Espaço ocupado • Sincronizar downloads • Limpar cache",
                     onClick = onOpenStorage
+                )
+
+                SpotifyCategoryRow(
+                    icon = Icons.Default.Sync,
+                    title = "Sincronizar Downloads",
+                    subtitle = "Recuperar músicas locais e restaurar biblioteca offline",
+                    onClick = {
+                        onSyncDownloads?.invoke {}
+                    }
                 )
 
                 SpotifyCategoryRow(
