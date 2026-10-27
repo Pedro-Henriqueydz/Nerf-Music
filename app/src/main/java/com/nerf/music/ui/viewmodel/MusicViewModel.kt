@@ -647,9 +647,13 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🎵 NERF Music v1.3.4 — Letras mais claras no player:
-            • Versos longos aparecem em trechos de uma linha, acompanhando o tempo da música sem reticências.
-            • A tela completa de letras permanece igual.
+            🎵 NERF Music v1.3.6:
+            • Músicas Relacionadas: Recomendações e músicas semelhantes sempre disponíveis para qualquer faixa tocando.
+            • Letras Corrigidas: Músicas sem letra não mostram mais textos indevidos ou "Null".
+            • Capas nos Downloads: As artes de capa agora são salvas e embutidas nas músicas baixadas.
+            • Sincronizar Downloads: Novo botão em Configurações para recuperar e reconhecer músicas já salvas no aparelho.
+            • Transições Suaves: O crossfade e a troca de faixas agora acontecem de forma suave e sem interrupções bruscas.
+            • Notificações Estáveis: Reprodução em segundo plano e downloads sem travamentos na barra de notificações e tela de bloqueio.
         """.trimIndent()
     }
 

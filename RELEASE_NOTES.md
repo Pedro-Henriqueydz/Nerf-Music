@@ -1,16 +1,8 @@
-# 🎵 NERF Music v1.3.6 — Super Estabilidade, Relacionados Inteligentes e Sincronização Local
+# 🎵 NERF Music v1.3.6
 
-## 📱 Novidades desta versão (In-App)
-- **Músicas Relacionadas sempre disponíveis:** A aba "Relacionados" agora sempre encontra recomendações e músicas semelhantes para qualquer faixa tocando, mesmo para músicas independentes ou underground.
-- **Letras corrigidas:** Resolvido o problema onde músicas sem letra exibiam a palavra "Null".
-- **Capas nos Downloads:** As artes de capa agora são salvas e embutidas diretamente dentro dos arquivos de música baixados.
-- **Recuperação de Músicas no Celular:** Novo botão "Sincronizar Downloads" nas Configurações para recuperar e reconhecer automaticamente músicas salvas no aparelho que não apareciam no app.
-- **Transições Suaves e Sem Cortes:** O crossfade e a troca de músicas agora acontecem de forma muito mais suave e sem interrupções bruscas.
-- **Notificações mais estáveis:** Fim dos travamentos na barra de notificações e na tela de bloqueio durante downloads e reprodução em segundo plano.
+Atualização com foco em estabilidade do core de áudio, reprodução em segundo plano, resolução contínua de conteúdos relacionados, embutimento de metadados e capas em downloads, e sincronização de mídias locais.
 
 ---
-
-## 🛠️ Notas Técnicas de Atualização (GitHub Release)
 
 ### v1.3.6 — Parser, Metadados, Relacionados & Sincronização
 - **Arquitetura Multi-Tier de Recomendações (Fallback Quádruplo):**
@@ -29,6 +21,8 @@
   - Repopulação automática no Room DB (`DownloadedTrackEntity`) com extração de tags e capas via `AudioMetadataTagger.extractMetadata`.
   - Botão *"Sincronizar Downloads"* integrado à tela de Configurações e seção de Armazenamento com feedback visual ao usuário.
 - **Proteção contra Desinstalação Acidental:** Flag `android:hasFragileUserData="true"` no `AndroidManifest.xml` para preservação dos dados e mídias pelo sistema operacional Android.
+
+---
 
 ### v1.3.5 — Core de Áudio, Crossfade Dual-Slot & Qualidade Dinâmica
 - **Eliminação de Crashes no SystemUI:** Substituição de URIs `file://` locais por injeção direta de bytes via `MediaMetadata.setArtworkData(...)`, eliminando violações de sandbox e `SecurityException` no painel de mídia e tela de bloqueio do Android.
