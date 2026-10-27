@@ -127,9 +127,9 @@ class AudioPlayerService : MediaSessionService() {
 
         if (targetFadeMs <= 0L) return
 
-        // Limite de segurança: nunca cruzar mais de um terço da música
-        val effectiveFadeMs = targetFadeMs.coerceAtMost(duration / 3)
-        val remainingMs = duration - position
+        // Limite de segurança: nunca cruzar mais de um terço da música e limitar ao tempo restante
+        val remainingMs = (duration - position).coerceAtLeast(0L)
+        val effectiveFadeMs = targetFadeMs.coerceAtMost(duration / 3).coerceAtMost(remainingMs)
         val triggerThresholdMs = effectiveFadeMs + 600L
 
         if (remainingMs in 100..triggerThresholdMs) {
@@ -145,10 +145,14 @@ class AudioPlayerService : MediaSessionService() {
 
         try {
             val outgoingPlayer = activePlayer
-            val incomingPlayer = auxiliaryPlayer ?: createExoPlayer(handleAudioFocus = false).also { auxiliaryPlayer = it }
+            val incomingPlayer = auxiliaryPlayer ?: createExoPlayer(handleAudioFocus = true).also { auxiliaryPlayer = it }
 
-            // Garante que o player secundário NÃO dispute foco de áudio
-            incomingPlayer.setAudioAttributes(audioAttributes, false)
+            // Mantém o incomingPlayer segurando handleAudioFocus = true desde o início da transição
+            incomingPlayer.setAudioAttributes(audioAttributes, true)
+
+            // Previne que o outgoingPlayer avance automaticamente para a próxima faixa
+            outgoingPlayer.repeatMode = Player.REPEAT_MODE_OFF
+            outgoingPlayer.pauseAtEndOfMediaItems = true
 
             val mediaItems = mutableListOf<MediaItem>()
             for (i in 0 until outgoingPlayer.mediaItemCount) {
@@ -162,14 +166,18 @@ class AudioPlayerService : MediaSessionService() {
 
             crossfadeJob?.cancel()
             crossfadeJob = serviceScope.launch {
-                // Aguarda o incomingPlayer atingir STATE_READY para que o áudio de ambos toque junto sem corte
+                // Pre-aquece o auxiliaryPlayer até STATE_READY antes de iniciar a rampa de volume
                 var waitTime = 0
                 while (incomingPlayer.playbackState != Player.STATE_READY && waitTime < 2500) {
                     delay(35)
                     waitTime += 35
                 }
 
-                // Agora que ambos os streams estão ativos e decodificando áudio, atualiza a MediaSession
+                // Limita a duração do crossfade ao tempo restante real do outgoingPlayer
+                val remainingMs = (outgoingPlayer.duration - outgoingPlayer.currentPosition).coerceAtLeast(100L)
+                val effectiveFadeMs = fadeDurationMs.coerceAtMost(remainingMs)
+
+                // Atualiza a MediaSession para o player recebedor
                 fadingPlayer = outgoingPlayer
                 activePlayer = incomingPlayer
                 mediaSession?.setPlayer(activePlayer)
@@ -177,9 +185,9 @@ class AudioPlayerService : MediaSessionService() {
                 val startTime = System.currentTimeMillis()
                 while (isActive) {
                     val elapsed = System.currentTimeMillis() - startTime
-                    val progress = (elapsed.toFloat() / fadeDurationMs).coerceIn(0f, 1f)
+                    val progress = (elapsed.toFloat() / effectiveFadeMs).coerceIn(0f, 1f)
 
-                    // Curva equal-power do Spotify: cos(t * PI/2) e sin(t * PI/2)
+                    // Curva equal-power: cos(t * PI/2) e sin(t * PI/2)
                     val volOut = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
                     val volIn = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
 
@@ -190,19 +198,20 @@ class AudioPlayerService : MediaSessionService() {
                     delay(20)
                 }
 
+                // Transfere o foco de áudio de forma segura: desativa handleAudioFocus no outgoing ANTES do stop(),
+                // impedindo que o ExoPlayer abandone o foco de áudio do sistema
+                outgoingPlayer.setAudioAttributes(audioAttributes, false)
                 outgoingPlayer.stop()
+                outgoingPlayer.pauseAtEndOfMediaItems = false
                 outgoingPlayer.volume = 1f
                 incomingPlayer.volume = 1f
-
-                // Assume o foco oficial do sistema para o player ativo
-                incomingPlayer.setAudioAttributes(audioAttributes, true)
 
                 auxiliaryPlayer = outgoingPlayer
                 fadingPlayer = null
                 isCrossfading = false
 
                 triggerPrefetchNextTrack()
-                Log.i(TAG, "Crossfade de ${fadeDurationMs}ms concluído com sucesso. Transição suave finalizada.")
+                Log.i(TAG, "Crossfade de ${effectiveFadeMs}ms concluído com sucesso. Transição suave finalizada.")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao iniciar crossfade: ${e.message}", e)
@@ -258,9 +267,22 @@ class AudioPlayerService : MediaSessionService() {
          */
         fun prefetchTrack(videoId: String, offlineCheckDir: File? = null) {
             if (videoId.isBlank()) return
-            if (offlineCheckDir != null) {
-                val offlineFile = File(offlineCheckDir, "offline_audio/$videoId.opus")
-                if (offlineFile.exists() && offlineFile.length() > 0) return
+            val checkDir = offlineCheckDir ?: serviceAppContext?.filesDir
+            if (checkDir != null) {
+                val existsOffline = listOf("m4a", "opus", "webm").any { ext ->
+                    val f = File(checkDir, "offline_audio/$videoId.$ext")
+                    f.exists() && f.length() > 0
+                }
+                if (existsOffline) {
+                    Log.i(TAG, "Faixa $videoId já existe offline no disco. Ignorando pre-fetch de rede.")
+                    return
+                }
+            }
+
+            val context = serviceAppContext
+            if (context != null && !NetworkUtils.isNetworkAvailable(context)) {
+                Log.i(TAG, "Dispositivo offline. Ignorando pre-fetch de rede para $videoId.")
+                return
             }
 
             val cacheKey = streamCacheKey(videoId)
@@ -484,9 +506,12 @@ class AudioPlayerService : MediaSessionService() {
                         ?: uri.host?.takeIf { it.isNotBlank() }
                         ?: throw IOException("VideoId ausente na URI: $uri")
 
-                    // 1. Verifica se a faixa já foi baixada offline no disco
-                    val offlineFile = File(filesDir, "offline_audio/$videoId.opus")
-                    if (offlineFile.exists() && offlineFile.length() > 0) {
+                    // 1. Verifica se a faixa já foi baixada offline no disco (.m4a, .opus, .webm)
+                    val possibleExtensions = listOf("m4a", "opus", "webm")
+                    val offlineFile = possibleExtensions
+                        .map { ext -> File(filesDir, "offline_audio/$videoId.$ext") }
+                        .firstOrNull { it.exists() && it.length() > 0 }
+                    if (offlineFile != null) {
                         Log.i(TAG, "Reproduzindo faixa offline local: ${offlineFile.absolutePath}")
                         return@Resolver dataSpec.buildUpon().setUri(Uri.fromFile(offlineFile)).build()
                     }
@@ -529,12 +554,10 @@ class AudioPlayerService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
-        if (player != null) {
-            player.pause()
-            player.stop()
-            player.clearMediaItems()
+        // Permite que a reprodução em segundo plano continue caso a música esteja ativa
+        if (player == null || (!player.isPlaying && !player.playWhenReady)) {
+            stopSelf()
         }
-        stopSelf()
     }
 
     override fun onDestroy() {

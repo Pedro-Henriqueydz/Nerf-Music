@@ -1597,7 +1597,11 @@ class MusicViewModel(
         controller.play()
         val nextTrack = effectiveTracks.getOrNull(targetIndex + 1)
         if (nextTrack != null) {
-            AudioPlayerService.prefetchTrack(nextTrack.id)
+            val appCtx = applicationContext
+            val isDownloaded = libraryRepository?.isDownloaded(nextTrack.id) == true
+            if (!isDownloaded && (appCtx == null || NetworkUtils.isNetworkAvailable(appCtx))) {
+                AudioPlayerService.prefetchTrack(nextTrack.id, appCtx?.filesDir)
+            }
         }
     }
 
