@@ -376,6 +376,7 @@ fun FullPlayerSheet(
     onOpenArtist: (String) -> Unit = {},
     relatedData: TrackRelatedData? = null,
     isLoadingRelated: Boolean = false,
+    onLoadRelatedIfNeeded: () -> Unit = {},
     onPlayRelatedTrack: (Track) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {}
 ) {
@@ -433,6 +434,12 @@ fun FullPlayerSheet(
     var queueState by remember { mutableStateOf(QueueExpansionState.COLLAPSED) }
     var showRelatedSheet by remember { mutableStateOf(false) }
     var isFullscreenLyricsActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showRelatedSheet, track.id) {
+        if (showRelatedSheet && (relatedData == null || relatedData.sections.isEmpty())) {
+            onLoadRelatedIfNeeded()
+        }
+    }
 
     // Tratamento do botão Voltar do Android: se letras em tela cheia estiverem ativas, fecha letras; se a fila estiver aberta, recolhe a fila; senão, fecha o Player
     BackHandler {
@@ -1884,6 +1891,7 @@ fun FullPlayerSheet(
                         relatedData = relatedData,
                         isLoading = isLoadingRelated,
                         currentPlayingId = track.id,
+                        onRetry = onLoadRelatedIfNeeded,
                         onPlayTrack = { relTrack ->
                             onPlayRelatedTrack(relTrack)
                             showRelatedSheet = false
@@ -2689,6 +2697,7 @@ fun PlayerRelatedSheetContent(
     onPlayTrack: (Track) -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (String) -> Unit,
+    onRetry: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -2763,6 +2772,22 @@ fun PlayerRelatedSheetContent(
                         color = YtmTextSecondary,
                         textAlign = TextAlign.Center
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onRetry,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF262626),
+                            contentColor = YtmWhite
+                        ),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Text(
+                            text = "Buscar recomendações",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
         } else {

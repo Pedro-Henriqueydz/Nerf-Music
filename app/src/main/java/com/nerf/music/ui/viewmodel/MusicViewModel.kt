@@ -808,6 +808,7 @@ class MusicViewModel(
         if (resolvedTrack != null && _selectedTrack.value?.id != resolvedTrack.id) {
             loadLyrics(resolvedTrack)
             loadCanvasVideo(resolvedTrack)
+            loadTrackRelatedForTrack(resolvedTrack)
         } else {
             prefetchNextCanvas()
         }
@@ -1125,11 +1126,7 @@ class MusicViewModel(
                         isLoadingQueueRadio = false,
                         relatedBrowseId = upNext.relatedBrowseId
                     )
-                    if (upNext.relatedBrowseId != null) {
-                        loadTrackRelated(upNext.relatedBrowseId)
-                    } else {
-                        loadTrackRelatedFallback()
-                    }
+                    loadTrackRelatedForTrack(firstReal ?: track, upNext.relatedBrowseId)
                 }.onFailure { error ->
                     Log.w("MusicViewModel", "Falha ao abrir playlist ${track.id}: ${error.message}")
                     _loadingTrackId.value = null
@@ -1197,11 +1194,7 @@ class MusicViewModel(
                     isLoadingQueueRadio = false,
                     relatedBrowseId = upNext.relatedBrowseId
                 )
-                if (upNext.relatedBrowseId != null) {
-                    loadTrackRelated(upNext.relatedBrowseId)
-                } else {
-                    loadTrackRelatedFallback()
-                }
+                loadTrackRelatedForTrack(track, upNext.relatedBrowseId)
             }.onFailure { error ->
                 Log.w("MusicViewModel", "Falha ao carregar rádio dinâmica para ${track.id}: ${error.message}")
                 _playbackState.value = _playbackState.value.copy(
@@ -1808,107 +1801,173 @@ class MusicViewModel(
         _searchHistory.value = emptyList()
     }
 
-    fun loadTrackRelated(relatedBrowseId: String) {
+    private var lastRelatedTrackId: String? = null
+
+    /**
+     * Resolve e enriquece a aba "Relacionados" com arquitetura multi-tier à prova de falhas:
+     * 1. Endpoint oficial InnerTube /browse (via [browseId] retornado pelo /next).
+     * 2. Rádio algorítmica UpNext para o ID da faixa (ou fila dinâmica atual) garantindo "Músicas semelhantes".
+     * 3. Busca de catálogo por músicas do artista principal limpo ("Mais de <Artista>").
+     * 4. Busca por termos contextuais ("$título $artista") como último recurso.
+     */
+    fun loadTrackRelatedForTrack(track: Track, browseId: String? = null, forceReload: Boolean = false) {
+        if (!forceReload && lastRelatedTrackId == track.id && _trackRelatedData.value?.sections?.isNotEmpty() == true) {
+            return
+        }
+        lastRelatedTrackId = track.id
         relatedFetchJob?.cancel()
-        relatedFetchJob = viewModelScope.launch {
+        relatedFetchJob = viewModelScope.launch(Dispatchers.IO) {
             _isLoadingRelated.value = true
             _trackRelatedData.value = null
             try {
-                repository.getTrackRelated(relatedBrowseId).onSuccess { data ->
-                    val nonEmptySections = data.sections.filter { it.items.isNotEmpty() }
-                    if (nonEmptySections.isEmpty()) {
-                        val currentArtist = _playbackState.value.currentTrack?.artist
-                        if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
-                            try {
-                                val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
-                                val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
-                                if (fallbackTracks.isNotEmpty()) {
-                                    val fallbackSection = RelatedSection(
-                                        title = "Mais de $currentArtist",
-                                        items = fallbackTracks,
-                                        style = HomeSectionStyle.QUICK_PICKS_GRID
-                                    )
-                                    val enrichedData = data.copy(sections = listOf(fallbackSection))
-                                    _trackRelatedData.value = enrichedData
-                                    fallbackTracks.forEach { trackMetadataMap[it.id] = it }
-                                    return@launch
-                                }
-                            } catch (e: Exception) {
-                                Log.w("MusicViewModel", "Fallback artist top songs search failed: ${e.message}")
+                val sections = mutableListOf<RelatedSection>()
+                var aboutHeader: String? = null
+                var aboutDesc: String? = null
+
+                // 1. Tenta buscar endpoint oficial do YouTube Music se houver browseId
+                val effectiveBrowseId = browseId ?: _playbackState.value.relatedBrowseId
+                if (!effectiveBrowseId.isNullOrBlank()) {
+                    try {
+                        repository.getTrackRelated(effectiveBrowseId).onSuccess { data ->
+                            val nonEmptySections = data.sections.filter { it.items.isNotEmpty() }
+                            sections.addAll(nonEmptySections)
+                            aboutHeader = data.aboutArtistHeader
+                            aboutDesc = data.aboutArtistDescription
+                            nonEmptySections.forEach { sec ->
+                                sec.items.forEach { trackMetadataMap[it.id] = it }
                             }
+                        }.onFailure { err ->
+                            Log.w("MusicViewModel", "InnerTube getTrackRelated falhou para $effectiveBrowseId: ${err.message}")
                         }
-                        _trackRelatedData.value = data.copy(sections = emptyList())
-                    } else {
-                        _trackRelatedData.value = data.copy(sections = nonEmptySections)
-                        nonEmptySections.forEach { section ->
-                            section.items.forEach { trackMetadataMap[it.id] = it }
-                        }
-                    }
-                }.onFailure { error ->
-                    Log.w("MusicViewModel", "Erro ao buscar conteudo relacionado: " + error.message)
-                    val currentArtist = _playbackState.value.currentTrack?.artist
-                    var handledFallback = false
-                    if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
-                        try {
-                            val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
-                            val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
-                            if (fallbackTracks.isNotEmpty()) {
-                                val fallbackSection = RelatedSection(
-                                    title = "Mais de $currentArtist",
-                                    items = fallbackTracks,
-                                    style = HomeSectionStyle.QUICK_PICKS_GRID
-                                )
-                                _trackRelatedData.value = TrackRelatedData(sections = listOf(fallbackSection))
-                                fallbackTracks.forEach { trackMetadataMap[it.id] = it }
-                                handledFallback = true
-                            }
-                        } catch (e: Exception) {
-                            Log.w("MusicViewModel", "Fallback artist top songs search on error failed: ${e.message}")
-                        }
-                    }
-                    if (!handledFallback) {
-                        _trackRelatedData.value = TrackRelatedData(sections = emptyList())
+                    } catch (e: Exception) {
+                        Log.w("MusicViewModel", "Erro ao invocar getTrackRelated: ${e.message}")
                     }
                 }
+
+                // 2. Se a aba veio sem seções (ou sem browseId), busca recomendações similares via Rádio / UpNext
+                if (sections.isEmpty()) {
+                    // Primeiro tenta a fila existente caso ela tenha faixas relacionadas
+                    val currentQueueSimilar = _playbackState.value.queue
+                        .filter { it.id != track.id && it.id.isNotBlank() }
+                        .distinctBy { it.id }
+                    if (currentQueueSimilar.isNotEmpty()) {
+                        val similarItems = currentQueueSimilar.take(15)
+                        sections.add(
+                            RelatedSection(
+                                title = "Músicas semelhantes",
+                                items = similarItems,
+                                style = HomeSectionStyle.QUICK_PICKS_GRID
+                            )
+                        )
+                        similarItems.forEach { trackMetadataMap[it.id] = it }
+                    } else {
+                        // Busca Rádio Algorítmica diretamente da InnerTube para esta faixa
+                        try {
+                            val radioResult = repository.getUpNextRadio(videoId = track.id, params = null).getOrNull()
+                            val radioTracks = radioResult?.tracks
+                                ?.filter { it.id != track.id && it.id.isNotBlank() }
+                                ?.distinctBy { it.id }
+                                ?.take(15)
+                                .orEmpty()
+                            if (radioTracks.isNotEmpty()) {
+                                sections.add(
+                                    RelatedSection(
+                                        title = "Músicas semelhantes",
+                                        items = radioTracks,
+                                        style = HomeSectionStyle.QUICK_PICKS_GRID
+                                    )
+                                )
+                                radioTracks.forEach { trackMetadataMap[it.id] = it }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("MusicViewModel", "Erro ao obter UpNextRadio fallback: ${e.message}")
+                        }
+                    }
+                }
+
+                // 3. Adiciona seção "Mais de <Artista>" pesquisando no catálogo por músicas do artista principal
+                val cleanArtist = extractPrimaryArtist(track.artist)
+                if (cleanArtist.isNotBlank() && !cleanArtist.equals("Desconhecido", ignoreCase = true) && !cleanArtist.equals("Artista Desconhecido", ignoreCase = true)) {
+                    try {
+                        val searchResult = repository.search(cleanArtist, SearchFilter.SONGS).getOrNull()
+                        val rawArtistTracks = searchResult?.songs.orEmpty()
+                        val existingIds = sections.flatMap { it.items }.map { it.id }.toSet()
+                        val artistTracks = rawArtistTracks
+                            .filter { it.id != track.id && it.id !in existingIds && it.id.isNotBlank() }
+                            .distinctBy { it.id }
+                            .take(10)
+                        if (artistTracks.isNotEmpty()) {
+                            sections.add(
+                                RelatedSection(
+                                    title = "Mais de $cleanArtist",
+                                    items = artistTracks,
+                                    style = HomeSectionStyle.QUICK_PICKS_GRID
+                                )
+                            )
+                            artistTracks.forEach { trackMetadataMap[it.id] = it }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("MusicViewModel", "Fallback artist search falhou para $cleanArtist: ${e.message}")
+                    }
+                }
+
+                // 4. Último fallback de segurança para nunca ficar vazio: busca por query do título limpo
+                if (sections.isEmpty()) {
+                    val cleanTitle = track.title.replace(Regex("(?i)\\(.*?\\)|\\[.*?\\]"), "").trim()
+                    val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
+                    if (query.isNotBlank()) {
+                        try {
+                            val searchResult = repository.search(query, SearchFilter.SONGS).getOrNull()
+                            val queryTracks = searchResult?.songs
+                                ?.filter { it.id != track.id && it.id.isNotBlank() }
+                                ?.distinctBy { it.id }
+                                ?.take(10)
+                                .orEmpty()
+                            if (queryTracks.isNotEmpty()) {
+                                sections.add(
+                                    RelatedSection(
+                                        title = "Você também pode gostar",
+                                        items = queryTracks,
+                                        style = HomeSectionStyle.QUICK_PICKS_GRID
+                                    )
+                                )
+                                queryTracks.forEach { trackMetadataMap[it.id] = it }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("MusicViewModel", "Query fallback search falhou: ${e.message}")
+                        }
+                    }
+                }
+
+                _trackRelatedData.value = TrackRelatedData(
+                    sections = sections,
+                    aboutArtistHeader = aboutHeader,
+                    aboutArtistDescription = aboutDesc
+                )
             } finally {
                 _isLoadingRelated.value = false
             }
         }
     }
 
+    private fun extractPrimaryArtist(rawArtist: String): String {
+        if (rawArtist.isBlank()) return ""
+        return rawArtist
+            .split(Regex("(?i)[,;&/]|\\b(feat|ft|part)\\b|\\(part\\."))
+            .firstOrNull()
+            ?.trim()
+            .orEmpty()
+            .ifEmpty { rawArtist.trim() }
+    }
+
+    fun loadTrackRelated(relatedBrowseId: String? = null) {
+        val current = _playbackState.value.currentTrack ?: return
+        loadTrackRelatedForTrack(current, relatedBrowseId, forceReload = true)
+    }
+
     fun loadTrackRelatedFallback() {
-        relatedFetchJob?.cancel()
-        relatedFetchJob = viewModelScope.launch {
-            _isLoadingRelated.value = true
-            _trackRelatedData.value = null
-            try {
-                val currentArtist = _playbackState.value.currentTrack?.artist
-                var handled = false
-                if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
-                    try {
-                        val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
-                        val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
-                        if (fallbackTracks.isNotEmpty()) {
-                            val fallbackSection = RelatedSection(
-                                title = "Mais de $currentArtist",
-                                items = fallbackTracks,
-                                style = HomeSectionStyle.QUICK_PICKS_GRID
-                            )
-                            _trackRelatedData.value = TrackRelatedData(sections = listOf(fallbackSection))
-                            fallbackTracks.forEach { trackMetadataMap[it.id] = it }
-                            handled = true
-                        }
-                    } catch (e: Exception) {
-                        Log.w("MusicViewModel", "Fallback related songs search failed: ${e.message}")
-                    }
-                }
-                if (!handled) {
-                    _trackRelatedData.value = TrackRelatedData(sections = emptyList())
-                }
-            } finally {
-                _isLoadingRelated.value = false
-            }
-        }
+        val current = _playbackState.value.currentTrack ?: return
+        loadTrackRelatedForTrack(current, null, forceReload = true)
     }
 
     suspend fun resolveArtistBrowseId(artistName: String): String? {

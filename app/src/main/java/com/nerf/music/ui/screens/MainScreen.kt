@@ -1,4 +1,4 @@
-﻿package com.nerf.music.ui.screens
+package com.nerf.music.ui.screens
 
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
@@ -523,6 +523,11 @@ fun MainScreen(
                 },
                 relatedData = trackRelatedData,
                 isLoadingRelated = isLoadingRelated,
+                onLoadRelatedIfNeeded = {
+                    playbackState.currentTrack?.let { track ->
+                        viewModel.loadTrackRelatedForTrack(track, forceReload = true)
+                    }
+                },
                 onPlayRelatedTrack = { relTrack -> viewModel.playTrack(relTrack) },
                 onOpenAlbum = { albumId ->
                     viewModel.closeFullPlayer()

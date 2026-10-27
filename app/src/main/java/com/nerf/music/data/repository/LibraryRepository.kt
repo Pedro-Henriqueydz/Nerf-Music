@@ -584,14 +584,20 @@ class LibraryRepositoryImpl(
                     }
                 }
                 val publicMusic = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-                if (publicMusic != null) {
+                if (publicMusic != null && publicMusic.exists() && publicMusic.isDirectory) {
+                    if (!scanDirs.contains(publicMusic)) {
+                        scanDirs.add(publicMusic)
+                    }
                     val nerfMusicDir = File(publicMusic, "NerfMusic")
                     if (nerfMusicDir.exists() && nerfMusicDir.isDirectory && !scanDirs.contains(nerfMusicDir)) {
                         scanDirs.add(nerfMusicDir)
                     }
+                    publicMusic.listFiles { f -> f.isDirectory && !f.name.startsWith(".") }?.forEach { sub ->
+                        if (!scanDirs.contains(sub)) scanDirs.add(sub)
+                    }
                 }
                 val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                if (publicDownloads != null) {
+                if (publicDownloads != null && publicDownloads.exists() && publicDownloads.isDirectory) {
                     val nerfDownDir = File(publicDownloads, "NerfMusic")
                     if (nerfDownDir.exists() && nerfDownDir.isDirectory && !scanDirs.contains(nerfDownDir)) {
                         scanDirs.add(nerfDownDir)
@@ -610,6 +616,37 @@ class LibraryRepositoryImpl(
                         diskFilesByTrackId[trackId] = file
                     }
                 }
+            }
+
+            // Consulta MediaStore do sistema Android para indexar faixas de áudio públicas presentes no armazenamento
+            try {
+                val projection = arrayOf(
+                    android.provider.MediaStore.Audio.Media._ID,
+                    android.provider.MediaStore.Audio.Media.DATA
+                )
+                context.contentResolver.query(
+                    android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    val dataCol = cursor.getColumnIndex(android.provider.MediaStore.Audio.Media.DATA)
+                    while (cursor.moveToNext()) {
+                        val path = if (dataCol != -1) cursor.getString(dataCol) else null
+                        if (!path.isNullOrBlank()) {
+                            val f = File(path)
+                            if (f.exists() && f.isFile && f.extension.lowercase() in audioExtensions && f.length() >= 512L) {
+                                val trackId = f.nameWithoutExtension
+                                if (trackId.isNotBlank() && !diskFilesByTrackId.containsKey(trackId)) {
+                                    diskFilesByTrackId[trackId] = f
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha ao consultar MediaStore para sync de downloads: ${e.message}")
             }
 
             // 2. Busca registros atuais no Room DB
