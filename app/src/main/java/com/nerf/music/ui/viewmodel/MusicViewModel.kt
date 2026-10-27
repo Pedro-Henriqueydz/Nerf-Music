@@ -647,7 +647,7 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🎵 NERF Music v1.3.6:
+            🎵 NERF Music v1.3.5:
             • Músicas Relacionadas: Recomendações e músicas semelhantes sempre disponíveis para qualquer faixa tocando.
             • Letras Corrigidas: Músicas sem letra não mostram mais textos indevidos ou "Null".
             • Capas nos Downloads: As artes de capa agora são salvas e embutidas nas músicas baixadas.

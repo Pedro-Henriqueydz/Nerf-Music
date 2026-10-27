@@ -6,9 +6,9 @@
     "semantic_hash": ""
   },
   "app/build.gradle.kts": {
-    "mtime": 1793122119.5505183,
-    "seen": 1793122185.7885907,
-    "ast_hash": "235bacffec5139f623d3ff3cbfc9d639",
+    "mtime": 1793124306.4478521,
+    "seen": 1793124520.2620795,
+    "ast_hash": "aaf4bdd34b8cbbda6b6d902c1dd5464a",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/MainActivity.kt": {
@@ -324,9 +324,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/viewmodel/MusicViewModel.kt": {
-    "mtime": 1793123993.2992623,
-    "seen": 1793124019.7567804,
-    "ast_hash": "7ea29735d9e9c7d5dad7937b82c44c7f",
+    "mtime": 1793124317.9815679,
+    "seen": 1793124520.2620795,
+    "ast_hash": "8ca2fa2a9defe24f055cc8de4e39a91e",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/updater/AppUpdateManager.kt": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1793122161.3909507,
-    "seen": 1793122185.7885907,
-    "ast_hash": "e3da7f232a81c3a426dfdf81d9745847",
+    "mtime": 1793124494.2855616,
+    "seen": 1793124520.2620795,
+    "ast_hash": "bfef07e8481ec4d8a756d0d58d9de357",
     "semantic_hash": ""
   },
   "README.md": {
@@ -450,9 +450,9 @@
     "semantic_hash": ""
   },
   "RELEASE_NOTES.md": {
-    "mtime": 1793124003.712636,
-    "seen": 1793124019.7567804,
-    "ast_hash": "093ac32827b2742fa25f54ce2e22fc7d",
+    "mtime": 1793124507.8471606,
+    "seen": 1793124520.2620795,
+    "ast_hash": "9264a3fe2533dca1c748d9aef98915d8",
     "semantic_hash": ""
   },
   "app/src/main/res/drawable/ic_nerf_logo.png": {
