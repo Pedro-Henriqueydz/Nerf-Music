@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Desabilita tráfego HTTP em texto claro em todo o aplicativo -->
-    <base-config cleartextTrafficPermitted="false">
+    <!-- Permite tráfego WebSocket P2P local (ws://) para sessões JAM na rede local/Hotspot e HTTPS seguro na internet -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <!-- Aceita apenas certificados válidos da autoridade certificadora (CA) do sistema Android -->
             <certificates src="system" />

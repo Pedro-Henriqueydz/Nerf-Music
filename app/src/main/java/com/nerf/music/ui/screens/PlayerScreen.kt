@@ -137,9 +137,29 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.nerf.music.data.model.LyricsData
+import com.nerf.music.data.model.SyncedLyricsLine
+import com.nerf.music.jam.JamSessionState
+import com.nerf.music.player.KaraokeLyricsEngine
+import com.nerf.music.player.KaraokeSyncSnapshot
 import com.nerf.music.data.model.PlaybackState
 import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.Track
@@ -379,7 +399,28 @@ fun FullPlayerSheet(
     isLoadingRelated: Boolean = false,
     onLoadRelatedIfNeeded: () -> Unit = {},
     onPlayRelatedTrack: (Track) -> Unit = {},
-    onOpenAlbum: (String) -> Unit = {}
+    onOpenAlbum: (String) -> Unit = {},
+    karaokeSyncSnapshot: KaraokeSyncSnapshot = KaraokeSyncSnapshot(),
+    isKaraokeVocalIsolationEnabled: Boolean = false,
+    karaokeVocalLevel: Float = 0.08f,
+    lyricsOffsetMs: Long = 0L,
+    showLyricsTranslation: Boolean = false,
+    showLyricsPronunciation: Boolean = false,
+    hideOriginalLyrics: Boolean = false,
+    isTranslatingLyrics: Boolean = false,
+    translationTargetLanguage: String = "auto",
+    isInstrumentalTrackReady: Boolean = false,
+    isUsingRealInstrumental: Boolean = false,
+    jamSessionState: JamSessionState = JamSessionState(),
+    onToggleKaraokeVocalIsolation: () -> Unit = {},
+    onSetKaraokeVocalLevel: (Float) -> Unit = {},
+    onAdjustLyricsOffset: (Long) -> Unit = {},
+    onResetLyricsOffset: () -> Unit = {},
+    onToggleLyricsTranslation: () -> Unit = {},
+    onToggleLyricsPronunciation: () -> Unit = {},
+    onToggleHideOriginalLyrics: () -> Unit = {},
+    onSelectTranslationTargetLanguage: (String) -> Unit = {},
+    onOpenJamSheet: () -> Unit = {}
 ) {
     val currentTrack = state.currentTrack ?: return
     var pendingSwipeTrack by remember { mutableStateOf<Track?>(null) }
@@ -969,13 +1010,24 @@ fun FullPlayerSheet(
                             )
                         }
 
-                        IconButton(onClick = { /* Cast */ }) {
-                            Icon(
-                                imageVector = Icons.Default.Cast,
-                                contentDescription = "Transmitir",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
+                        IconButton(onClick = onOpenJamSheet) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Cast,
+                                    contentDescription = "JAM / Transmitir",
+                                    tint = if (jamSessionState.isInJam) Color(0xFF1DB954) else Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                if (jamSessionState.isInJam) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .align(Alignment.TopEnd)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF1DB954))
+                                    )
+                                }
+                            }
                         }
 
                         IconButton(onClick = onTogglePlay) {
@@ -1015,6 +1067,18 @@ fun FullPlayerSheet(
                             isPlaying = state.isPlaying,
                             isBuffering = state.isBuffering,
                             favoriteTrackIds = state.favoriteTrackIds,
+                            karaokeSyncSnapshot = karaokeSyncSnapshot,
+                            isKaraokeVocalIsolationEnabled = isKaraokeVocalIsolationEnabled,
+                            karaokeVocalLevel = karaokeVocalLevel,
+                            lyricsOffsetMs = lyricsOffsetMs,
+                            showLyricsTranslation = showLyricsTranslation,
+                            showLyricsPronunciation = showLyricsPronunciation,
+                            hideOriginalLyrics = hideOriginalLyrics,
+                            isTranslatingLyrics = isTranslatingLyrics,
+                            translationTargetLanguage = translationTargetLanguage,
+                            isInstrumentalTrackReady = isInstrumentalTrackReady,
+                            isUsingRealInstrumental = isUsingRealInstrumental,
+                            jamSessionState = jamSessionState,
                             onTogglePlay = onTogglePlay,
                             onSkipPrevious = onSkipPrevious,
                             onSkipNext = onSkipNext,
@@ -1022,7 +1086,16 @@ fun FullPlayerSheet(
                             onToggleFavorite = onToggleFavorite,
                             onCloseLyrics = { isFullscreenLyricsActive = false },
                             onOpenRelated = { showRelatedSheet = true },
-                            onOpenQueue = { queueState = QueueExpansionState.HALF_EXPANDED }
+                            onOpenQueue = { queueState = QueueExpansionState.HALF_EXPANDED },
+                            onToggleKaraokeVocalIsolation = onToggleKaraokeVocalIsolation,
+                            onSetKaraokeVocalLevel = onSetKaraokeVocalLevel,
+                            onAdjustLyricsOffset = onAdjustLyricsOffset,
+                            onResetLyricsOffset = onResetLyricsOffset,
+                            onToggleLyricsTranslation = onToggleLyricsTranslation,
+                            onToggleLyricsPronunciation = onToggleLyricsPronunciation,
+                            onToggleHideOriginalLyrics = onToggleHideOriginalLyrics,
+                            onSelectTranslationTargetLanguage = onSelectTranslationTargetLanguage,
+                            onOpenJamSheet = onOpenJamSheet
                         )
                     } else {
                         Column(
@@ -1285,15 +1358,26 @@ fun FullPlayerSheet(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     IconButton(
-                                        onClick = { /* Cast */ },
+                                        onClick = onOpenJamSheet,
                                         modifier = Modifier.size(40.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Cast,
-                                            contentDescription = "Transmitir",
-                                            tint = Color.White.copy(alpha = 0.90f),
-                                            modifier = Modifier.size(22.dp)
-                                        )
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Cast,
+                                                contentDescription = "JAM / Transmitir",
+                                                tint = if (jamSessionState.isInJam) Color(0xFF1DB954) else Color.White.copy(alpha = 0.90f),
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                            if (jamSessionState.isInJam) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .align(Alignment.TopEnd)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFF1DB954))
+                                                )
+                                            }
+                                        }
                                     }
                                     IconButton(
                                         onClick = { showRelatedSheet = true },
@@ -1495,11 +1579,14 @@ fun FullPlayerSheet(
                                     isSaved = state.savedTrackIds.contains(track.id),
                                     isDownloaded = state.downloadedTrackIds.contains(track.id),
                                     isLyricsActive = isFullscreenLyricsActive,
+                                    isJamActive = jamSessionState.isInJam,
+                                    jamParticipantCount = jamSessionState.participants.size,
                                     onToggleFavorite = { onToggleFavorite(track.id) },
                                     onToggleSave = { onToggleSave(track.id) },
                                     onToggleDownload = { onToggleDownload(track.id) },
                                     downloadProgress = downloadProgress,
                                     onToggleLyrics = { isFullscreenLyricsActive = !isFullscreenLyricsActive },
+                                    onOpenJam = onOpenJamSheet,
                                     modifier = Modifier.alpha(((1f - halfExpansionFraction * 2.8f) * controlsAlpha).coerceIn(0f, 1f))
                                 )
                             }
@@ -2155,7 +2242,10 @@ fun PlayerActionRow(
     onToggleDownload: () -> Unit,
     downloadProgress: Float? = null,
     isLyricsActive: Boolean = false,
+    isJamActive: Boolean = false,
+    jamParticipantCount: Int = 0,
     onToggleLyrics: () -> Unit = {},
+    onOpenJam: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -2205,6 +2295,13 @@ fun PlayerActionRow(
             label = "Letra",
             isActive = isLyricsActive,
             onClick = onToggleLyrics
+        )
+
+        RoundedActionPillButton(
+            icon = Icons.Default.Group,
+            label = if (isJamActive) "JAM (${jamParticipantCount.coerceAtLeast(1)})" else "JAM",
+            isActive = isJamActive,
+            onClick = onOpenJam
         )
     }
 }
@@ -3053,6 +3150,18 @@ private fun AppleMusicLyricsView(
     isPlaying: Boolean,
     isBuffering: Boolean,
     favoriteTrackIds: Set<String>,
+    karaokeSyncSnapshot: KaraokeSyncSnapshot = KaraokeSyncSnapshot(),
+    isKaraokeVocalIsolationEnabled: Boolean = false,
+    karaokeVocalLevel: Float = 0.08f,
+    lyricsOffsetMs: Long = 0L,
+    showLyricsTranslation: Boolean = false,
+    showLyricsPronunciation: Boolean = false,
+    hideOriginalLyrics: Boolean = false,
+    isTranslatingLyrics: Boolean = false,
+    translationTargetLanguage: String = "auto",
+    isInstrumentalTrackReady: Boolean = false,
+    isUsingRealInstrumental: Boolean = false,
+    jamSessionState: JamSessionState = JamSessionState(),
     onTogglePlay: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
@@ -3061,15 +3170,32 @@ private fun AppleMusicLyricsView(
     onCloseLyrics: () -> Unit,
     onOpenRelated: () -> Unit,
     onOpenQueue: () -> Unit,
+    onToggleKaraokeVocalIsolation: () -> Unit = {},
+    onSetKaraokeVocalLevel: (Float) -> Unit = {},
+    onAdjustLyricsOffset: (Long) -> Unit = {},
+    onResetLyricsOffset: () -> Unit = {},
+    onToggleLyricsTranslation: () -> Unit = {},
+    onToggleLyricsPronunciation: () -> Unit = {},
+    onToggleHideOriginalLyrics: () -> Unit = {},
+    onSelectTranslationTargetLanguage: (String) -> Unit = {},
+    onOpenJamSheet: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val (systemVolume, setSystemVolume) = rememberSystemVolume(context)
 
     val listState = rememberLazyListState()
-    val activeIndex = remember(lyrics, currentPositionMs) {
-        lyrics?.syncedLines?.indexOfLast { currentPositionMs >= it.timeMs } ?: -1
+    val adjustedPositionMs = currentPositionMs + lyricsOffsetMs
+    val activeIndex = remember(lyrics, adjustedPositionMs, karaokeSyncSnapshot.activeLineIndex) {
+        if (karaokeSyncSnapshot.activeLineIndex >= 0) {
+            karaokeSyncSnapshot.activeLineIndex
+        } else {
+            lyrics?.syncedLines?.indexOfLast { adjustedPositionMs >= it.timeMs } ?: -1
+        }
     }
+
+    var showTranslationMenu by remember { mutableStateOf(false) }
+    var showVocalLevelPopup by remember { mutableStateOf(false) }
 
     // Reset de rolagem imediato quando a faixa muda (garante início limpo)
     LaunchedEffect(track.id) {
@@ -3194,7 +3320,7 @@ private fun AppleMusicLyricsView(
             }
         }
 
-        // 2. Área Central de Letras (Scrollable com destaque suave)
+        // 2. Área Central de Letras (Scrollable com destaque suave + Karaokê + Tradução + Pronúncia)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3220,13 +3346,20 @@ private fun AppleMusicLyricsView(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 40.dp, bottom = 120.dp, start = 24.dp, end = 24.dp)
+                    contentPadding = PaddingValues(top = 36.dp, bottom = 120.dp, start = 24.dp, end = 68.dp)
                 ) {
+                    // Indicador de contagem regressiva instrumental (• • •) apenas quando o Karaokê está ativo
+                    if (isKaraokeVocalIsolationEnabled && karaokeSyncSnapshot.isInstrumentalCountdown && activeIndex == -1) {
+                        item(key = "instrumental_intro_dots") {
+                            KaraokeCountdownDotsRow(activeDots = karaokeSyncSnapshot.countdownDots)
+                        }
+                    }
+
                     itemsIndexed(lyrics!!.syncedLines) { index, line ->
                         val isCurrent = index == activeIndex
                         val animatedAlpha by animateFloatAsState(
-                            targetValue = if (isCurrent) 1f else 0.35f,
-                            animationSpec = tween(durationMillis = 350),
+                            targetValue = if (isCurrent) 1f else 0.34f,
+                            animationSpec = tween(durationMillis = 320),
                             label = "LyricAlpha_$index"
                         )
                         val animatedScale by animateFloatAsState(
@@ -3235,32 +3368,149 @@ private fun AppleMusicLyricsView(
                             label = "LyricScale_$index"
                         )
 
-                        Text(
-                            text = line.text,
-                            fontFamily = SfProFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = if (isCurrent) 28.sp else 22.sp,
-                            lineHeight = if (isCurrent) 38.sp else 32.sp,
-                            color = Color.White.copy(alpha = animatedAlpha),
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .graphicsLayer {
                                     scaleX = animatedScale
                                     scaleY = animatedScale
-                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                                    transformOrigin = TransformOrigin(0f, 0.5f)
                                 }
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null
                                 ) {
-                                    onSeekTo(line.timeMs)
+                                    onSeekTo((line.timeMs - lyricsOffsetMs).coerceAtLeast(0L))
                                 }
-                                .padding(vertical = 12.dp)
-                        )
+                                .padding(vertical = 11.dp)
+                        ) {
+                            // 1) Linha Original: destaque palavra-por-palavra SOMENTE quando o microfone (Karaokê) estiver ativo
+                            if (!hideOriginalLyrics || (!showLyricsTranslation && !showLyricsPronunciation)) {
+                                if (isKaraokeVocalIsolationEnabled && isCurrent && line.words.size > 1) {
+                                    val annotatedKaraoke = remember(
+                                        line.text,
+                                        line.words,
+                                        karaokeSyncSnapshot.activeWordIndex,
+                                        karaokeSyncSnapshot.wordProgress
+                                    ) {
+                                        buildAnnotatedString {
+                                            line.words.forEachIndexed { wIdx, w ->
+                                                val wordAlpha = when {
+                                                    wIdx < karaokeSyncSnapshot.activeWordIndex -> 1.0f
+                                                    wIdx == karaokeSyncSnapshot.activeWordIndex -> {
+                                                        (0.58f + 0.42f * karaokeSyncSnapshot.wordProgress).coerceIn(0.58f, 1.0f)
+                                                    }
+                                                    else -> 0.42f
+                                                }
+                                                withStyle(
+                                                    SpanStyle(
+                                                        color = Color.White.copy(alpha = wordAlpha),
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                ) {
+                                                    append(w.text)
+                                                }
+                                                if (wIdx < line.words.lastIndex) {
+                                                    append(" ")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = annotatedKaraoke,
+                                        fontFamily = SfProFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 28.sp,
+                                        lineHeight = 36.sp,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                } else {
+                                    Text(
+                                        text = line.text,
+                                        fontFamily = SfProFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = if (isCurrent) 28.sp else 22.sp,
+                                        lineHeight = if (isCurrent) 36.sp else 30.sp,
+                                        color = Color.White.copy(alpha = animatedAlpha),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+
+                            // 2) Show Pronunciation (Pronúncia fonética / romanizada estilo Apple Music)
+                            AnimatedVisibility(
+                                visible = showLyricsPronunciation && !line.pronunciationText.isNullOrBlank(),
+                                enter = fadeIn(tween(180)),
+                                exit = fadeOut(tween(140))
+                            ) {
+                                Text(
+                                    text = line.pronunciationText.orEmpty(),
+                                    fontFamily = SfProFontFamily,
+                                    fontWeight = if (hideOriginalLyrics) FontWeight.Bold else FontWeight.SemiBold,
+                                    fontSize = when {
+                                        hideOriginalLyrics && isCurrent -> 26.sp
+                                        hideOriginalLyrics -> 21.sp
+                                        isCurrent -> 17.sp
+                                        else -> 15.sp
+                                    },
+                                    lineHeight = if (hideOriginalLyrics) 33.sp else 23.sp,
+                                    color = if (isCurrent) {
+                                        Color(0xFFFFD54F).copy(alpha = 0.94f)
+                                    } else {
+                                        Color(0xFFFFD54F).copy(alpha = 0.36f)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (hideOriginalLyrics) 0.dp else 4.dp)
+                                )
+                            }
+
+                            // 3) Lyrics Translation (Tradução linha a linha estilo Apple Music)
+                            AnimatedVisibility(
+                                visible = showLyricsTranslation && !line.translatedText.isNullOrBlank(),
+                                enter = fadeIn(tween(180)),
+                                exit = fadeOut(tween(140))
+                            ) {
+                                Text(
+                                    text = line.translatedText.orEmpty(),
+                                    fontFamily = SfProFontFamily,
+                                    fontWeight = if (hideOriginalLyrics && !showLyricsPronunciation) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = when {
+                                        hideOriginalLyrics && !showLyricsPronunciation && isCurrent -> 26.sp
+                                        hideOriginalLyrics && !showLyricsPronunciation -> 21.sp
+                                        isCurrent -> 17.sp
+                                        else -> 15.sp
+                                    },
+                                    lineHeight = if (hideOriginalLyrics && !showLyricsPronunciation) 33.sp else 23.sp,
+                                    color = Color.White.copy(
+                                        alpha = if (isCurrent) 0.84f else 0.30f
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (hideOriginalLyrics && !showLyricsPronunciation) 0.dp else 4.dp)
+                                )
+                            }
+
+                            // Contagem regressiva instrumental entre versos longos (• • •) apenas quando Karaokê ativo
+                            if (isKaraokeVocalIsolationEnabled && isCurrent && karaokeSyncSnapshot.isInstrumentalCountdown) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                KaraokeCountdownDotsRow(activeDots = karaokeSyncSnapshot.countdownDots)
+                            }
+                        }
                     }
                     item {
+                        val langBadge = buildString {
+                            append("Fonte: ${lyrics!!.source}")
+                            if (!lyrics.detectedLanguage.isNullOrBlank()) {
+                                append(" • Idioma: ${lyrics.detectedLanguage.uppercase()}")
+                            }
+                            if (lyricsOffsetMs != 0L) {
+                                val sign = if (lyricsOffsetMs > 0) "+" else ""
+                                append(" • Offset: ${sign}${lyricsOffsetMs}ms")
+                            }
+                        }
                         Text(
-                            text = "Fonte: ${lyrics!!.source}",
+                            text = langBadge,
                             fontFamily = SfProFontFamily,
                             fontWeight = FontWeight.Normal,
                             fontSize = 13.sp,
@@ -3272,23 +3522,78 @@ private fun AppleMusicLyricsView(
                     }
                 }
             } else if (hasPlainLyrics) {
+                val plainStructuredLines = remember(lyrics!!.plainLyrics, lyrics.plainLines) {
+                    lyrics.plainLines.ifEmpty {
+                        KaraokeLyricsEngine.buildPlainLinesWithPronunciation(lyrics.plainLyrics)
+                    }
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 40.dp, bottom = 120.dp, start = 24.dp, end = 24.dp)
+                    contentPadding = PaddingValues(top = 36.dp, bottom = 120.dp, start = 24.dp, end = 68.dp)
                 ) {
+                    itemsIndexed(plainStructuredLines) { _, line ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            if (!hideOriginalLyrics || (!showLyricsTranslation && !showLyricsPronunciation)) {
+                                Text(
+                                    text = line.text,
+                                    fontFamily = SfProFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 21.sp,
+                                    lineHeight = 29.sp,
+                                    color = Color.White.copy(alpha = 0.90f),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            AnimatedVisibility(
+                                visible = showLyricsPronunciation && !line.pronunciationText.isNullOrBlank(),
+                                enter = fadeIn(tween(180)),
+                                exit = fadeOut(tween(140))
+                            ) {
+                                Text(
+                                    text = line.pronunciationText.orEmpty(),
+                                    fontFamily = SfProFontFamily,
+                                    fontWeight = if (hideOriginalLyrics) FontWeight.Bold else FontWeight.SemiBold,
+                                    fontSize = if (hideOriginalLyrics) 20.sp else 15.sp,
+                                    lineHeight = if (hideOriginalLyrics) 28.sp else 22.sp,
+                                    color = Color(0xFFFFD54F).copy(alpha = 0.88f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (hideOriginalLyrics) 0.dp else 3.dp)
+                                )
+                            }
+                            AnimatedVisibility(
+                                visible = showLyricsTranslation && !line.translatedText.isNullOrBlank(),
+                                enter = fadeIn(tween(180)),
+                                exit = fadeOut(tween(140))
+                            ) {
+                                Text(
+                                    text = line.translatedText.orEmpty(),
+                                    fontFamily = SfProFontFamily,
+                                    fontWeight = if (hideOriginalLyrics && !showLyricsPronunciation) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = if (hideOriginalLyrics && !showLyricsPronunciation) 20.sp else 15.sp,
+                                    lineHeight = if (hideOriginalLyrics && !showLyricsPronunciation) 28.sp else 22.sp,
+                                    color = Color.White.copy(alpha = 0.76f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = if (hideOriginalLyrics && !showLyricsPronunciation) 0.dp else 3.dp)
+                                )
+                            }
+                        }
+                    }
                     item {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        val langBadge = buildString {
+                            append("Fonte: ${lyrics!!.source}")
+                            if (!lyrics.detectedLanguage.isNullOrBlank()) {
+                                append(" • Idioma: ${lyrics.detectedLanguage.uppercase()}")
+                            }
+                        }
                         Text(
-                            text = lyrics!!.plainLyrics.orEmpty(),
-                            fontFamily = SfProFontFamily,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 20.sp,
-                            lineHeight = 32.sp,
-                            color = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text(
-                            text = "Fonte: ${lyrics.source}",
+                            text = langBadge,
                             fontFamily = SfProFontFamily,
                             fontWeight = FontWeight.Normal,
                             fontSize = 13.sp,
@@ -3308,6 +3613,132 @@ private fun AppleMusicLyricsView(
                         fontSize = 16.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
+                }
+            }
+
+            // Botão Flutuante de Karaokê / Apple Music Sing (Isolamento Vocal / Troca Instrumental + Slider Vertical) na lateral direita
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 14.dp, bottom = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AnimatedVisibility(
+                    visible = showVocalLevelPopup && isKaraokeVocalIsolationEnabled,
+                    enter = fadeIn(tween(180)) + scaleIn(
+                        initialScale = 0.92f,
+                        transformOrigin = TransformOrigin(0.5f, 1f),
+                        animationSpec = tween(180, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f))
+                    ),
+                    exit = fadeOut(tween(140)) + scaleOut(
+                        targetScale = 0.95f,
+                        transformOrigin = TransformOrigin(0.5f, 1f),
+                        animationSpec = tween(140)
+                    )
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xEB1C1C1E),
+                        border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.16f)),
+                        shadowElevation = 14.dp
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(horizontal = 10.dp, vertical = 12.dp)
+                                .width(40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "${(karaokeVocalLevel * 100).roundToInt()}%",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            // Barra vertical interativa de nível vocal (0% = instrumental puro, 100% = voz original)
+                            Box(
+                                modifier = Modifier
+                                    .width(12.dp)
+                                    .height(110.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color.White.copy(alpha = 0.20f))
+                                    .pointerInput(Unit) {
+                                        detectDragGestures(
+                                            onDragStart = { offset ->
+                                                val frac = 1f - (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                onSetKaraokeVocalLevel(frac)
+                                            },
+                                            onDrag = { change, _ ->
+                                                change.consume()
+                                                val frac = 1f - (change.position.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                onSetKaraokeVocalLevel(frac)
+                                            }
+                                        )
+                                    },
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(karaokeVocalLevel.coerceIn(0.04f, 1f))
+                                        .clip(RoundedCornerShape(50))
+                                        .background(OrangePrimary)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (isUsingRealInstrumental || isInstrumentalTrackReady) "INST" else "Voz",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isUsingRealInstrumental || isInstrumentalTrackReady) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+
+                // Pill do Microfone (exclusivo no modo Letras Fullscreen)
+                Box(contentAlignment = Alignment.TopEnd) {
+                    Surface(
+                        onClick = {
+                            if (!isKaraokeVocalIsolationEnabled) {
+                                onToggleKaraokeVocalIsolation()
+                                showVocalLevelPopup = true
+                            } else if (!showVocalLevelPopup) {
+                                showVocalLevelPopup = true
+                            } else {
+                                onToggleKaraokeVocalIsolation()
+                                showVocalLevelPopup = false
+                            }
+                        },
+                        shape = CircleShape,
+                        color = if (isKaraokeVocalIsolationEnabled) OrangePrimary else Color.White.copy(alpha = 0.18f),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (isKaraokeVocalIsolationEnabled) Color.White.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.22f)
+                        ),
+                        shadowElevation = if (isKaraokeVocalIsolationEnabled) 8.dp else 0.dp,
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isKaraokeVocalIsolationEnabled) Icons.Default.Mic else Icons.Default.MicOff,
+                                contentDescription = "Modo Karaokê",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                    // Ponto verde sutil indicando que a faixa instrumental oficial já está em buffer pronta para troca instantânea
+                    if (isInstrumentalTrackReady) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF4ADE80))
+                                .border(1.5.dp, Color(0xFF121212), CircleShape)
+                        )
+                    }
                 }
             }
         }
@@ -3498,21 +3929,35 @@ private fun AppleMusicLyricsView(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 6. Barra de Ações Inferior (Botão Letras Ativo + Cast + Fila)
+        // 6. Barra de Ações Inferior (Fechar Letras + Tradução & Pronúncia Apple Popover + JAM)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 32.dp, vertical = 6.dp),
+                .padding(horizontal = 28.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Botão de Letras Ativo (estilo Apple Music pill ativo)
+            val closeInteraction = remember { MutableInteractionSource() }
+            val isClosePressed by closeInteraction.collectIsPressedAsState()
+            val closeScale by animateFloatAsState(
+                targetValue = if (isClosePressed) 0.94f else 1f,
+                animationSpec = tween(120),
+                label = "CloseLyricsPressScale"
+            )
             Box(
                 modifier = Modifier
                     .size(42.dp)
+                    .graphicsLayer {
+                        scaleX = closeScale
+                        scaleY = closeScale
+                    }
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color.White.copy(alpha = 0.22f))
-                    .clickable { onCloseLyrics() },
+                    .clickable(
+                        interactionSource = closeInteraction,
+                        indication = null
+                    ) { onCloseLyrics() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -3523,23 +3968,551 @@ private fun AppleMusicLyricsView(
                 )
             }
 
-            IconButton(onClick = {}) {
-                Icon(
-                    imageVector = Icons.Default.Cast,
-                    contentDescription = "Transmitir",
-                    tint = Color.White.copy(alpha = 0.5f),
-                    modifier = Modifier.size(24.dp)
+            // Botão Apple Music Translation & Pronunciation Glass Popover (emil-design-eng)
+            Box {
+                val isTransOrPronActive = showLyricsTranslation || showLyricsPronunciation
+                val translateInteraction = remember { MutableInteractionSource() }
+                val isTranslatePressed by translateInteraction.collectIsPressedAsState()
+                val translateScale by animateFloatAsState(
+                    targetValue = if (isTranslatePressed) 0.94f else 1f,
+                    animationSpec = tween(120),
+                    label = "TranslateBtnPressScale"
                 )
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .graphicsLayer {
+                            scaleX = translateScale
+                            scaleY = translateScale
+                        }
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (isTransOrPronActive) Color.White.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.08f)
+                        )
+                        .border(
+                            width = 0.75.dp,
+                            color = if (isTransOrPronActive) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable(
+                            interactionSource = translateInteraction,
+                            indication = null
+                        ) { showTranslationMenu = !showTranslationMenu },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isTranslatingLyrics) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Translate,
+                            contentDescription = "Tradução e Pronúncia",
+                            tint = if (isTransOrPronActive) Color.White else Color.White.copy(alpha = 0.78f),
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+                }
+
+                if (showTranslationMenu) {
+                    Popup(
+                        alignment = Alignment.BottomCenter,
+                        offset = androidx.compose.ui.unit.IntOffset(0, -140),
+                        onDismissRequest = { showTranslationMenu = false },
+                        properties = PopupProperties(focusable = true)
+                    ) {
+                        AppleLyricsOptionsPopover(
+                            showLyricsTranslation = showLyricsTranslation,
+                            showLyricsPronunciation = showLyricsPronunciation,
+                            hideOriginalLyrics = hideOriginalLyrics,
+                            isTranslatingLyrics = isTranslatingLyrics,
+                            translationTargetLanguage = translationTargetLanguage,
+                            detectedSourceLanguage = lyrics?.detectedLanguage,
+                            lyricsOffsetMs = lyricsOffsetMs,
+                            isSyncedLyrics = lyrics?.isSynced == true,
+                            onToggleLyricsTranslation = onToggleLyricsTranslation,
+                            onToggleLyricsPronunciation = onToggleLyricsPronunciation,
+                            onToggleHideOriginalLyrics = onToggleHideOriginalLyrics,
+                            onSelectTranslationTargetLanguage = onSelectTranslationTargetLanguage,
+                            onAdjustLyricsOffset = onAdjustLyricsOffset,
+                            onResetLyricsOffset = onResetLyricsOffset
+                        )
+                    }
+                }
             }
 
-            IconButton(onClick = onOpenQueue) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = "Fila",
-                    tint = Color.White.copy(alpha = 0.75f),
-                    modifier = Modifier.size(26.dp)
-                )
+            // Botão JAM exclusivo na direita (substituindo os antigos botões de Transmissão e Fila)
+            val jamInteraction = remember { MutableInteractionSource() }
+            val isJamPressed by jamInteraction.collectIsPressedAsState()
+            val jamScale by animateFloatAsState(
+                targetValue = if (isJamPressed) 0.94f else 1f,
+                animationSpec = tween(120),
+                label = "JamBtnPressScale"
+            )
+            Surface(
+                onClick = onOpenJamSheet,
+                interactionSource = jamInteraction,
+                shape = RoundedCornerShape(12.dp),
+                color = if (jamSessionState.isInJam) Color(0xFF1DB954).copy(alpha = 0.24f) else Color.White.copy(alpha = 0.10f),
+                border = BorderStroke(
+                    width = 0.75.dp,
+                    color = if (jamSessionState.isInJam) Color(0xFF1DB954).copy(alpha = 0.65f) else Color.White.copy(alpha = 0.14f)
+                ),
+                modifier = Modifier
+                    .height(42.dp)
+                    .graphicsLayer {
+                        scaleX = jamScale
+                        scaleY = jamScale
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Group,
+                        contentDescription = "JAM",
+                        tint = if (jamSessionState.isInJam) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = if (jamSessionState.isInJam) {
+                            "JAM (${jamSessionState.participants.size.coerceAtLeast(1)})"
+                        } else {
+                            "JAM"
+                        },
+                        fontFamily = SfProFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = if (jamSessionState.isInJam) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.90f)
+                    )
+                }
             }
+        }
+    }
+}
+
+/**
+ * Popover translúcido estilo iOS 18 / Apple Music para Tradução, Pronúncia, Seleção de Idioma
+ * e Ajuste de Offset LRC, desenhado segundo os princípios `emil-design-eng`:
+ * - Origin-aware scale + fade (`TransformOrigin(0.5f, 1.0f)`) com `CubicBezierEasing(0.23f, 1f, 0.32f, 1f)` (<200ms)
+ * - Superfície dark glass (`#1C1C1E` @ 94% alpha) com borda especular `0.75.dp` (`White` 14% alpha)
+ * - Feedback tátil visual (`scale(0.97f)`) em cada linha interativa e seletor horizontal de idiomas em pílulas.
+ */
+@Composable
+private fun AppleLyricsOptionsPopover(
+    showLyricsTranslation: Boolean,
+    showLyricsPronunciation: Boolean,
+    hideOriginalLyrics: Boolean,
+    isTranslatingLyrics: Boolean,
+    translationTargetLanguage: String,
+    detectedSourceLanguage: String?,
+    lyricsOffsetMs: Long,
+    isSyncedLyrics: Boolean,
+    onToggleLyricsTranslation: () -> Unit,
+    onToggleLyricsPronunciation: () -> Unit,
+    onToggleHideOriginalLyrics: () -> Unit,
+    onSelectTranslationTargetLanguage: (String) -> Unit,
+    onAdjustLyricsOffset: (Long) -> Unit,
+    onResetLyricsOffset: () -> Unit
+) {
+    val appleEaseOut = remember { CubicBezierEasing(0.23f, 1f, 0.32f, 1f) }
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+
+    val popScale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.92f,
+        animationSpec = tween(durationMillis = 180, easing = appleEaseOut),
+        label = "ApplePopoverScale"
+    )
+    val popAlpha by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(durationMillis = 150, easing = appleEaseOut),
+        label = "ApplePopoverAlpha"
+    )
+
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xF01C1C1E),
+        border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.14f)),
+        shadowElevation = 24.dp,
+        modifier = Modifier
+            .width(304.dp)
+            .padding(horizontal = 12.dp)
+            .graphicsLayer {
+                scaleX = popScale
+                scaleY = popScale
+                alpha = popAlpha
+                transformOrigin = TransformOrigin(0.5f, 1.0f)
+            }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp)
+        ) {
+            // Cabeçalho minimalista estilo Apple Music
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "OPÇÕES DE LETRA",
+                    fontFamily = SfProFontFamily,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                    color = Color.White.copy(alpha = 0.48f)
+                )
+                if (isTranslatingLyrics) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(11.dp),
+                            strokeWidth = 1.6.dp,
+                            color = OrangePrimary
+                        )
+                        Text(
+                            text = "Traduzindo...",
+                            fontFamily = SfProFontFamily,
+                            fontSize = 11.sp,
+                            color = OrangePrimary
+                        )
+                    }
+                } else if (!detectedSourceLanguage.isNullOrBlank()) {
+                    Text(
+                        text = "Origem: ${detectedSourceLanguage.uppercase()}",
+                        fontFamily = SfProFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.42f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 1. Toggle: Mostrar Tradução
+            ApplePopoverOptionRow(
+                icon = Icons.Default.Translate,
+                iconTint = if (showLyricsTranslation) OrangePrimary else Color.White.copy(alpha = 0.80f),
+                title = "Mostrar Tradução",
+                subtitle = "Tradução linha a linha em tempo real",
+                checked = showLyricsTranslation,
+                accentColor = OrangePrimary,
+                onClick = onToggleLyricsTranslation
+            )
+
+            // Seletor de Idioma da Tradução (Auto, PT, EN, ES, FR, JA, KO, DE, IT)
+            val langScrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, bottom = 6.dp)
+            ) {
+                Text(
+                    text = "Idioma da tradução",
+                    fontFamily = SfProFontFamily,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.50f),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(langScrollState)
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    KaraokeLyricsEngine.SUPPORTED_TRANSLATION_LANGUAGES.forEach { option ->
+                        val isSelected = translationTargetLanguage.equals(option.code, ignoreCase = true)
+                        Surface(
+                            onClick = { onSelectTranslationTargetLanguage(option.code) },
+                            shape = RoundedCornerShape(50),
+                            color = if (isSelected) OrangePrimary else Color.White.copy(alpha = 0.09f),
+                            border = BorderStroke(
+                                width = 0.75.dp,
+                                color = if (isSelected) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.10f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = option.shortBadge,
+                                    fontFamily = SfProFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.85f)
+                                )
+                                Text(
+                                    text = option.label,
+                                    fontFamily = SfProFontFamily,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    fontSize = 11.sp,
+                                    color = if (isSelected) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.58f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
+                color = Color.White.copy(alpha = 0.08f)
+            )
+
+            // 2. Toggle: Mostrar Pronúncia
+            ApplePopoverOptionRow(
+                icon = Icons.Default.RecordVoiceOver,
+                iconTint = if (showLyricsPronunciation) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.80f),
+                title = "Mostrar Pronúncia",
+                subtitle = "Guia fonético e romanizado para cantar",
+                checked = showLyricsPronunciation,
+                accentColor = Color(0xFFFFD54F),
+                onClick = onToggleLyricsPronunciation
+            )
+
+            // 3. Toggle condicional: Ocultar Letra Original
+            AnimatedVisibility(
+                visible = showLyricsTranslation || showLyricsPronunciation,
+                enter = fadeIn(tween(150)) + expandVertically(tween(160)),
+                exit = fadeOut(tween(120)) + shrinkVertically(tween(140))
+            ) {
+                Column {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
+                        color = Color.White.copy(alpha = 0.08f)
+                    )
+                    ApplePopoverOptionRow(
+                        icon = Icons.Default.Subtitles,
+                        iconTint = if (hideOriginalLyrics) Color.White else Color.White.copy(alpha = 0.72f),
+                        title = "Ocultar Verso Original",
+                        subtitle = "Destacar apenas tradução ou pronúncia",
+                        checked = hideOriginalLyrics,
+                        accentColor = OrangePrimary,
+                        onClick = onToggleHideOriginalLyrics
+                    )
+                }
+            }
+
+            // 4. Ajuste Fino de Sincronia LRC (apenas quando a letra é sincronizada)
+            if (isSyncedLyrics) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
+                    color = Color.White.copy(alpha = 0.08f)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Sincronia LRC",
+                        fontFamily = SfProFontFamily,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.65f)
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = { onAdjustLyricsOffset(-150L) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White.copy(alpha = 0.10f)
+                        ) {
+                            Text(
+                                text = "-150ms",
+                                fontFamily = SfProFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                            )
+                        }
+                        Surface(
+                            onClick = onResetLyricsOffset,
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (lyricsOffsetMs != 0L) OrangePrimary.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f)
+                        ) {
+                            val sign = if (lyricsOffsetMs > 0) "+" else ""
+                            Text(
+                                text = "${sign}${lyricsOffsetMs}ms",
+                                fontFamily = SfProFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (lyricsOffsetMs != 0L) OrangePrimary else Color.White.copy(alpha = 0.65f),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                            )
+                        }
+                        Surface(
+                            onClick = { onAdjustLyricsOffset(150L) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White.copy(alpha = 0.10f)
+                        ) {
+                            Text(
+                                text = "+150ms",
+                                fontFamily = SfProFontFamily,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApplePopoverOptionRow(
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val rowScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = tween(durationMillis = 110),
+        label = "PopoverRowScale"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = rowScale
+                scaleY = rowScale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 18.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    if (checked) accentColor.copy(alpha = 0.20f) else Color.White.copy(alpha = 0.08f)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = SfProFontFamily,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Text(
+                text = subtitle,
+                fontFamily = SfProFontFamily,
+                fontSize = 11.sp,
+                color = Color.White.copy(alpha = 0.54f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        // Switch compacto estilo iOS
+        val thumbOffsetDp by animateDpAsState(
+            targetValue = if (checked) 18.dp else 2.dp,
+            animationSpec = tween(durationMillis = 160, easing = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)),
+            label = "IosSwitchThumb"
+        )
+        val trackColor by animateColorAsState(
+            targetValue = if (checked) accentColor else Color.White.copy(alpha = 0.18f),
+            animationSpec = tween(durationMillis = 160),
+            label = "IosSwitchTrack"
+        )
+        Box(
+            modifier = Modifier
+                .width(42.dp)
+                .height(26.dp)
+                .clip(RoundedCornerShape(50))
+                .background(trackColor),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(start = thumbOffsetDp)
+                    .size(22.dp)
+                    .shadow(2.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(Color.White)
+            )
+        }
+    }
+}
+
+@Composable
+private fun KaraokeCountdownDotsRow(activeDots: Int) {
+    Row(
+        modifier = Modifier
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        for (dotIdx in 1..3) {
+            val isLit = dotIdx <= activeDots
+            val dotScale by animateFloatAsState(
+                targetValue = if (isLit) 1.25f else 0.85f,
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                label = "CountdownDotScale_$dotIdx"
+            )
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .graphicsLayer {
+                        scaleX = dotScale
+                        scaleY = dotScale
+                    }
+                    .clip(CircleShape)
+                    .background(
+                        if (isLit) Color.White else Color.White.copy(alpha = 0.28f)
+                    )
+            )
         }
     }
 }

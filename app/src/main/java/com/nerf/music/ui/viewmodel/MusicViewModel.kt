@@ -52,6 +52,13 @@ import com.nerf.music.data.repository.UserAffinityRepositoryImpl
 import com.nerf.music.player.SmartRadioEngine
 import com.nerf.music.player.RadioTuningMode
 import com.nerf.music.player.NewPipeStreamResolver
+import com.nerf.music.player.KaraokeLyricsEngine
+import com.nerf.music.player.KaraokeSyncSnapshot
+import com.nerf.music.jam.JamCommandType
+import com.nerf.music.jam.JamPlaybackSnapshot
+import com.nerf.music.jam.JamSessionManager
+import com.nerf.music.jam.JamSessionState
+import com.nerf.music.jam.JamWireMessage
 import com.nerf.music.util.NetworkUtils
 import com.nerf.music.util.ConnectivityObserver
 import com.nerf.music.util.NetworkConnectivityObserver
@@ -211,6 +218,80 @@ class MusicViewModel(
     // Frase atual da letra sincronizada com a reprodução
     private val _currentLyricsLine = MutableStateFlow<String?>(null)
     val currentLyricsLine: StateFlow<String?> = _currentLyricsLine.asStateFlow()
+
+    // =========================================================================
+    // KARAOKÊ (LRC Real-Time Sync + Vocal Isolation DSP + Translation & Pronunciation)
+    // =========================================================================
+    private val _karaokeSyncSnapshot = MutableStateFlow(KaraokeSyncSnapshot())
+    val karaokeSyncSnapshot: StateFlow<KaraokeSyncSnapshot> = _karaokeSyncSnapshot.asStateFlow()
+
+    private val _isKaraokeVocalIsolationEnabled = MutableStateFlow(AudioPlayerService.isKaraokeEnabled)
+    val isKaraokeVocalIsolationEnabled: StateFlow<Boolean> = _isKaraokeVocalIsolationEnabled.asStateFlow()
+
+    private val _karaokeVocalLevel = MutableStateFlow(AudioPlayerService.karaokeVocalLevel)
+    val karaokeVocalLevel: StateFlow<Float> = _karaokeVocalLevel.asStateFlow()
+
+    private val _lyricsOffsetMs = MutableStateFlow(0L)
+    val lyricsOffsetMs: StateFlow<Long> = _lyricsOffsetMs.asStateFlow()
+
+    private val _showLyricsTranslation = MutableStateFlow(false)
+    val showLyricsTranslation: StateFlow<Boolean> = _showLyricsTranslation.asStateFlow()
+
+    private val _showLyricsPronunciation = MutableStateFlow(false)
+    val showLyricsPronunciation: StateFlow<Boolean> = _showLyricsPronunciation.asStateFlow()
+
+    private val _hideOriginalLyrics = MutableStateFlow(false)
+    val hideOriginalLyrics: StateFlow<Boolean> = _hideOriginalLyrics.asStateFlow()
+
+    private val _isTranslatingLyrics = MutableStateFlow(false)
+    val isTranslatingLyrics: StateFlow<Boolean> = _isTranslatingLyrics.asStateFlow()
+
+    private val _translationTargetLanguage = MutableStateFlow("auto")
+    val translationTargetLanguage: StateFlow<String> = _translationTargetLanguage.asStateFlow()
+
+    private val _isInstrumentalTrackReady = MutableStateFlow(false)
+    val isInstrumentalTrackReady: StateFlow<Boolean> = _isInstrumentalTrackReady.asStateFlow()
+
+    private val _isUsingRealInstrumental = MutableStateFlow(AudioPlayerService.isUsingRealInstrumental)
+    val isUsingRealInstrumental: StateFlow<Boolean> = _isUsingRealInstrumental.asStateFlow()
+
+    private var lyricsTranslationJob: Job? = null
+    private var instrumentalFetchJob: Job? = null
+
+    // =========================================================================
+    // JAM (Escuta Sincronizada em Grupo via WebSockets + DeepLinks, No-Account)
+    // =========================================================================
+    private var isApplyingRemoteJamEvent: Boolean = false
+    private var pendingDeepLinkUri: Uri? = null
+
+    private val _isJamSheetVisible = MutableStateFlow(false)
+    val isJamSheetVisible: StateFlow<Boolean> = _isJamSheetVisible.asStateFlow()
+
+    private val jamSessionManager = JamSessionManager(
+        scope = viewModelScope,
+        providePlaybackSnapshot = {
+            val st = _playbackState.value
+            val pos = mediaController?.currentPosition?.coerceAtLeast(0L) ?: st.currentPositionMs
+            val playing = mediaController?.isPlaying ?: st.isPlaying
+            JamPlaybackSnapshot(
+                currentTrack = st.currentTrack,
+                queue = st.queue,
+                currentQueueIndex = st.currentQueueIndex.coerceAtLeast(0),
+                isPlaying = playing,
+                positionMs = pos
+            )
+        },
+        onApplyRemoteSnapshot = { snapshot, compensatedPosMs ->
+            applyRemoteJamSnapshot(snapshot, compensatedPosMs)
+        },
+        onExecuteGuestCommandOnHost = { cmdMsg ->
+            executeGuestJamCommandOnHost(cmdMsg)
+        },
+        onUserFeedback = { msg ->
+            _userMessage.value = msg
+        }
+    )
+    val jamSessionState: StateFlow<JamSessionState> = jamSessionManager.sessionState
 
     private var canvasFetchJob: Job? = null
     private var homeCanvasPrefetchJob: Job? = null
@@ -485,6 +566,10 @@ class MusicViewModel(
                 mediaController = controller
                 setupPlayerListener(controller)
                 syncTimelineState(controller)
+                pendingDeepLinkUri?.let { pendingUri ->
+                    pendingDeepLinkUri = null
+                    handleDeepLink(pendingUri)
+                }
             } catch (e: Exception) {
                 Log.e("MusicViewModel", "Erro ao obter MediaController conectado", e)
             }
@@ -1031,7 +1116,7 @@ class MusicViewModel(
                         updateCurrentLyricsLine(pos)
                     }
                 }
-                delay(250)
+                delay(45)
             }
         }
     }
@@ -1197,6 +1282,13 @@ class MusicViewModel(
         controller.prepare()
         controller.play()
 
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.PLAY_TRACK,
+                targetTrack = track
+            )
+        }
+
         // Busca a Rádio Dinâmica ("A seguir") e os Chips em background
         radioFetchJob = viewModelScope.launch {
             val radioResult = repository.getUpNextRadio(videoId = track.id, params = null)
@@ -1235,6 +1327,9 @@ class MusicViewModel(
                     syncTimelineState(activeController)
 
                     AudioPlayerService.prefetchTrack(radioTracks.first().id)
+                    if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam && jamSessionState.value.isHost) {
+                        jamSessionManager.broadcastHostStateSnapshot()
+                    }
                 }
 
                 val selectedParams = upNext.chips.firstOrNull { it.isSelected }?.params
@@ -1347,6 +1442,12 @@ class MusicViewModel(
                 controller.seekToDefaultPosition(index)
                 controller.play()
             }
+            if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+                jamSessionManager.dispatchOrBroadcastPlayerAction(
+                    command = JamCommandType.SELECT_QUEUE_INDEX,
+                    targetQueueIndex = index
+                )
+            }
         }
     }
 
@@ -1378,6 +1479,13 @@ class MusicViewModel(
         )
 
         mediaController?.moveMediaItem(fromIndex, toIndex)
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.MOVE_QUEUE_ITEM,
+                fromQueueIndex = fromIndex,
+                toQueueIndex = toIndex
+            )
+        }
     }
 
     /**
@@ -1391,6 +1499,12 @@ class MusicViewModel(
         val removedTrack = currentQueue[index]
         controller.removeMediaItem(index)
         _userMessage.value = "Removida da fila: ${removedTrack.title}"
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.REMOVE_QUEUE_ITEM,
+                targetQueueIndex = index
+            )
+        }
     }
 
     fun toggleShuffle() {
@@ -1417,11 +1531,17 @@ class MusicViewModel(
 
         if (controller.isPlaying) {
             controller.pause()
+            if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+                jamSessionManager.dispatchOrBroadcastPlayerAction(command = JamCommandType.PAUSE)
+            }
         } else {
             if (controller.playbackState == Player.STATE_ENDED) {
                 controller.seekTo(0L)
             }
             controller.play()
+            if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+                jamSessionManager.dispatchOrBroadcastPlayerAction(command = JamCommandType.PLAY)
+            }
         }
     }
 
@@ -1464,6 +1584,12 @@ class MusicViewModel(
         } else {
             controller.seekToDefaultPosition(targetIndex)
             controller.play()
+        }
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.SKIP_NEXT,
+                targetQueueIndex = targetIndex
+            )
         }
     }
 
@@ -1512,6 +1638,12 @@ class MusicViewModel(
             controller.seekToDefaultPosition(targetIndex)
             controller.play()
         }
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.SKIP_PREV,
+                targetQueueIndex = targetIndex
+            )
+        }
     }
 
     /**
@@ -1558,6 +1690,12 @@ class MusicViewModel(
             controller.seekToDefaultPosition(targetIndex)
             controller.play()
         }
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.SKIP_PREV,
+                targetQueueIndex = targetIndex
+            )
+        }
     }
 
     fun seekTo(positionMs: Long) {
@@ -1565,6 +1703,12 @@ class MusicViewModel(
         _playbackState.value = _playbackState.value.copy(currentPositionMs = targetPos)
         mediaController?.seekTo(targetPos)
         updateCurrentLyricsLine(targetPos)
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.SEEK,
+                targetPositionMs = targetPos
+            )
+        }
     }
 
     fun toggleFavorite(trackId: String) {
@@ -1856,6 +2000,12 @@ class MusicViewModel(
         val mediaItems = tracks.map { trackToMediaItem(it) }
         controller.addMediaItems(mediaItems)
         _userMessage.value = "${tracks.size} músicas adicionadas à fila"
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.ADD_TO_QUEUE,
+                targetTracks = tracks
+            )
+        }
     }
 
     fun addTracksToPlayNext(tracks: List<Track>) {
@@ -1865,6 +2015,12 @@ class MusicViewModel(
         val mediaItems = tracks.map { trackToMediaItem(it) }
         controller.addMediaItems(nextIndex, mediaItems)
         _userMessage.value = "${tracks.size} músicas adicionadas para tocar a seguir"
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.PLAY_NEXT_IN_QUEUE,
+                targetTracks = tracks
+            )
+        }
     }
         fun clearUserMessage() {
         _userMessage.value = null
@@ -2713,8 +2869,21 @@ class MusicViewModel(
 
     fun loadLyrics(track: Track) {
         lyricsFetchJob?.cancel()
+        lyricsTranslationJob?.cancel()
+        instrumentalFetchJob?.cancel()
         _currentLyrics.value = null
         _currentLyricsLine.value = null
+        _karaokeSyncSnapshot.value = KaraokeSyncSnapshot()
+        _isTranslatingLyrics.value = false
+        _isInstrumentalTrackReady.value = false
+        _isUsingRealInstrumental.value = false
+
+        AudioPlayerService.onInstrumentalStatusChanged = { enabled, isReal ->
+            _isUsingRealInstrumental.value = enabled && isReal
+        }
+
+        // Pré-busca em background a versão Instrumental / Karaokê Oficial para troca instantânea ao tocar no microfone
+        prefetchStandbyInstrumentalForTrack(track)
 
         lyricsFetchJob = viewModelScope.launch {
             val res = lyricsRepository.getLyrics(
@@ -2727,24 +2896,398 @@ class MusicViewModel(
             val cleanData = data?.let { d ->
                 val cleanPlain = if (d.plainLyrics.isNullOrBlank() || d.plainLyrics.trim().equals("null", ignoreCase = true)) null else d.plainLyrics.trim()
                 val cleanSynced = d.syncedLines.filter { it.text.isNotBlank() && !it.text.trim().equals("null", ignoreCase = true) }
-                if (cleanPlain == null && cleanSynced.isEmpty()) null else d.copy(plainLyrics = cleanPlain, syncedLines = cleanSynced)
+                val structuredPlainLines = if (cleanSynced.isEmpty() && cleanPlain != null) {
+                    KaraokeLyricsEngine.buildPlainLinesWithPronunciation(cleanPlain)
+                } else {
+                    d.plainLines
+                }
+                if (cleanPlain == null && cleanSynced.isEmpty()) null else d.copy(
+                    plainLyrics = cleanPlain,
+                    syncedLines = cleanSynced,
+                    plainLines = structuredPlainLines,
+                    hasPronunciation = cleanSynced.any { !it.pronunciationText.isNullOrBlank() } ||
+                        structuredPlainLines.any { !it.pronunciationText.isNullOrBlank() } ||
+                        d.hasPronunciation
+                )
             }
             _currentLyrics.value = cleanData
             updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+
+            if (cleanData != null && (_showLyricsTranslation.value || _showLyricsPronunciation.value)) {
+                ensureLyricsTranslationAndPronunciation(forceRetranslate = false)
+            }
+        }
+    }
+
+    private fun prefetchStandbyInstrumentalForTrack(track: Track) {
+        if (track.id.isBlank() || track.id.startsWith("playlist_")) return
+        val lowerTitle = track.title.lowercase()
+        // Se a própria faixa já for instrumental, não precisa buscar outra
+        if (lowerTitle.contains("instrumental") || lowerTitle.contains("karaoke")) return
+
+        instrumentalFetchJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val baseTitle = track.title
+                    .replace(Regex("""\s*\([^)]*\)\s*"""), " ")
+                    .replace(Regex("""\s*\[[^\]]*\]\s*"""), " ")
+                    .trim()
+                val primaryArtist = track.artist.split(",", "&", "/", "feat.", "ft.").firstOrNull()?.trim().orEmpty()
+                val query = "$baseTitle $primaryArtist official instrumental".trim()
+
+                val songsRes = repository.search(query, SearchFilter.SONGS).getOrNull()?.songs.orEmpty()
+                val allRes = if (songsRes.isEmpty()) {
+                    repository.search(query, SearchFilter.ALL).getOrNull()?.songs.orEmpty()
+                } else {
+                    emptyList()
+                }
+                val candidates: List<Track> = songsRes + allRes
+
+                val bestMatch = candidates.firstOrNull { cand ->
+                    if (cand.id == track.id) return@firstOrNull false
+                    val cTitle = cand.title.lowercase()
+                    val hasInstKeyword = cTitle.contains("instrumental") ||
+                        cTitle.contains("karaoke") ||
+                        cTitle.contains("karaokê") ||
+                        cTitle.contains("off vocal") ||
+                        cTitle.contains("backing track")
+                    val titleMatches = cTitle.contains(baseTitle.lowercase().take(10))
+                    val durationOk = track.durationSeconds <= 0L ||
+                        cand.durationSeconds <= 0L ||
+                        kotlin.math.abs(cand.durationSeconds - track.durationSeconds) <= 8L
+                    hasInstKeyword && titleMatches && durationOk
+                }
+
+                if (bestMatch != null && _playbackState.value.currentTrack?.id == track.id) {
+                    Log.i("MusicViewModel", "Faixa Instrumental compatível encontrada para ${track.title}: ${bestMatch.title} (${bestMatch.id})")
+                    withContext(Dispatchers.Main) {
+                        _isInstrumentalTrackReady.value = true
+                        AudioPlayerService.prepareStandbyInstrumental(
+                            originalTrackId = track.id,
+                            instrumentalVideoId = bestMatch.id
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("MusicViewModel", "Busca de instrumental em standby falhou: ${e.message}")
+            }
         }
     }
 
     private fun updateCurrentLyricsLine(positionMs: Long) {
-        val lyrics = _currentLyrics.value ?: return
-        if (!lyrics.isSynced || lyrics.syncedLines.isEmpty()) {
+        val lyrics = _currentLyrics.value ?: run {
             _currentLyricsLine.value = null
+            _karaokeSyncSnapshot.value = KaraokeSyncSnapshot()
             return
         }
+        if (!lyrics.isSynced || lyrics.syncedLines.isEmpty()) {
+            _currentLyricsLine.value = null
+            _karaokeSyncSnapshot.value = KaraokeSyncSnapshot()
+            return
+        }
+        val snapshot = KaraokeLyricsEngine.resolveSyncSnapshot(
+            lyrics = lyrics,
+            rawPositionMs = positionMs,
+            offsetMs = _lyricsOffsetMs.value
+        )
+        _karaokeSyncSnapshot.value = snapshot
+
         val lines = lyrics.syncedLines
-        val activeLine = lines.lastOrNull { positionMs >= it.timeMs }
-        val rawText = activeLine?.text
+        val activeLine = snapshot.activeLineIndex.takeIf { it in lines.indices }?.let { lines[it] }
+        val rawText = when {
+            activeLine == null -> null
+            _hideOriginalLyrics.value && _showLyricsTranslation.value && !activeLine.translatedText.isNullOrBlank() -> activeLine.translatedText
+            _hideOriginalLyrics.value && _showLyricsPronunciation.value && !activeLine.pronunciationText.isNullOrBlank() -> activeLine.pronunciationText
+            else -> activeLine.text
+        }
         val cleanText = if (rawText.isNullOrBlank() || rawText.equals("null", ignoreCase = true)) null else rawText
         _currentLyricsLine.value = cleanText
+    }
+
+    // =========================================================================
+    // CONTROLES DE KARAOKÊ, TRADUÇÃO E PRONÚNCIA
+    // =========================================================================
+
+    fun toggleKaraokeVocalIsolation() {
+        val next = !_isKaraokeVocalIsolationEnabled.value
+        _isKaraokeVocalIsolationEnabled.value = next
+        AudioPlayerService.setKaraokeMode(next, _karaokeVocalLevel.value)
+        _userMessage.value = when {
+            next && _isInstrumentalTrackReady.value -> "Modo Karaokê ativado (Instrumental Oficial sincronizado)"
+            next -> "Modo Karaokê ativado"
+            else -> "Modo Karaokê desativado (voz original restaurada)"
+        }
+    }
+
+    fun setKaraokeVocalLevel(level: Float) {
+        val clamped = level.coerceIn(0f, 1f)
+        _karaokeVocalLevel.value = clamped
+        if (!_isKaraokeVocalIsolationEnabled.value && clamped < 0.99f) {
+            _isKaraokeVocalIsolationEnabled.value = true
+        }
+        AudioPlayerService.setKaraokeMode(_isKaraokeVocalIsolationEnabled.value, clamped)
+    }
+
+    fun adjustLyricsOffset(deltaMs: Long) {
+        val next = (_lyricsOffsetMs.value + deltaMs).coerceIn(-10_000L, 10_000L)
+        _lyricsOffsetMs.value = next
+        updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+    }
+
+    fun resetLyricsOffset() {
+        _lyricsOffsetMs.value = 0L
+        updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+    }
+
+    fun toggleLyricsTranslation() {
+        val next = !_showLyricsTranslation.value
+        _showLyricsTranslation.value = next
+        if (!next && !_showLyricsPronunciation.value) {
+            _hideOriginalLyrics.value = false
+        }
+        if (next) {
+            ensureLyricsTranslationAndPronunciation(forceRetranslate = false)
+        } else {
+            updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+        }
+    }
+
+    fun selectTranslationTargetLanguage(langCode: String) {
+        val cleanCode = langCode.trim().ifEmpty { "auto" }
+        val changed = _translationTargetLanguage.value != cleanCode
+        _translationTargetLanguage.value = cleanCode
+        if (!_showLyricsTranslation.value) {
+            _showLyricsTranslation.value = true
+        }
+        ensureLyricsTranslationAndPronunciation(forceRetranslate = changed)
+    }
+
+    fun toggleLyricsPronunciation() {
+        val next = !_showLyricsPronunciation.value
+        _showLyricsPronunciation.value = next
+        if (!next && !_showLyricsTranslation.value) {
+            _hideOriginalLyrics.value = false
+        }
+        if (next) {
+            ensureLyricsTranslationAndPronunciation(forceRetranslate = false)
+        } else {
+            updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+        }
+    }
+
+    fun toggleHideOriginalLyrics() {
+        val next = !_hideOriginalLyrics.value
+        _hideOriginalLyrics.value = next
+        updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+    }
+
+    private fun ensureLyricsTranslationAndPronunciation(forceRetranslate: Boolean = false) {
+        val current = _currentLyrics.value ?: return
+        val hasTranslatedSynced = current.syncedLines.isNotEmpty() &&
+            current.syncedLines.any { !it.translatedText.isNullOrBlank() }
+        val hasTranslatedPlain = current.plainLines.isNotEmpty() &&
+            current.plainLines.any { !it.translatedText.isNullOrBlank() }
+        if (!forceRetranslate && (hasTranslatedSynced || hasTranslatedPlain)) {
+            updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+            return
+        }
+
+        lyricsTranslationJob?.cancel()
+        lyricsTranslationJob = viewModelScope.launch {
+            _isTranslatingLyrics.value = true
+            try {
+                val targetLang = _translationTargetLanguage.value
+                val enriched = KaraokeLyricsEngine.enrichLyricsWithTranslationAndPronunciation(
+                    lyrics = current,
+                    preferredTargetLang = targetLang
+                )
+                if (_currentLyrics.value?.trackId == current.trackId) {
+                    _currentLyrics.value = enriched
+                    updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
+                }
+            } catch (e: Exception) {
+                Log.w("MusicViewModel", "Falha ao traduzir letras: ${e.message}")
+            } finally {
+                _isTranslatingLyrics.value = false
+            }
+        }
+    }
+
+    // =========================================================================
+    // CONTROLES DA JAM (ESCUTA SINCRONIZADA VIA WEBSOCKETS + DEEPLINKS)
+    // =========================================================================
+
+    fun openJamSheet() {
+        _isJamSheetVisible.value = true
+    }
+
+    fun closeJamSheet() {
+        _isJamSheetVisible.value = false
+    }
+
+    fun startHostJam(customRelayWsUrl: String? = null) {
+        jamSessionManager.startHostSession(customRelayWsUrl)
+    }
+
+    fun joinJamFromInput(input: String) {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) {
+            _userMessage.value = "Informe um link ou endereço WebSocket da JAM."
+            return
+        }
+        jamSessionManager.joinFromUserInput(trimmed)
+    }
+
+    fun leaveJam() {
+        jamSessionManager.leaveSession(silent = false)
+    }
+
+    fun updateJamDisplayName(name: String) {
+        jamSessionManager.updateDisplayName(name)
+    }
+
+    fun handleDeepLink(uri: Uri) {
+        val scheme = uri.scheme?.lowercase() ?: ""
+        val host = uri.host?.lowercase() ?: ""
+        val path = uri.path?.lowercase() ?: ""
+        val isJamLink = (scheme == "nerfmusic" && host == "jam") ||
+            ((scheme == "https" || scheme == "http") && (host.contains("nerfmusic") || path.startsWith("/jam")))
+
+        if (!isJamLink) return
+
+        _isJamSheetVisible.value = true
+        if (mediaController == null) {
+            pendingDeepLinkUri = uri
+            return
+        }
+        jamSessionManager.handleDeepLink(uri)
+    }
+
+    private fun applyRemoteJamSnapshot(snapshot: JamWireMessage, compensatedPosMs: Long) {
+        if (isApplyingRemoteJamEvent) return
+        isApplyingRemoteJamEvent = true
+        try {
+            val remoteQueue = snapshot.queue
+            val remoteIdx = snapshot.currentQueueIndex.coerceAtLeast(0)
+            val remoteTrack = snapshot.currentTrack ?: remoteQueue.getOrNull(remoteIdx)
+            val remotePlaying = snapshot.isPlaying
+
+            val localState = _playbackState.value
+            val localTrackId = localState.currentTrack?.id
+            val localQueueIds = localState.queue.map { it.id }
+            val remoteQueueIds = remoteQueue.map { it.id }
+
+            // 1. Se a faixa atual mudou ou a fila mudou estruturalmente
+            if (remoteTrack != null && remoteTrack.id != localTrackId) {
+                playTrack(remoteTrack)
+                viewModelScope.launch {
+                    delay(450L)
+                    isApplyingRemoteJamEvent = true
+                    try {
+                        if (compensatedPosMs > 1000L) {
+                            mediaController?.seekTo(compensatedPosMs)
+                        }
+                        if (remotePlaying && mediaController?.isPlaying == false) {
+                            mediaController?.play()
+                        } else if (!remotePlaying && mediaController?.isPlaying == true) {
+                            mediaController?.pause()
+                        }
+                    } finally {
+                        isApplyingRemoteJamEvent = false
+                    }
+                }
+                return
+            }
+
+            // 2. Sincroniza fila se apenas os próximos itens mudaram
+            if (remoteQueue.isNotEmpty() && remoteQueueIds != localQueueIds) {
+                _playbackState.value = _playbackState.value.copy(
+                    queue = remoteQueue,
+                    currentQueueIndex = remoteIdx.coerceIn(0, (remoteQueue.size - 1).coerceAtLeast(0))
+                )
+            }
+
+            // 3. Sincroniza estado Play / Pause
+            val controller = mediaController
+            if (controller != null) {
+                if (remotePlaying && !controller.isPlaying) {
+                    controller.play()
+                    _playbackState.value = _playbackState.value.copy(isPlaying = true)
+                } else if (!remotePlaying && controller.isPlaying) {
+                    controller.pause()
+                    _playbackState.value = _playbackState.value.copy(isPlaying = false)
+                }
+
+                // 4. Sincroniza posição se o desvio ultrapassar 350ms (compensado por RTT)
+                val localPos = controller.currentPosition.coerceAtLeast(0L)
+                val driftMs = kotlin.math.abs(localPos - compensatedPosMs)
+                if (driftMs > 350L && compensatedPosMs >= 0L) {
+                    controller.seekTo(compensatedPosMs)
+                    _playbackState.value = _playbackState.value.copy(currentPositionMs = compensatedPosMs)
+                    updateCurrentLyricsLine(compensatedPosMs)
+                }
+            }
+        } finally {
+            isApplyingRemoteJamEvent = false
+        }
+    }
+
+    private fun executeGuestJamCommandOnHost(cmdMsg: JamWireMessage) {
+        val cmd = cmdMsg.command ?: return
+        when (cmd) {
+            JamCommandType.PLAY -> {
+                if (mediaController?.isPlaying == false) {
+                    togglePlayPause()
+                }
+            }
+            JamCommandType.PAUSE -> {
+                if (mediaController?.isPlaying == true) {
+                    togglePlayPause()
+                }
+            }
+            JamCommandType.SEEK -> {
+                val target = cmdMsg.targetPositionMs ?: return
+                seekTo(target)
+            }
+            JamCommandType.SKIP_NEXT -> skipNext()
+            JamCommandType.SKIP_PREV -> skipPrevious()
+            JamCommandType.PLAY_TRACK -> {
+                val track = cmdMsg.targetTrack ?: return
+                playTrack(track)
+            }
+            JamCommandType.SELECT_QUEUE_INDEX -> {
+                val idx = cmdMsg.targetQueueIndex ?: return
+                playQueueItemAt(idx)
+            }
+            JamCommandType.ADD_TO_QUEUE -> {
+                val tracksToAdd = if (cmdMsg.targetTracks.isNotEmpty()) {
+                    cmdMsg.targetTracks
+                } else {
+                    listOfNotNull(cmdMsg.targetTrack)
+                }
+                if (tracksToAdd.isNotEmpty()) {
+                    addTracksToQueue(tracksToAdd)
+                }
+            }
+            JamCommandType.PLAY_NEXT_IN_QUEUE -> {
+                val tracksToNext = if (cmdMsg.targetTracks.isNotEmpty()) {
+                    cmdMsg.targetTracks
+                } else {
+                    listOfNotNull(cmdMsg.targetTrack)
+                }
+                if (tracksToNext.isNotEmpty()) {
+                    addTracksToPlayNext(tracksToNext)
+                }
+            }
+            JamCommandType.REMOVE_QUEUE_ITEM -> {
+                val idx = cmdMsg.targetQueueIndex ?: return
+                removeQueueItem(idx)
+            }
+            JamCommandType.MOVE_QUEUE_ITEM -> {
+                val from = cmdMsg.fromQueueIndex ?: return
+                val to = cmdMsg.toQueueIndex ?: return
+                moveQueueItem(from, to)
+            }
+        }
     }
 
     fun syncDownloadsWithDisk(onComplete: ((Int) -> Unit)? = null) {
@@ -2761,6 +3304,8 @@ class MusicViewModel(
         radioFetchJob?.cancel()
         canvasFetchJob?.cancel()
         lyricsFetchJob?.cancel()
+        lyricsTranslationJob?.cancel()
+        jamSessionManager.leaveSession(silent = true)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
     }

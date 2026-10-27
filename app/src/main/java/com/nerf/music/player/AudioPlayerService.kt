@@ -19,7 +19,10 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -61,7 +64,157 @@ class AudioPlayerService : MediaSessionService() {
     private lateinit var playerA: ExoPlayer
     private lateinit var playerB: ExoPlayer
     private lateinit var activePlayer: ExoPlayer
+    private lateinit var instrumentalPlayer: ExoPlayer
     private var fadingPlayer: ExoPlayer? = null
+    private val vocalProcessors = mutableListOf<VocalIsolationAudioProcessor>()
+
+    private var currentInstrumentalOriginalTrackId: String? = null
+    private var currentInstrumentalVideoId: String? = null
+    private var isInstrumentalStreamReady: Boolean = false
+    private var karaokeCrossfadeJob: Job? = null
+
+    fun prepareInstrumentalForTrack(originalTrackId: String, instrumentalVideoId: String) {
+        if (originalTrackId.isBlank() || instrumentalVideoId.isBlank()) return
+        prefetchTrack(instrumentalVideoId, filesDir)
+        serviceScope.launch {
+            if (!::instrumentalPlayer.isInitialized) return@launch
+            if (currentInstrumentalOriginalTrackId == originalTrackId &&
+                currentInstrumentalVideoId == instrumentalVideoId &&
+                isInstrumentalStreamReady
+            ) {
+                return@launch
+            }
+
+            currentInstrumentalOriginalTrackId = originalTrackId
+            currentInstrumentalVideoId = instrumentalVideoId
+            isInstrumentalStreamReady = false
+            isUsingRealInstrumental = false
+
+            Log.i(TAG, "Pre-carregando faixa Instrumental em standby ($instrumentalVideoId) para $originalTrackId")
+            instrumentalPlayer.stop()
+            instrumentalPlayer.clearMediaItems()
+            instrumentalPlayer.volume = 0f
+            instrumentalPlayer.playWhenReady = false
+            val item = MediaItem.Builder()
+                .setMediaId(instrumentalVideoId)
+                .setUri(buildTrackUri(instrumentalVideoId))
+                .build()
+            instrumentalPlayer.setMediaItem(item)
+            instrumentalPlayer.prepare()
+        }
+    }
+
+    fun clearInstrumentalStandby() {
+        serviceScope.launch {
+            currentInstrumentalOriginalTrackId = null
+            currentInstrumentalVideoId = null
+            isInstrumentalStreamReady = false
+            isUsingRealInstrumental = false
+            karaokeCrossfadeJob?.cancel()
+            if (::instrumentalPlayer.isInitialized) {
+                instrumentalPlayer.pause()
+                instrumentalPlayer.stop()
+                instrumentalPlayer.clearMediaItems()
+                instrumentalPlayer.volume = 0f
+            }
+            if (::activePlayer.isInitialized && !isCrossfading) {
+                activePlayer.volume = 1f
+            }
+        }
+    }
+
+    fun applyKaraokeState(enabled: Boolean, vocalLevel: Float) {
+        val clamped = vocalLevel.coerceIn(0f, 1f)
+        serviceScope.launch {
+            if (!::activePlayer.isInitialized || !::instrumentalPlayer.isInitialized) {
+                vocalProcessors.forEach { processor ->
+                    processor.isKaraokeEnabled = enabled
+                    processor.vocalLevel = clamped
+                }
+                return@launch
+            }
+
+            val currentMediaId = activePlayer.currentMediaItem?.mediaId
+            val hasMatchingInstrumental = enabled &&
+                currentMediaId != null &&
+                currentMediaId == currentInstrumentalOriginalTrackId &&
+                (isInstrumentalStreamReady || instrumentalPlayer.playbackState == Player.STATE_READY)
+
+            if (hasMatchingInstrumental) {
+                isUsingRealInstrumental = true
+                // Desativa o filtro DSP pois estamos usando a faixa Instrumental real sincronizada
+                vocalProcessors.forEach { processor ->
+                    processor.isKaraokeEnabled = false
+                }
+
+                val targetPos = activePlayer.currentPosition.coerceAtLeast(0L)
+                if (kotlin.math.abs(instrumentalPlayer.currentPosition - targetPos) > 90L) {
+                    instrumentalPlayer.seekTo(targetPos)
+                }
+                if (activePlayer.isPlaying && !instrumentalPlayer.isPlaying) {
+                    instrumentalPlayer.play()
+                } else if (!activePlayer.isPlaying && instrumentalPlayer.isPlaying) {
+                    instrumentalPlayer.pause()
+                }
+
+                karaokeCrossfadeJob?.cancel()
+                karaokeCrossfadeJob = serviceScope.launch {
+                    val startMainVol = activePlayer.volume
+                    val startInstVol = instrumentalPlayer.volume
+                    val targetMainVol = clamped // 0.0f = 100% instrumental, >0 = voz guia original mixada
+                    val targetInstVol = 1.0f
+                    for (step in 1..6) {
+                        val frac = step / 6f
+                        activePlayer.volume = (startMainVol + (targetMainVol - startMainVol) * frac).coerceIn(0f, 1f)
+                        instrumentalPlayer.volume = (startInstVol + (targetInstVol - startInstVol) * frac).coerceIn(0f, 1f)
+                        delay(20)
+                    }
+                    activePlayer.volume = targetMainVol
+                    instrumentalPlayer.volume = targetInstVol
+                }
+                onInstrumentalStatusChanged?.invoke(true, true)
+            } else if (enabled) {
+                // Fallback para DSP caso a faixa instrumental ainda esteja carregando ou não exista
+                isUsingRealInstrumental = false
+                karaokeCrossfadeJob?.cancel()
+                instrumentalPlayer.pause()
+                instrumentalPlayer.volume = 0f
+                if (!isCrossfading) {
+                    activePlayer.volume = 1f
+                }
+                vocalProcessors.forEach { processor ->
+                    processor.isKaraokeEnabled = true
+                    processor.vocalLevel = clamped
+                }
+                onInstrumentalStatusChanged?.invoke(true, false)
+            } else {
+                // Desativando o Modo Karaokê -> volta instantaneamente para a faixa original em 100%
+                val wasUsingInst = isUsingRealInstrumental
+                isUsingRealInstrumental = false
+                vocalProcessors.forEach { processor ->
+                    processor.isKaraokeEnabled = false
+                    processor.vocalLevel = clamped
+                }
+                karaokeCrossfadeJob?.cancel()
+                if (wasUsingInst || instrumentalPlayer.isPlaying || activePlayer.volume < 0.99f) {
+                    karaokeCrossfadeJob = serviceScope.launch {
+                        val startMainVol = activePlayer.volume
+                        val startInstVol = instrumentalPlayer.volume
+                        for (step in 1..6) {
+                            val frac = step / 6f
+                            activePlayer.volume = (startMainVol + (1f - startMainVol) * frac).coerceIn(0f, 1f)
+                            instrumentalPlayer.volume = (startInstVol * (1f - frac)).coerceIn(0f, 1f)
+                            delay(20)
+                        }
+                        activePlayer.volume = 1f
+                        instrumentalPlayer.volume = 0f
+                        instrumentalPlayer.pause()
+                    }
+                }
+                onInstrumentalStatusChanged?.invoke(false, false)
+            }
+        }
+    }
 
     private lateinit var resolvingDataSourceFactory: ResolvingDataSource.Factory
     private lateinit var audioAttributes: AudioAttributes
@@ -326,6 +479,34 @@ class AudioPlayerService : MediaSessionService() {
         private var instance: AudioPlayerService? = null
         fun getInstance(): AudioPlayerService? = instance
 
+        @Volatile
+        var isKaraokeEnabled: Boolean = false
+            private set
+
+        @Volatile
+        var karaokeVocalLevel: Float = 0.08f
+            private set
+
+        @Volatile
+        var isUsingRealInstrumental: Boolean = false
+
+        var onInstrumentalStatusChanged: ((enabled: Boolean, isRealInstrumental: Boolean) -> Unit)? = null
+
+        fun setKaraokeMode(enabled: Boolean, vocalLevel: Float = karaokeVocalLevel) {
+            isKaraokeEnabled = enabled
+            karaokeVocalLevel = vocalLevel.coerceIn(0f, 1f)
+            instance?.applyKaraokeState(isKaraokeEnabled, karaokeVocalLevel)
+        }
+
+        fun prepareStandbyInstrumental(originalTrackId: String, instrumentalVideoId: String) {
+            instance?.prepareInstrumentalForTrack(originalTrackId, instrumentalVideoId)
+                ?: prefetchTrack(instrumentalVideoId)
+        }
+
+        fun clearStandbyInstrumental() {
+            instance?.clearInstrumentalStandby()
+        }
+
         fun buildTrackUri(videoId: String): Uri = Uri.parse("$NERF_URI_SCHEME://track/$videoId")
 
         private data class CachedStreamUrl(val url: String, val timestampMs: Long)
@@ -525,7 +706,27 @@ class AudioPlayerService : MediaSessionService() {
 
     @OptIn(UnstableApi::class)
     private fun createExoPlayer(handleAudioFocus: Boolean = true): ExoPlayer {
-        val playerInstance = ExoPlayer.Builder(this)
+        val vocalProcessor = VocalIsolationAudioProcessor().apply {
+            isKaraokeEnabled = Companion.isKaraokeEnabled
+            vocalLevel = Companion.karaokeVocalLevel
+        }
+        vocalProcessors.add(vocalProcessor)
+
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(vocalProcessor))
+                    .build()
+            }
+        }
+
+        val playerInstance = ExoPlayer.Builder(this, renderersFactory)
             .setLoadControl(buildLoadControl())
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(this).setDataSourceFactory(resolvingDataSourceFactory)
@@ -554,14 +755,41 @@ class AudioPlayerService : MediaSessionService() {
                 if (isPlaying) {
                     startTransitionMonitor()
                     triggerPrefetchNextTrack()
+                    if (isKaraokeEnabled && isUsingRealInstrumental && ::instrumentalPlayer.isInitialized) {
+                        val pos = activePlayer.currentPosition.coerceAtLeast(0L)
+                        if (kotlin.math.abs(instrumentalPlayer.currentPosition - pos) > 90L) {
+                            instrumentalPlayer.seekTo(pos)
+                        }
+                        instrumentalPlayer.play()
+                    }
                 } else if (!isCrossfading) {
                     transitionMonitorJob?.cancel()
+                    if (::instrumentalPlayer.isInitialized && instrumentalPlayer.isPlaying) {
+                        instrumentalPlayer.pause()
+                    }
                 }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
+                if (mediaItem?.mediaId != currentInstrumentalOriginalTrackId) {
+                    isUsingRealInstrumental = false
+                    if (::instrumentalPlayer.isInitialized) {
+                        instrumentalPlayer.pause()
+                        instrumentalPlayer.volume = 0f
+                    }
+                    if (!isCrossfading) {
+                        activePlayer.volume = 1f
+                    }
+                    if (isKaraokeEnabled) {
+                        // Aplica temporariamente o filtro DSP até o novo instrumental da nova faixa ficar pronto
+                        vocalProcessors.forEach {
+                            it.isKaraokeEnabled = true
+                            it.vocalLevel = karaokeVocalLevel
+                        }
+                    }
+                }
                 // Trata opção 'Sem pausas' (Gapless): se desativada, insere pausa entre faixas
                 if (!isGaplessEnabled() &&
                     !isCrossfading &&
@@ -590,6 +818,9 @@ class AudioPlayerService : MediaSessionService() {
             ) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) {
                     lastSeekTimestampMs = System.currentTimeMillis()
+                    if (isKaraokeEnabled && isUsingRealInstrumental && ::instrumentalPlayer.isInitialized) {
+                        instrumentalPlayer.seekTo(newPosition.positionMs.coerceAtLeast(0L))
+                    }
                     if (isCrossfading) {
                         // Se o usuário buscar na timeline durante um crossfade, encerra a transição sem colapso abrupto
                         crossfadeJob?.cancel()
@@ -729,6 +960,38 @@ class AudioPlayerService : MediaSessionService() {
         playerB = createExoPlayer(handleAudioFocus = false)
         activePlayer = playerA
         fadingPlayer = null
+
+        // Player dedicado em standby para faixas Instrumentais / Karaokê sincronizadas (sem filtro DSP para pureza de estúdio)
+        instrumentalPlayer = ExoPlayer.Builder(this)
+            .setLoadControl(buildLoadControl())
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(this).setDataSourceFactory(resolvingDataSourceFactory)
+            )
+            .setAudioAttributes(audioAttributes, false)
+            .setHandleAudioBecomingNoisy(false)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build()
+            .apply {
+                volume = 0f
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) {
+                            isInstrumentalStreamReady = true
+                            Log.i(TAG, "Instrumental standby PRONTO para troca instantânea ($currentInstrumentalVideoId)")
+                            if (isKaraokeEnabled &&
+                                activePlayer.currentMediaItem?.mediaId == currentInstrumentalOriginalTrackId
+                            ) {
+                                applyKaraokeState(true, karaokeVocalLevel)
+                            }
+                        }
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        Log.w(TAG, "Erro ao preparar faixa instrumental standby: ${error.message}")
+                        isInstrumentalStreamReady = false
+                    }
+                })
+            }
         try {
             val openIntent = Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
                 putExtra(AudioEffect.EXTRA_AUDIO_SESSION, activePlayer.audioSessionId)
@@ -775,11 +1038,15 @@ class AudioPlayerService : MediaSessionService() {
         transitionMonitorJob?.cancel()
         crossfadeJob?.cancel()
         fadingPlayer = null
+        vocalProcessors.clear()
         if (::playerA.isInitialized) {
             playerA.release()
         }
         if (::playerB.isInitialized) {
             playerB.release()
+        }
+        if (::instrumentalPlayer.isInitialized) {
+            instrumentalPlayer.release()
         }
         mediaSession?.run {
             release()

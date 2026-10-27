@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
         // Inicializa a conexão com o MediaSessionService em segundo plano
         viewModel.initializePlayerController(this)
 
-        handleUpdateIntent(intent)
+        handleIncomingIntent(intent)
 
         setContent {
             NERFMusicTheme {
@@ -42,12 +42,15 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleUpdateIntent(intent)
+        handleIncomingIntent(intent)
     }
 
-    private fun handleUpdateIntent(intent: Intent?) {
+    private fun handleIncomingIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(UpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false) == true) {
             viewModel.checkForAppUpdates()
+        }
+        intent?.data?.let { deepLinkUri ->
+            viewModel.handleDeepLink(deepLinkUri)
         }
     }
 

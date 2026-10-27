@@ -119,6 +119,19 @@ fun MainScreen(
     val currentLyrics by viewModel.currentLyrics.collectAsState()
     val trackRelatedData by viewModel.trackRelatedData.collectAsState()
     val isLoadingRelated by viewModel.isLoadingRelated.collectAsState()
+    val karaokeSyncSnapshot by viewModel.karaokeSyncSnapshot.collectAsState()
+    val isKaraokeVocalIsolationEnabled by viewModel.isKaraokeVocalIsolationEnabled.collectAsState()
+    val karaokeVocalLevel by viewModel.karaokeVocalLevel.collectAsState()
+    val lyricsOffsetMs by viewModel.lyricsOffsetMs.collectAsState()
+    val showLyricsTranslation by viewModel.showLyricsTranslation.collectAsState()
+    val showLyricsPronunciation by viewModel.showLyricsPronunciation.collectAsState()
+    val hideOriginalLyrics by viewModel.hideOriginalLyrics.collectAsState()
+    val isTranslatingLyrics by viewModel.isTranslatingLyrics.collectAsState()
+    val translationTargetLanguage by viewModel.translationTargetLanguage.collectAsState()
+    val isInstrumentalTrackReady by viewModel.isInstrumentalTrackReady.collectAsState()
+    val isUsingRealInstrumental by viewModel.isUsingRealInstrumental.collectAsState()
+    val jamSessionState by viewModel.jamSessionState.collectAsState()
+    val isJamSheetVisible by viewModel.isJamSheetVisible.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     val userPlaylists by viewModel.userPlaylists.collectAsState()
@@ -539,9 +552,41 @@ fun MainScreen(
                     navController.navigate("album/$albumId") {
                         launchSingleTop = true
                     }
-                }
+                },
+                karaokeSyncSnapshot = karaokeSyncSnapshot,
+                isKaraokeVocalIsolationEnabled = isKaraokeVocalIsolationEnabled,
+                karaokeVocalLevel = karaokeVocalLevel,
+                lyricsOffsetMs = lyricsOffsetMs,
+                showLyricsTranslation = showLyricsTranslation,
+                showLyricsPronunciation = showLyricsPronunciation,
+                hideOriginalLyrics = hideOriginalLyrics,
+                isTranslatingLyrics = isTranslatingLyrics,
+                translationTargetLanguage = translationTargetLanguage,
+                isInstrumentalTrackReady = isInstrumentalTrackReady,
+                isUsingRealInstrumental = isUsingRealInstrumental,
+                jamSessionState = jamSessionState,
+                onToggleKaraokeVocalIsolation = { viewModel.toggleKaraokeVocalIsolation() },
+                onSetKaraokeVocalLevel = { level -> viewModel.setKaraokeVocalLevel(level) },
+                onAdjustLyricsOffset = { deltaMs -> viewModel.adjustLyricsOffset(deltaMs) },
+                onResetLyricsOffset = { viewModel.resetLyricsOffset() },
+                onToggleLyricsTranslation = { viewModel.toggleLyricsTranslation() },
+                onToggleLyricsPronunciation = { viewModel.toggleLyricsPronunciation() },
+                onToggleHideOriginalLyrics = { viewModel.toggleHideOriginalLyrics() },
+                onSelectTranslationTargetLanguage = { lang -> viewModel.selectTranslationTargetLanguage(lang) },
+                onOpenJamSheet = { viewModel.openJamSheet() }
             )
         }
+    }
+
+    if (isJamSheetVisible) {
+        JamSessionSheet(
+            jamState = jamSessionState,
+            onDismiss = { viewModel.closeJamSheet() },
+            onStartHostJam = { customRelayWs -> viewModel.startHostJam(customRelayWs) },
+            onJoinJamInput = { input -> viewModel.joinJamFromInput(input) },
+            onLeaveJam = { viewModel.leaveJam() },
+            onUpdateDisplayName = { name -> viewModel.updateJamDisplayName(name) }
+        )
     }
 
     if (showSaveToPlaylistSheet && playbackState.currentTrack != null) {

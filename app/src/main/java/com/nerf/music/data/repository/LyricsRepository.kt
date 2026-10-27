@@ -4,6 +4,7 @@ import android.util.Log
 import com.nerf.music.data.model.LyricsData
 import com.nerf.music.data.model.SyncedLyricsLine
 import com.nerf.music.data.network.InnerTubeCatalogClient
+import com.nerf.music.player.KaraokeLyricsEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -249,7 +250,8 @@ class LyricsRepositoryImpl(
                     trackId = trackId,
                     isSynced = true,
                     plainLyrics = plainLyrics,
-                    syncedLines = lines
+                    syncedLines = lines,
+                    hasPronunciation = lines.any { !it.pronunciationText.isNullOrBlank() }
                 )
             }
         }
@@ -267,29 +269,7 @@ class LyricsRepositoryImpl(
     }
 
     private fun parseLrc(lrcText: String): List<SyncedLyricsLine> {
-        val rawList = mutableListOf<SyncedLyricsLine>()
-        lrcText.lines().forEach { line ->
-            val trimmed = line.trim()
-            val matcher = lrcPattern.matcher(trimmed)
-            if (matcher.matches()) {
-                val min = matcher.group(1)?.toLongOrNull() ?: 0L
-                val sec = matcher.group(2)?.toLongOrNull() ?: 0L
-                val millisRaw = matcher.group(3) ?: "0"
-                val ms = if (millisRaw.length == 2) {
-                    millisRaw.toLong() * 10L
-                } else {
-                    millisRaw.toLongOrNull() ?: 0L
-                }
-                val totalMs = (min * 60 * 1000L) + (sec * 1000L) + ms
-                val text = matcher.group(4)?.trim().orEmpty()
-                if (text.isNotBlank() && !text.equals("null", ignoreCase = true)) {
-                    rawList.add(SyncedLyricsLine(timeMs = totalMs, text = text))
-                }
-            }
-        }
-        val sorted = rawList.sortedBy { it.timeMs }
-        // Retorna versos naturais completos do LRC (sem fragmentacao artificial)
-        return rawList.sortedBy { it.timeMs }
+        return KaraokeLyricsEngine.parseLrcWithKaraokeTiming(lrcText)
     }
 
     private fun cleanTrackTitle(title: String): String {
