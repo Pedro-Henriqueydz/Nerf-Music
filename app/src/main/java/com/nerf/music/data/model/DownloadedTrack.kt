@@ -8,5 +8,6 @@ data class DownloadedTrack(
     val localFilePath: String,
     val downloadedAtEpochMs: Long = System.currentTimeMillis(),
     val fileSizeBytes: Long = 0L,
-    val isSmartDownload: Boolean = false
+    val isSmartDownload: Boolean = false,
+    val localArtworkPath: String? = null
 )

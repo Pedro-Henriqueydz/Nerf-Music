@@ -386,7 +386,11 @@ fun FullPlayerSheet(
 
     // 1. Extração de Cor Dinâmica da Capa via Palette API
     var targetPaletteColor by remember { mutableStateOf(Color(0xFF381E17)) }
-    val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
+    val localArtwork = remember(track.id) {
+        val artFile = java.io.File(context.filesDir, "offline_audio/${track.id}.jpg")
+        if (artFile.exists()) "file://${artFile.absolutePath}" else null
+    }
+    val artworkUrl = localArtwork ?: track.highResThumbnailUrl ?: track.thumbnailUrl
 
     LaunchedEffect(track.id, artworkUrl) {
         if (artworkUrl.isNullOrBlank()) {
@@ -1279,7 +1283,7 @@ fun FullPlayerSheet(
                             }
 
                             AnimatedVisibility(
-                                visible = !lyricsLine.isNullOrBlank() && halfExpansionFraction < 0.35f,
+                                visible = !lyricsLine.isNullOrBlank() && !lyricsLine.equals("null", ignoreCase = true) && halfExpansionFraction < 0.35f,
                                 enter = fadeIn(animationSpec = tween(300)),
                                 exit = fadeOut(animationSpec = tween(200)),
                                 modifier = Modifier
@@ -2717,7 +2721,7 @@ fun PlayerRelatedSheetContent(
                     modifier = Modifier.size(36.dp)
                 )
             }
-        } else if (relatedData == null || relatedData.sections.isEmpty()) {
+        } else if (relatedData == null || (relatedData.sections.isEmpty() && relatedData.aboutArtistDescription.isNullOrBlank())) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3093,7 +3097,7 @@ private fun AppleMusicLyricsView(
                 }
         ) {
             val hasSyncedLyrics = lyrics != null && lyrics.isSynced && lyrics.syncedLines.isNotEmpty()
-            val hasPlainLyrics = lyrics != null && !lyrics.plainLyrics.isNullOrBlank()
+            val hasPlainLyrics = lyrics != null && !lyrics.plainLyrics.isNullOrBlank() && !lyrics.plainLyrics.equals("null", ignoreCase = true)
 
             if (hasSyncedLyrics) {
                 LazyColumn(

@@ -314,9 +314,8 @@ class InnerTubeCatalogClient(
         if (jsonString.isBlank()) return TrackRelatedData()
         return try {
             val root = JSONObject(jsonString)
-            val sectionContents = root.optJSONObject("contents")
-                ?.optJSONObject("sectionListRenderer")
-                ?.optJSONArray("contents") ?: JSONArray()
+            val contentsObj = root.optJSONObject("contents")
+            val sectionContents = extractSectionListContents(contentsObj)
 
             val sections = mutableListOf<RelatedSection>()
             var aboutHeader: String? = null
@@ -393,6 +392,44 @@ class InnerTubeCatalogClient(
         } catch (e: Exception) {
             TrackRelatedData()
         }
+    }
+
+    private fun extractSectionListContents(contentsObj: JSONObject?): JSONArray {
+        if (contentsObj == null) return JSONArray()
+        // 1. Direct sectionListRenderer
+        val direct = contentsObj.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+        if (direct != null && direct.length() > 0) return direct
+
+        // 2. singleColumnBrowseResultsRenderer
+        val singleCol = contentsObj.optJSONObject("singleColumnBrowseResultsRenderer")
+        if (singleCol != null) {
+            val tabs = singleCol.optJSONArray("tabs")
+            if (tabs != null) {
+                for (i in 0 until tabs.length()) {
+                    val tabContent = tabs.optJSONObject(i)?.optJSONObject("tabRenderer")?.optJSONObject("content")
+                    val sec = tabContent?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                    if (sec != null && sec.length() > 0) return sec
+                }
+            }
+        }
+
+        // 3. twoColumnBrowseResultsRenderer
+        val twoCol = contentsObj.optJSONObject("twoColumnBrowseResultsRenderer")
+        if (twoCol != null) {
+            val secContents = twoCol.optJSONObject("secondaryContents")?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+            if (secContents != null && secContents.length() > 0) return secContents
+
+            val tabs = twoCol.optJSONArray("tabs")
+            if (tabs != null) {
+                for (i in 0 until tabs.length()) {
+                    val tabContent = tabs.optJSONObject(i)?.optJSONObject("tabRenderer")?.optJSONObject("content")
+                    val sec = tabContent?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                    if (sec != null && sec.length() > 0) return sec
+                }
+            }
+        }
+
+        return direct ?: JSONArray()
     }
 
     suspend fun getAlbumOrPlaylist(browseId: String): Result<AlbumDetail> = withContext(Dispatchers.IO) {
@@ -710,12 +747,19 @@ class InnerTubeCatalogClient(
             if (tabs != null) {
                 for (t in 0 until tabs.length()) {
                     val tabItem = tabs.optJSONObject(t)?.optJSONObject("tabRenderer") ?: continue
-                    val tabTitle = tabItem.optString("title").lowercase(Locale.ROOT)
+                    val titleObj = tabItem.optJSONObject("title")
+                    val tabTitle = if (titleObj != null) {
+                        extractSegmentsFromRuns(titleObj.optJSONArray("runs")).joinToString(" ").lowercase(Locale.ROOT)
+                    } else {
+                        tabItem.optString("title").lowercase(Locale.ROOT)
+                    }
                     val bId = tabItem.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
                     if (!bId.isNullOrBlank()) {
-                        if (tabTitle.contains("relacionad") || tabTitle.contains("related")) {
+                        if (tabTitle.contains("relacionad") || tabTitle.contains("related") ||
+                            bId.startsWith("MPTR") || bId.startsWith("FEmusic_related")) {
                             relatedBrowseId = bId
-                        } else if (tabTitle.contains("letra") || tabTitle.contains("lyric")) {
+                        } else if (tabTitle.contains("letra") || tabTitle.contains("lyric") ||
+                            bId.startsWith("MPLY") || bId.startsWith("FEmusic_lyrics")) {
                             lyricsBrowseId = bId
                         }
                     }

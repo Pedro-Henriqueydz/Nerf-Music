@@ -15,6 +15,12 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
+fun JSONObject.optCleanString(key: String): String? {
+    if (isNull(key)) return null
+    val v = optString(key).trim()
+    return if (v.isEmpty() || v.equals("null", ignoreCase = true)) null else v
+}
+
 interface LyricsRepository {
     suspend fun getLyrics(trackId: String, title: String, artist: String, durationSeconds: Int): Result<LyricsData?>
 }
@@ -173,8 +179,8 @@ class LyricsRepositoryImpl(
                     val candTrack = item.optString("trackName", "").trim()
                     val candArtist = item.optString("artistName", "").trim()
                     val candDuration = item.optDouble("duration", 0.0).toInt()
-                    val hasSynced = item.optString("syncedLyrics", "").isNotBlank()
-                    val hasPlain = item.optString("plainLyrics", "").isNotBlank()
+                    val hasSynced = item.optCleanString("syncedLyrics") != null
+                    val hasPlain = item.optCleanString("plainLyrics") != null
                     if (!hasSynced && !hasPlain) continue
 
                     val artistMatches = isArtistMatch(candArtist, expectedArtist, primaryArtist)
@@ -232,22 +238,22 @@ class LyricsRepositoryImpl(
     }
 
     private fun parseLrclibJson(obj: JSONObject, trackId: String): LyricsData? {
-        val syncedLyrics = obj.optString("syncedLyrics", "").trim()
-        val plainLyrics = obj.optString("plainLyrics", "").trim()
+        val syncedLyrics = obj.optCleanString("syncedLyrics")
+        val plainLyrics = obj.optCleanString("plainLyrics")
 
-        if (syncedLyrics.isNotEmpty()) {
+        if (!syncedLyrics.isNullOrEmpty()) {
             val lines = parseLrc(syncedLyrics)
             if (lines.isNotEmpty()) {
                 return LyricsData(
                     trackId = trackId,
                     isSynced = true,
-                    plainLyrics = plainLyrics.ifEmpty { null },
+                    plainLyrics = plainLyrics,
                     syncedLines = lines
                 )
             }
         }
 
-        if (plainLyrics.isNotEmpty()) {
+        if (!plainLyrics.isNullOrEmpty()) {
             return LyricsData(
                 trackId = trackId,
                 isSynced = false,
@@ -275,7 +281,7 @@ class LyricsRepositoryImpl(
                 }
                 val totalMs = (min * 60 * 1000L) + (sec * 1000L) + ms
                 val text = matcher.group(4)?.trim().orEmpty()
-                if (text.isNotBlank()) {
+                if (text.isNotBlank() && !text.equals("null", ignoreCase = true)) {
                     rawList.add(SyncedLyricsLine(timeMs = totalMs, text = text))
                 }
             }

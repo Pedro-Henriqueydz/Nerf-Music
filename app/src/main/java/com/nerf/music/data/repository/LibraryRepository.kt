@@ -7,8 +7,12 @@ import com.nerf.music.data.model.Track
 import com.nerf.music.data.model.UserPlaylist
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.player.StreamResolver
+import com.nerf.music.data.db.AppDatabase
+import com.nerf.music.data.db.DownloadedTrackEntity
 import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +44,7 @@ interface LibraryRepository {
     fun getDownloadedFilePath(trackId: String): String?
     suspend fun downloadTrack(track: Track, isSmartDownload: Boolean = false, onProgress: (Float) -> Unit = {}): Result<DownloadedTrack>
     fun removeDownload(trackId: String): Boolean
+    suspend fun syncDownloadsWithDisk(): Int
 
     fun createPlaylist(title: String, description: String = "", initialTracks: List<Track> = emptyList()): UserPlaylist
     /** Cria ou atualiza a playlist importada identificada pela chave estável de origem. */
@@ -87,6 +92,9 @@ class LibraryRepositoryImpl(
         if (!exists()) mkdirs()
     }
 
+    private val database = AppDatabase.getInstance(context)
+    private val downloadedTrackDao = database.downloadedTrackDao()
+
     override val likedTracksFlow: StateFlow<List<Track>> = sharedLikedTracksFlow
     override val playlistsFlow: StateFlow<List<UserPlaylist>> = sharedPlaylistsFlow
     override val downloadedTracksFlow: StateFlow<List<DownloadedTrack>> = sharedDownloadedTracksFlow
@@ -102,6 +110,27 @@ class LibraryRepositoryImpl(
     init {
         loadData()
         prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val dbTracks = downloadedTrackDao.getAllTracks()
+                if (dbTracks.isNotEmpty()) {
+                    val tracks = dbTracks.map { it.toDownloadedTrack() }
+                    _downloadedTracksFlow.value = tracks
+                    saveDownloads(tracks)
+                } else {
+                    val rawDownloads = prefs.getString(KEY_DOWNLOADS, null)
+                    if (!rawDownloads.isNullOrBlank()) {
+                        val list = json.decodeFromString<List<DownloadedTrack>>(rawDownloads)
+                        val entities = list.map { DownloadedTrackEntity.fromDownloadedTrack(it) }
+                        downloadedTrackDao.insertAll(entities)
+                    }
+                }
+                syncDownloadsWithDisk()
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha na inicialização do Room DB: ${e.message}")
+            }
+        }
     }
 
     private fun loadData() {
@@ -414,13 +443,50 @@ class LibraryRepositoryImpl(
                 tempFile.delete()
             }
 
+            // Baixa o companion artwork para persistência offline
+            var artworkLocalPath: String? = null
+            if (!track.thumbnailUrl.isNullOrBlank() && !track.thumbnailUrl.startsWith("file://")) {
+                val artworkFile = File(downloadsDir, "${track.id}.jpg")
+                try {
+                    val artReq = Request.Builder()
+                        .url(track.thumbnailUrl)
+                        .get()
+                        .build()
+                    httpClient.newCall(artReq).execute().use { artResp ->
+                        if (artResp.isSuccessful) {
+                            artResp.body?.byteStream()?.use { artIn ->
+                                FileOutputStream(artworkFile).use { artOut ->
+                                    artIn.copyTo(artOut)
+                                }
+                            }
+                            if (artworkFile.exists() && artworkFile.length() > 0) {
+                                artworkLocalPath = artworkFile.absolutePath
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Falha ao baixar artwork de ${track.id}: ${e.message}")
+                }
+            } else if (File(downloadsDir, "${track.id}.jpg").exists()) {
+                artworkLocalPath = File(downloadsDir, "${track.id}.jpg").absolutePath
+            }
+
+            val effectiveThumbnail = artworkLocalPath?.let { "file://$it" } ?: track.thumbnailUrl
             val downloadedTrack = DownloadedTrack(
-                track = track,
+                track = track.copy(thumbnailUrl = effectiveThumbnail),
                 localFilePath = destFile.absolutePath,
                 downloadedAtEpochMs = System.currentTimeMillis(),
                 fileSizeBytes = destFile.length(),
-                isSmartDownload = isSmartDownload
+                isSmartDownload = isSmartDownload,
+                localArtworkPath = artworkLocalPath
             )
+
+            // Salva no banco de dados Room
+            try {
+                downloadedTrackDao.insert(DownloadedTrackEntity.fromDownloadedTrack(downloadedTrack))
+            } catch (e: Exception) {
+                Log.w(TAG, "Erro ao persistir download no Room DB: ${e.message}")
+            }
 
             val current = _downloadedTracksFlow.value.filterNot { it.track.id == track.id }.toMutableList()
             current.add(0, downloadedTrack)
@@ -445,6 +511,10 @@ class LibraryRepositoryImpl(
                 f.delete()
                 deletedAny = true
             }
+            val artFile = File(downloadsDir, "$trackId.jpg")
+            if (artFile.exists()) {
+                artFile.delete()
+            }
             _downloadedTracksFlow.value = current
             saveDownloads(current)
         }
@@ -455,7 +525,122 @@ class LibraryRepositoryImpl(
                 deletedAny = true
             }
         }
+        val artFile = File(downloadsDir, "$trackId.jpg")
+        if (artFile.exists()) {
+            artFile.delete()
+        }
+
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                downloadedTrackDao.deleteById(trackId)
+            } catch (e: Exception) {
+                Log.w(TAG, "Erro ao deletar do Room DB: ${e.message}")
+            }
+        }
+
         return deletedAny || index >= 0
+    }
+
+    override suspend fun syncDownloadsWithDisk(): Int = withContext(Dispatchers.IO) {
+        var reconciledCount = 0
+        try {
+            // 1. Escaneia offline_audio por arquivos de áudio válidos
+            val audioExtensions = setOf("opus", "m4a", "webm")
+            val diskFiles = downloadsDir.listFiles { file ->
+                file.isFile && file.extension.lowercase() in audioExtensions
+            }?.toList().orEmpty()
+
+            val diskFilesByTrackId = mutableMapOf<String, File>()
+            for (file in diskFiles) {
+                val trackId = file.nameWithoutExtension
+                if (trackId.isNotBlank()) {
+                    diskFilesByTrackId[trackId] = file
+                }
+            }
+
+            // 2. Busca registros atuais no Room DB
+            val currentDbEntities = downloadedTrackDao.getAllTracks().toMutableList()
+            val dbTrackIds = currentDbEntities.map { it.id }.toSet()
+
+            // 3. Purga registros do banco cujo arquivo físico foi removido
+            for (entity in currentDbEntities) {
+                val physicalFile = File(entity.localFilePath)
+                val exists = physicalFile.exists() || diskFilesByTrackId.containsKey(entity.id)
+                if (!exists) {
+                    downloadedTrackDao.deleteById(entity.id)
+                    reconciledCount++
+                } else if (!physicalFile.exists() && diskFilesByTrackId.containsKey(entity.id)) {
+                    val newFile = diskFilesByTrackId[entity.id]!!
+                    val updated = entity.copy(
+                        localFilePath = newFile.absolutePath,
+                        fileSizeBytes = newFile.length()
+                    )
+                    downloadedTrackDao.update(updated)
+                    reconciledCount++
+                }
+            }
+
+            // 4. Recupera arquivos órfãos no disco que não constam no banco
+            val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
+            val recentTracks = try { historyRepo.getRecentlyPlayed() } catch (_: Exception) { emptyList() }
+            val recentMap = recentTracks.associateBy { it.id }
+
+            for ((trackId, file) in diskFilesByTrackId) {
+                val artFile = File(downloadsDir, "$trackId.jpg")
+                val localArtPath = if (artFile.exists() && artFile.length() > 0) artFile.absolutePath else null
+
+                if (!dbTrackIds.contains(trackId)) {
+                    val knownTrack = recentMap[trackId] ?: _likedTracksFlow.value.firstOrNull { it.id == trackId }
+                    val track = knownTrack ?: Track(
+                        id = trackId,
+                        title = "Faixa offline $trackId",
+                        artist = "Áudio Local",
+                        thumbnailUrl = localArtPath?.let { "file://$it" },
+                        durationText = "--:--",
+                        durationSeconds = 0L
+                    )
+
+                    val newEntity = DownloadedTrackEntity(
+                        id = trackId,
+                        title = track.title,
+                        artist = track.artist,
+                        album = track.album,
+                        thumbnailUrl = track.thumbnailUrl,
+                        durationText = track.durationText,
+                        durationSeconds = track.durationSeconds,
+                        sourceIdentifier = track.sourceIdentifier,
+                        playlistId = track.playlistId,
+                        browseId = track.browseId,
+                        artistBrowseId = track.artistBrowseId,
+                        localFilePath = file.absolutePath,
+                        downloadedAtEpochMs = file.lastModified(),
+                        fileSizeBytes = file.length(),
+                        isSmartDownload = false,
+                        localArtworkPath = localArtPath
+                    )
+                    downloadedTrackDao.insert(newEntity)
+                    reconciledCount++
+                } else {
+                    val existingEntity = currentDbEntities.firstOrNull { it.id == trackId }
+                    if (existingEntity != null && existingEntity.localArtworkPath.isNullOrBlank() && localArtPath != null) {
+                        downloadedTrackDao.update(existingEntity.copy(localArtworkPath = localArtPath))
+                        reconciledCount++
+                    }
+                }
+            }
+
+            // 5. Atualiza fluxo em memória e sincroniza SharedPreferences
+            val updatedEntities = downloadedTrackDao.getAllTracks()
+            val updatedList = updatedEntities.map { it.toDownloadedTrack() }
+            _downloadedTracksFlow.value = updatedList
+            saveDownloads(updatedList)
+
+            Log.i(TAG, "syncDownloadsWithDisk concluído. $reconciledCount itens reconciliados, ${updatedList.size} faixas offline.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro durante syncDownloadsWithDisk: ${e.message}", e)
+        }
+        reconciledCount
     }
 
     private fun saveDownloads(downloads: List<DownloadedTrack>) {

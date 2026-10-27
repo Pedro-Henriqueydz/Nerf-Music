@@ -1,4 +1,4 @@
-﻿package com.nerf.music
+package com.nerf.music
 
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
@@ -669,5 +669,130 @@ class InnerTubeCatalogClientTest {
         assertEquals("Calma", sections[1].items[0].title)
         assertEquals("Marília Mendonça", sections[1].items[0].artist)
         assertEquals("t5TnLL1AhOY", sections[1].items[0].id)
+    }
+
+    @Test
+    fun testParseNextResponseSupportsJapaneseAndCanonicalBrowseIdPrefixes() {
+        val nextResponseFixture = """
+        {
+          "contents": {
+            "singleColumnMusicWatchNextResultsRenderer": {
+              "tabbedRenderer": {
+                "watchNextTabbedResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "title": { "runs": [{ "text": "次の曲" }] },
+                        "endpoint": {
+                          "browseEndpoint": { "browseId": "VLPL_queue" }
+                        }
+                      }
+                    },
+                    {
+                      "tabRenderer": {
+                        "title": { "runs": [{ "text": "歌詞" }] },
+                        "endpoint": {
+                          "browseEndpoint": { "browseId": "MPLYtrack_123" }
+                        }
+                      }
+                    },
+                    {
+                      "tabRenderer": {
+                        "title": { "runs": [{ "text": "関連" }] },
+                        "endpoint": {
+                          "browseEndpoint": { "browseId": "MPTRkessoku_band_related" }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+        """.trimIndent()
+
+        val result = client.parseNextResponse(nextResponseFixture)
+        assertEquals("MPTRkessoku_band_related", result.relatedBrowseId)
+        assertEquals("MPLYtrack_123", result.lyricsBrowseId)
+    }
+
+    @Test
+    fun testParseRelatedResponseHandlesNestedSingleAndTwoColumnRenderers() {
+        val nestedFixture = """
+        {
+          "contents": {
+            "singleColumnBrowseResultsRenderer": {
+              "tabs": [
+                {
+                  "tabRenderer": {
+                    "content": {
+                      "sectionListRenderer": {
+                        "contents": [
+                          {
+                            "musicDescriptionShelfRenderer": {
+                              "header": { "runs": [{ "text": "Sobre o artista" }] },
+                              "description": { "runs": [{ "text": "Banda de J-Rock formada por Hitori Gotoh." }] }
+                            }
+                          },
+                          {
+                            "musicCarouselShelfRenderer": {
+                              "header": {
+                                "musicCarouselShelfBasicHeaderRenderer": {
+                                  "title": { "runs": [{ "text": "Músicas semelhantes" }] }
+                                }
+                              },
+                              "contents": [
+                                {
+                                  "musicResponsiveListItemRenderer": {
+                                    "flexColumns": [
+                                      {
+                                        "musicResponsiveListItemFlexColumnRenderer": {
+                                          "text": { "runs": [{ "text": "Seishun Complex" }] }
+                                        }
+                                      },
+                                      {
+                                        "musicResponsiveListItemFlexColumnRenderer": {
+                                          "text": { "runs": [{ "text": "Kessoku Band" }] }
+                                        }
+                                      }
+                                    ],
+                                    "overlay": {
+                                      "musicItemThumbnailOverlayRenderer": {
+                                        "content": {
+                                          "musicPlayButtonRenderer": {
+                                            "playNavigationEndpoint": {
+                                              "watchEndpoint": { "videoId": "kessoku_vid_1" }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+        """.trimIndent()
+
+        val relatedData = client.parseRelatedResponse(nestedFixture)
+        assertNotNull(relatedData)
+        assertEquals("Sobre o artista", relatedData.aboutArtistHeader)
+        assertEquals("Banda de J-Rock formada por Hitori Gotoh.", relatedData.aboutArtistDescription)
+        assertEquals(1, relatedData.sections.size)
+        assertEquals("Músicas semelhantes", relatedData.sections[0].title)
+        assertEquals(1, relatedData.sections[0].items.size)
+        assertEquals("Seishun Complex", relatedData.sections[0].items[0].title)
+        assertEquals("Kessoku Band", relatedData.sections[0].items[0].artist)
+        assertEquals("kessoku_vid_1", relatedData.sections[0].items[0].id)
     }
 }
