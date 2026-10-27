@@ -1,17 +1,17 @@
 # Graph Report - Nerf Music  (2026-10-27)
 
 ## Corpus Check
-- 97 files · ~105,160 words
+- 97 files · ~105,231 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 25 file(s) not represented in the graph (top: .xml 12, .otf 5, (none) 2)
 
 ## Summary
-- 1726 nodes · 4082 edges · 73 communities (38 shown, 35 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 61 edges (avg confidence: 0.89)
+- 1726 nodes · 4083 edges · 74 communities (37 shown, 37 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 62 edges (avg confidence: 0.89)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `d28ae38e`
+- Built from commit: `d04f2cbf`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -58,6 +58,7 @@
 - ArtistScreen.kt
 - AudioQuality
 - DownloadedTrackDao
+- Corrigido
 - UserSettingsRepository
 - Track
 - .loadHomeFeed
@@ -106,15 +107,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (73 total, 35 thin omitted)
+## Communities (74 total, 37 thin omitted)
 
 ### Community 1 - "PlayerScreen.kt"
 Cohesion: 0.02
 Nodes (4): largestFittingCharacterBoundary(), normalizeDynamicPaletteColor(), BroadcastReceiver, splitInlineLyricIntoSegments()
-
-### Community 2 - "AudioMetadataTagger"
-Cohesion: 0.36
-Nodes (3): AudioMetadataTagger, ExtractedMetadata, 4. Metadados e Sincronização Local de Downloads
 
 ### Community 3 - "MigrationManager"
 Cohesion: 0.07
@@ -182,11 +179,11 @@ Nodes (17): PlaybackState, AppleMusicLyricsView(), AppleMusicVolumeBar(), format
 
 ### Community 24 - "AudioPlayerService.kt"
 Cohesion: 0.06
-Nodes (3): AudioPlayerService, Listener, CachedStreamUrl
+Nodes (6): AudioPlayerService, Listener, CachedStreamUrl, Adicionado, Corrigido, [Unreleased] (Em Desenvolvimento / Não Lançado)
 
 ### Community 27 - "Registro de Alterações (Changelog) - NERF Music"
-Cohesion: 0.10
-Nodes (21): [1.0.8] - 2026-10-23, [1.1.0] - 2026-10-24, [1.2.0] - 2026-10-24, [1.3.0] - 2026-10-24, [1.3.2] - 2026-10-25, [1.3.3] - 2026-10-25, [1.3.4] - 2026-10-25, Adicionado (+13 more)
+Cohesion: 0.11
+Nodes (18): [1.0.8] - 2026-10-23, [1.1.0] - 2026-10-24, [1.2.0] - 2026-10-24, [1.3.0] - 2026-10-24, [1.3.2] - 2026-10-25, [1.3.3] - 2026-10-25, [1.3.4] - 2026-10-25, Adicionado (+10 more)
 
 ### Community 31 - "AudioCoreDownloadsCrossfadeQualityTest.kt"
 Cohesion: 0.11
@@ -228,28 +225,28 @@ Nodes (3): AlbumHeroHeader(), AlbumScreen(), AlbumTrackRow()
 Cohesion: 0.15
 Nodes (8): AudioQuality, AUTOMATIC, HIGH, LOW, NORMAL, VERY_HIGH, StreamResolver, StreamResolver
 
+### Community 46 - "Corrigido"
+Cohesion: 0.50
+Nodes (4): [1.3.5] - 2026-10-27 [RELEASED], Adicionado, Corrigido, Testes
+
 ### Community 48 - "Track"
 Cohesion: 0.09
 Nodes (9): Track, UserAffinityRepository, UserAffinityRepositoryImpl, RadioTuningMode, BALANCED, DEEP_CUTS, DISCOVERY, FAMILIAR (+1 more)
 
 ### Community 56 - "v1.3.5 — Core de Áudio, Parser, Metadados & Sincronização"
 Cohesion: 0.25
-Nodes (5): 1. Recomendações e Conteúdo Relacionado, 2. Letras e Exibição, 3. Core de Áudio, Crossfade e Segundo Plano, 🎵 NERF Music v1.3.5, v1.3.5 — Core de Áudio, Parser, Metadados & Sincronização
+Nodes (6): 1. Recomendações e Conteúdo Relacionado, 2. Letras e Exibição, 3. Core de Áudio, Crossfade e Segundo Plano, 4. Metadados e Sincronização Local de Downloads, 🎵 NERF Music v1.3.5, v1.3.5 — Core de Áudio, Parser, Metadados & Sincronização
 
 ### Community 57 - "NewPipeStreamResolver.kt"
 Cohesion: 0.10
 Nodes (4): NerfMusicApp, NewPipeStreamResolver, OkHttpDownloader, NewPipeStreamResolverTest
-
-### Community 59 - "AudioMetadataTaggerTest.kt"
-Cohesion: 0.24
-Nodes (5): AudioMetadataTaggerTest, [1.3.5] - 2026-10-27 [RELEASED], Adicionado, Corrigido, Testes
 
 ### Community 62 - "AudioCoreDownloadsCrossfadeQualityTest"
 Cohesion: 0.17
 Nodes (3): AudioCoreDownloadsCrossfadeQualityTest, StreamResolver, StreamResolver
 
 ### Community 65 - "NERF Music"
-Cohesion: 0.25
+Cohesion: 0.20
 Nodes (8): Compilar e instalar, NERF Music, Organização do código, Recursos, Requisitos, Tecnologias, Testes, Versão
 
 ### Community 74 - "MusicRepository"
@@ -263,7 +260,7 @@ Nodes (15): QueueExpansionState, COLLAPSED, EXPANDED, HALF_EXPANDED, Connectivit
 ## Knowledge Gaps
 - **54 isolated node(s):** `SPEED_DIAL`, `QUICK_PICKS_GRID`, `TWO_ROW_CAROUSEL`, `DAILY_DISCOVER`, `YOUR_DOWNLOADS` (+49 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 447 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **35 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **37 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_

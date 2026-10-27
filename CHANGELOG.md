@@ -28,6 +28,8 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
   - Troca instantânea (milissegundo zero) de `activePlayer` e `MediaSession` no `AudioPlayerService` durante skips manuais, removendo o atraso anterior de 2.5 a 5 segundos de espera assíncrona.
 - **Validação Estrita de Economia de Dados (Data Saver Enforcement):**
   - Aplicação de regras que impedem o download de recursos pesados (Canvas e capas de alta resolução) quando o modo Economia de Dados estiver ativo (`Sempre ativado` ou `Automático` em redes móveis). Faixas já presentes no cache local são executadas sem consumo de franquia.
+- **Encerramento de Reprodução ao Fechar na Tela de Recentes (`onTaskRemoved`):**
+  - Ajustado o `AudioPlayerService` para interromper imediatamente a reprodução de áudio, limpar a fila do player e dispensar a notificação em primeiro plano (`stopForeground(STOP_FOREGROUND_REMOVE)` e `stopSelf()`) quando o usuário encerra o aplicativo arrastando o card na tela de aplicativos recentes do Android. Músicas continuam tocando normalmente em segundo plano caso o app seja apenas minimizado (botão Home ou tela bloqueada).
 
 ---
 
