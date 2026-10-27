@@ -109,23 +109,34 @@ class NewPipeStreamResolver(
     private fun pickStreamForQuality(streams: List<AudioStream>, quality: AudioQuality): AudioStream {
         return when (quality) {
             AudioQuality.LOW -> {
-                // Menor bitrate viável (~48k-70k opus/m4a) para economia drástica de banda
+                // Menor bitrate (~48-64 kbps, ex: itag 139 / 249)
                 streams.minByOrNull { it.averageBitrate } ?: streams.first()
             }
             AudioQuality.NORMAL -> {
-                // Bitrate intermediário próximo a 128 kbps
+                // Bitrate intermediário alvo de 128 kbps (itag 140 / 250)
                 streams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128_000) } ?: streams.first()
             }
             AudioQuality.HIGH, AudioQuality.VERY_HIGH -> {
-                // Maior bitrate disponível (Lossless do catálogo: Opus 48kHz ou M4A de alta fidelidade)
-                streams.maxByOrNull { it.averageBitrate } ?: streams.first()
+                // Prioriza Opus (audio/webm, itag 251) sobre AAC devido à fidelidade acústica perceptual superior
+                val itag251 = streams.firstOrNull { it.itag == 251 }
+                if (itag251 != null) {
+                    itag251
+                } else {
+                    val opusStreams = streams.filter {
+                        it.codec?.contains("opus", ignoreCase = true) == true ||
+                                it.format?.name?.contains("webm", ignoreCase = true) == true
+                    }
+                    opusStreams.maxByOrNull { it.averageBitrate }
+                        ?: streams.maxByOrNull { it.averageBitrate }
+                        ?: streams.first()
+                }
             }
             AudioQuality.AUTOMATIC -> {
                 val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: true
                 if (isWifi) {
-                    streams.maxByOrNull { it.averageBitrate } ?: streams.first()
+                    pickStreamForQuality(streams, AudioQuality.HIGH)
                 } else {
-                    streams.minByOrNull { kotlin.math.abs(it.averageBitrate - 128_000) } ?: streams.first()
+                    pickStreamForQuality(streams, AudioQuality.NORMAL)
                 }
             }
         }

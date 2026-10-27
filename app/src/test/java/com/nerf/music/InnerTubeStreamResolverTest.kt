@@ -1,5 +1,6 @@
 package com.nerf.music
 
+import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.player.InnerTubeStreamResolver
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -154,6 +155,49 @@ class InnerTubeStreamResolverTest {
         val extractedUrl = resolver.extractAudioUrlFromPlayerResponse(json, "WEB_REMIX")
         assertNotNull("Deve fazer fallback para progressive formats", extractedUrl)
         assertEquals("https://example.com/progressive.mp4", extractedUrl)
+    }
+
+    @Test
+    fun testExtractAudioUrlWithQualitySelection() {
+        val json = """
+        {
+          "playabilityStatus": { "status": "OK" },
+          "streamingData": {
+            "adaptiveFormats": [
+              {
+                "itag": 249,
+                "mimeType": "audio/webm; codecs=\"opus\"",
+                "bitrate": 49496,
+                "url": "https://example.com/audio_low.webm"
+              },
+              {
+                "itag": 251,
+                "mimeType": "audio/webm; codecs=\"opus\"",
+                "bitrate": 136544,
+                "url": "https://example.com/audio_high.webm"
+              },
+              {
+                "itag": 140,
+                "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                "bitrate": 130677,
+                "url": "https://example.com/audio_mid.mp4"
+              }
+            ]
+          }
+        }
+        """.trimIndent()
+
+        val lowUrl = resolver.extractAudioUrlFromPlayerResponse(json, "TEST_CLIENT", AudioQuality.LOW)
+        assertEquals("LOW deve selecionar menor bitrate", "https://example.com/audio_low.webm", lowUrl)
+
+        val normalUrl = resolver.extractAudioUrlFromPlayerResponse(json, "TEST_CLIENT", AudioQuality.NORMAL)
+        assertEquals("NORMAL deve selecionar formato alvo de 128 kbps", "https://example.com/audio_mid.mp4", normalUrl)
+
+        val highUrl = resolver.extractAudioUrlFromPlayerResponse(json, "TEST_CLIENT", AudioQuality.HIGH)
+        assertEquals("HIGH deve priorizar Opus itag 251 de alta fidelidade", "https://example.com/audio_high.webm", highUrl)
+
+        val veryHighUrl = resolver.extractAudioUrlFromPlayerResponse(json, "TEST_CLIENT", AudioQuality.VERY_HIGH)
+        assertEquals("VERY_HIGH deve priorizar Opus itag 251", "https://example.com/audio_high.webm", veryHighUrl)
     }
 
     @Test

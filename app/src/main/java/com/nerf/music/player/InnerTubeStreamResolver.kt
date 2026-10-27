@@ -1,6 +1,9 @@
 package com.nerf.music.player
 
+import android.content.Context
 import android.util.Log
+import com.nerf.music.data.repository.AudioQuality
+import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -22,7 +25,8 @@ class InnerTubeStreamResolver(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    private val context: Context? = null
 ) : StreamResolver {
 
     companion object {
@@ -32,7 +36,10 @@ class InnerTubeStreamResolver(
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 
-    override suspend fun resolveStreamUrl(videoId: String): Result<String> = withContext(Dispatchers.IO) {
+    override suspend fun resolveStreamUrl(videoId: String): Result<String> =
+        resolveStreamUrl(videoId, targetQuality = null)
+
+    override suspend fun resolveStreamUrl(videoId: String, targetQuality: AudioQuality?): Result<String> = withContext(Dispatchers.IO) {
         if (videoId.isBlank()) {
             return@withContext Result.failure(IllegalArgumentException("Identificador de vídeo vazio"))
         }
@@ -121,7 +128,7 @@ class InnerTubeStreamResolver(
                 val response = httpClient.newCall(request).execute()
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: ""
-                    val audioUrl = extractAudioUrlFromPlayerResponse(body, config.clientName)
+                    val audioUrl = extractAudioUrlFromPlayerResponse(body, config.clientName, targetQuality)
                     if (!audioUrl.isNullOrBlank()) {
                         Log.i(TAG, "[${config.clientName}] URL de áudio resolvida com sucesso para videoId=$videoId")
                         return@withContext Result.success(audioUrl)
@@ -176,11 +183,14 @@ class InnerTubeStreamResolver(
     }
 
     /**
-     * Extrai a melhor URL direta de áudio disponível no JSON retornado pelo endpoint player.
-     * Prioriza faixas de áudio adaptativas (audio/webm, audio/mp4) com o maior bitrate.
-     * Registra avisos de diagnóstico para playabilityStatus e bloqueios por cipher.
+     * Extrai a URL direta de áudio disponível no JSON retornado pelo endpoint player com suporte
+     * à seleção de qualidade alvo (AudioQuality) e priorização de Opus (audio/webm, itag 251).
      */
-    fun extractAudioUrlFromPlayerResponse(jsonString: String, clientName: String = "CLIENT"): String? {
+    fun extractAudioUrlFromPlayerResponse(
+        jsonString: String,
+        clientName: String = "CLIENT",
+        targetQuality: AudioQuality? = null
+    ): String? {
         if (jsonString.isBlank()) return null
 
         return try {
@@ -200,8 +210,7 @@ class InnerTubeStreamResolver(
                 return null
             }
 
-            var bestAudioUrl: String? = null
-            var maxBitrate = -1L
+            val candidates = mutableListOf<CandidateFormat>()
 
             // 1. Procura em adaptiveFormats (DASH / formatos isolados de áudio)
             val adaptiveFormats = streamingData.optJSONArray("adaptiveFormats")
@@ -210,28 +219,23 @@ class InnerTubeStreamResolver(
                     val format = adaptiveFormats.optJSONObject(i) ?: continue
                     val mimeType = format.optString("mimeType")
                     val isAudio = mimeType.startsWith("audio/")
-
                     val url = format.optString("url")
                     val hasCipher = format.has("signatureCipher") || format.has("cipher")
+                    val itag = format.optInt("itag", -1)
+                    val bitrate = format.optLong("bitrate", 0L)
 
                     if (isAudio && url.isNullOrBlank() && hasCipher) {
-                        val itag = format.optInt("itag", -1)
                         Log.w(TAG, "[$clientName] Áudio bloqueado por Cipher para itag=$itag (mime=$mimeType)")
                     }
 
-                    if (!isAudio) continue
-                    if (url.isNullOrBlank()) continue
-
-                    val bitrate = format.optLong("bitrate", 0L)
-                    if (bitrate > maxBitrate) {
-                        maxBitrate = bitrate
-                        bestAudioUrl = url
+                    if (isAudio && !url.isNullOrBlank() && !hasCipher) {
+                        candidates.add(CandidateFormat(url = url, mimeType = mimeType, itag = itag, bitrate = bitrate))
                     }
                 }
             }
 
             // 2. Se não encontrou URL direta em adaptiveFormats, verifica formats progressivos
-            if (bestAudioUrl == null) {
+            if (candidates.isEmpty()) {
                 val formats = streamingData.optJSONArray("formats")
                 if (formats != null) {
                     for (i in 0 until formats.length()) {
@@ -239,33 +243,89 @@ class InnerTubeStreamResolver(
                         val url = format.optString("url")
                         val hasCipher = format.has("signatureCipher") || format.has("cipher")
                         val mimeType = format.optString("mimeType")
+                        val itag = format.optInt("itag", -1)
+                        val bitrate = format.optLong("bitrate", 0L)
 
                         if (url.isNullOrBlank() && hasCipher) {
-                            val itag = format.optInt("itag", -1)
                             Log.w(TAG, "[$clientName] Áudio progressivo bloqueado por Cipher para itag=$itag")
                         }
 
-                        if (url.isNullOrBlank()) continue
-
-                        if (mimeType.contains("audio") || mimeType.contains("mp4") || mimeType.contains("webm")) {
-                            val bitrate = format.optLong("bitrate", 0L)
-                            if (bitrate > maxBitrate) {
-                                maxBitrate = bitrate
-                                bestAudioUrl = url
-                            }
+                        if (!url.isNullOrBlank() && !hasCipher &&
+                            (mimeType.contains("audio") || mimeType.contains("mp4") || mimeType.contains("webm"))
+                        ) {
+                            candidates.add(CandidateFormat(url = url, mimeType = mimeType, itag = itag, bitrate = bitrate))
                         }
                     }
                 }
             }
 
-            if (bestAudioUrl != null) {
-                Log.i(TAG, "[$clientName] Faixa selecionada com sucesso (bitrate: $maxBitrate)")
+            if (candidates.isEmpty()) {
+                Log.w(TAG, "[$clientName] Nenhum formato de áudio reproduzível direto encontrado")
+                return null
             }
 
-            bestAudioUrl
+            // Seleciona o formato de acordo com a qualidade alvo informada
+            val selected = when (targetQuality) {
+                AudioQuality.LOW -> {
+                    // Menor bitrate viável (~48-64 kbps)
+                    candidates.minByOrNull { it.bitrate }
+                }
+                AudioQuality.NORMAL -> {
+                    // Bitrate intermediário próximo a 128 kbps (128_000 bps)
+                    candidates.minByOrNull { kotlin.math.abs(it.bitrate - 128_000) }
+                }
+                AudioQuality.HIGH, AudioQuality.VERY_HIGH -> {
+                    // Prioriza Opus (audio/webm, itag 251) sobre AAC com maior fidelidade acústica
+                    val itag251 = candidates.firstOrNull { it.itag == 251 }
+                    if (itag251 != null) {
+                        itag251
+                    } else {
+                        val opusCandidates = candidates.filter {
+                            it.mimeType.contains("webm", ignoreCase = true) || it.mimeType.contains("opus", ignoreCase = true)
+                        }
+                        opusCandidates.maxByOrNull { it.bitrate } ?: candidates.maxByOrNull { it.bitrate }
+                    }
+                }
+                AudioQuality.AUTOMATIC -> {
+                    val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: true
+                    if (isWifi) {
+                        val itag251 = candidates.firstOrNull { it.itag == 251 }
+                        if (itag251 != null) {
+                            itag251
+                        } else {
+                            val opusCandidates = candidates.filter {
+                                it.mimeType.contains("webm", ignoreCase = true) || it.mimeType.contains("opus", ignoreCase = true)
+                            }
+                            opusCandidates.maxByOrNull { it.bitrate } ?: candidates.maxByOrNull { it.bitrate }
+                        }
+                    } else {
+                        candidates.minByOrNull { kotlin.math.abs(it.bitrate - 128_000) }
+                    }
+                }
+                null -> {
+                    // Padrão: prioriza itag 251 se disponível e com bitrate alto, ou máximo bitrate absoluto
+                    val itag251 = candidates.firstOrNull { it.itag == 251 }
+                    val maxBitrate = candidates.maxOfOrNull { it.bitrate } ?: 0L
+                    if (itag251 != null && itag251.bitrate >= maxBitrate) {
+                        itag251
+                    } else {
+                        candidates.maxByOrNull { it.bitrate }
+                    }
+                }
+            } ?: candidates.first()
+
+            Log.i(TAG, "[$clientName] Faixa selecionada com sucesso (itag: ${selected.itag}, bitrate: ${selected.bitrate}, mime: ${selected.mimeType})")
+            selected.url
         } catch (e: Exception) {
             Log.e(TAG, "[$clientName] Erro ao analisar resposta do player: ${e.message}")
             null
         }
     }
+
+    private data class CandidateFormat(
+        val url: String,
+        val mimeType: String,
+        val itag: Int,
+        val bitrate: Long
+    )
 }

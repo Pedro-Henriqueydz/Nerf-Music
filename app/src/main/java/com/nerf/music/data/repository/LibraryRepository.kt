@@ -1,4 +1,4 @@
-﻿package com.nerf.music.data.repository
+package com.nerf.music.data.repository
 
 import android.content.Context
 import android.util.Log
@@ -19,6 +19,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.async
@@ -140,7 +141,19 @@ class LibraryRepositoryImpl(
             val rawDownloads = prefs.getString(KEY_DOWNLOADS, null)
             if (!rawDownloads.isNullOrBlank()) {
                 val list = json.decodeFromString<List<DownloadedTrack>>(rawDownloads)
-                val existing = list.filter { File(it.localFilePath).exists() }
+                val existing = list.mapNotNull { dt ->
+                    val file = File(dt.localFilePath)
+                    if (file.exists()) {
+                        dt
+                    } else {
+                        val fallback = listOf("m4a", "opus", "webm")
+                            .map { ext -> File(downloadsDir, "${dt.track.id}.$ext") }
+                            .firstOrNull { it.exists() }
+                        if (fallback != null) {
+                            dt.copy(localFilePath = fallback.absolutePath, fileSizeBytes = fallback.length())
+                        } else null
+                    }
+                }
                 _downloadedTracksFlow.value = existing
             } else {
                 _downloadedTracksFlow.value = emptyList()
@@ -193,14 +206,21 @@ class LibraryRepositoryImpl(
     }
 
     override fun isDownloaded(trackId: String): Boolean {
-        val dt = _downloadedTracksFlow.value.firstOrNull { it.track.id == trackId } ?: return false
-        return File(dt.localFilePath).exists()
+        val dt = _downloadedTracksFlow.value.firstOrNull { it.track.id == trackId }
+        if (dt != null && File(dt.localFilePath).exists()) return true
+        val possibleExts = listOf("opus", "m4a", "webm")
+        return possibleExts.any { ext -> File(downloadsDir, "$trackId.$ext").exists() }
     }
 
     override fun getDownloadedFilePath(trackId: String): String? {
-        val dt = _downloadedTracksFlow.value.firstOrNull { it.track.id == trackId } ?: return null
-        val f = File(dt.localFilePath)
-        return if (f.exists()) dt.localFilePath else null
+        val dt = _downloadedTracksFlow.value.firstOrNull { it.track.id == trackId }
+        if (dt != null) {
+            val f = File(dt.localFilePath)
+            if (f.exists()) return dt.localFilePath
+        }
+        val possibleExts = listOf("opus", "m4a", "webm")
+        val fallback = possibleExts.map { File(downloadsDir, "$trackId.$it") }.firstOrNull { it.exists() }
+        return fallback?.absolutePath
     }
 
     override suspend fun downloadTrack(
@@ -230,9 +250,10 @@ class LibraryRepositoryImpl(
             // 1. Resolve URL de áudio JIT via NewPipe com a qualidade alvo (Padrão: Lossless / Máxima Fidelidade)
             val streamUrl = streamResolver.resolveStreamUrl(track.id, targetAudioQuality).getOrThrow()
 
-            // 2. Determina o tamanho total do áudio (Content-Length / Content-Range)
+            // 2. Determina o tamanho total do áudio (Content-Length / Content-Range) e MIME Type
             val streamUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             var totalBytes = -1L
+            var detectedContentType: String? = null
 
             try {
                 val headReq = Request.Builder()
@@ -242,6 +263,7 @@ class LibraryRepositoryImpl(
                     .build()
                 httpClient.newCall(headReq).execute().use { resp ->
                     totalBytes = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                    detectedContentType = resp.header("Content-Type")
                 }
             } catch (_: Exception) {}
 
@@ -257,13 +279,17 @@ class LibraryRepositoryImpl(
                         if (cr != null && cr.contains("/")) {
                             totalBytes = cr.substringAfter("/").trim().toLongOrNull() ?: -1L
                         }
+                        if (detectedContentType.isNullOrBlank()) {
+                            detectedContentType = resp.header("Content-Type")
+                        }
                     }
                 } catch (_: Exception) {}
             }
 
-            val destFile = File(downloadsDir, "${track.id}.opus")
             val tempFile = File(downloadsDir, "${track.id}.tmp")
             if (tempFile.exists()) tempFile.delete()
+
+            var fallbackToSequential = totalBytes <= 0
 
             if (totalBytes > 0) {
                 val raf = RandomAccessFile(tempFile, "rw")
@@ -293,10 +319,17 @@ class LibraryRepositoryImpl(
                                     .build()
 
                                 httpClient.newCall(chunkReq).execute().use { chunkResp ->
-                                    if (!chunkResp.isSuccessful && chunkResp.code != 206) {
-                                        throw java.io.IOException("Falha HTTP ${chunkResp.code} no chunk $chunkStart-$chunkEnd")
+                                    if (chunkResp.code == 200) {
+                                        // O servidor não honrou Range e enviou o stream completo; aborta chunks para evitar corrupção
+                                        throw Http200RangeUnsupportedException()
                                     }
-                                    val body = chunkResp.body ?: throw java.io.IOException("Corpo de resposta nulo")
+                                    if (!chunkResp.isSuccessful || chunkResp.code != 206) {
+                                        throw IOException("Falha HTTP ${chunkResp.code} no chunk $chunkStart-$chunkEnd")
+                                    }
+                                    if (detectedContentType.isNullOrBlank()) {
+                                        detectedContentType = chunkResp.header("Content-Type")
+                                    }
+                                    val body = chunkResp.body ?: throw IOException("Corpo de resposta nulo")
                                     val input = body.byteStream()
                                     val buf = ByteArray(64 * 1024)
                                     var currentPos = chunkStart
@@ -319,17 +352,28 @@ class LibraryRepositoryImpl(
                         }
                         jobs.awaitAll()
                     }
+                } catch (e: Http200RangeUnsupportedException) {
+                    Log.w(TAG, "Servidor retornou HTTP 200 para Range request. Abortando chunks paralelos e iniciando download sequencial...")
+                    fallbackToSequential = true
                 } finally {
                     try { raf.close() } catch (_: Exception) {}
                 }
-            } else {
-                // Fallback caso Content-Length/Range não esteja disponível
+            }
+
+            if (fallbackToSequential) {
+                if (tempFile.exists()) tempFile.delete()
                 val request = Request.Builder()
                     .url(streamUrl)
                     .header("User-Agent", streamUserAgent)
                     .build()
                 val response = httpClient.newCall(request).execute()
-                val body = response.body ?: throw java.io.IOException("Corpo nulo")
+                if (!response.isSuccessful) {
+                    throw IOException("Falha no download sequencial: HTTP ${response.code}")
+                }
+                val body = response.body ?: throw IOException("Corpo nulo no download sequencial")
+                if (detectedContentType.isNullOrBlank()) {
+                    detectedContentType = response.header("Content-Type")
+                }
                 val streamLength = body.contentLength()
                 var readBytes = 0L
                 body.byteStream().use { input ->
@@ -348,9 +392,27 @@ class LibraryRepositoryImpl(
                 }
             }
 
+            // Detecta a extensão correta (.m4a ou .opus/.webm) para o container de mídia
+            val extension = determineExtension(detectedContentType, streamUrl)
+            val destFile = File(downloadsDir, "${track.id}.$extension")
+
+            // Remove arquivos residuais de formatos anteriores
+            listOf("opus", "m4a", "webm").forEach { ext ->
+                val f = File(downloadsDir, "${track.id}.$ext")
+                if (f.exists()) f.delete()
+            }
+
             onProgress(1f)
-            if (destFile.exists()) destFile.delete()
-            tempFile.renameTo(destFile)
+            val renamed = tempFile.renameTo(destFile)
+            if (!renamed) {
+                Log.w(TAG, "renameTo falhou de ${tempFile.name} para ${destFile.name}. Executando cópia via stream...")
+                tempFile.inputStream().use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                tempFile.delete()
+            }
 
             val downloadedTrack = DownloadedTrack(
                 track = track,
@@ -375,15 +437,25 @@ class LibraryRepositoryImpl(
     override fun removeDownload(trackId: String): Boolean {
         val current = _downloadedTracksFlow.value.toMutableList()
         val index = current.indexOfFirst { it.track.id == trackId }
+        var deletedAny = false
         if (index >= 0) {
             val removed = current.removeAt(index)
             val f = File(removed.localFilePath)
-            if (f.exists()) f.delete()
+            if (f.exists()) {
+                f.delete()
+                deletedAny = true
+            }
             _downloadedTracksFlow.value = current
             saveDownloads(current)
-            return true
         }
-        return false
+        listOf("opus", "m4a", "webm").forEach { ext ->
+            val f = File(downloadsDir, "$trackId.$ext")
+            if (f.exists()) {
+                f.delete()
+                deletedAny = true
+            }
+        }
+        return deletedAny || index >= 0
     }
 
     private fun saveDownloads(downloads: List<DownloadedTrack>) {
@@ -576,4 +648,19 @@ class LibraryRepositoryImpl(
             Log.e(TAG, "Erro ao salvar playlists: ${e.message}", e)
         }
     }
+
+    private fun determineExtension(contentType: String?, url: String): String {
+        val ct = contentType?.lowercase() ?: ""
+        val u = url.lowercase()
+        return when {
+            ct.contains("audio/mp4") || ct.contains("audio/x-m4a") || ct.contains("audio/aac") ||
+                    u.contains("mime=audio%2fmp4") || u.contains("mime=audio/mp4") || u.contains("itag=140") || u.contains("itag=139") -> "m4a"
+            ct.contains("audio/webm") || ct.contains("audio/opus") || ct.contains("audio/ogg") ||
+                    u.contains("mime=audio%2fwebm") || u.contains("mime=audio/webm") || u.contains("itag=251") || u.contains("itag=250") || u.contains("itag=249") -> "opus"
+            else -> "opus"
+        }
+    }
 }
+
+private class Http200RangeUnsupportedException : java.io.IOException("Servidor retornou HTTP 200 em vez de 206 (Range não suportado)")
+
