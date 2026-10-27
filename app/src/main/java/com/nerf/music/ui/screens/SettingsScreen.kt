@@ -260,6 +260,16 @@ fun SettingsScreen(
                     onSmartDownloadsWifiOnlyChange = { viewModel.setSmartDownloadsWifiOnly(it) },
                     syncState = smartDownloadSyncState,
                     onTriggerSyncNow = { viewModel.triggerSmartDownloadSyncNow() },
+                    onSyncDownloads = { onDone ->
+                        viewModel.syncDownloadsWithDisk { count ->
+                            android.widget.Toast.makeText(
+                                context,
+                                "Downloads sincronizados: $count faixas reconciliadas",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            onDone()
+                        }
+                    },
                     onClearCache = { viewModel.clearAppCache(context) },
                     onRefresh = { viewModel.refreshStorageBreakdown(context) },
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
@@ -673,6 +683,7 @@ private fun StorageSettingsScreen(
     onSmartDownloadsWifiOnlyChange: (Boolean) -> Unit,
     syncState: SmartDownloadSyncState,
     onTriggerSyncNow: () -> Unit,
+    onSyncDownloads: (onDone: () -> Unit) -> Unit = {},
     onClearCache: () -> Unit,
     onRefresh: () -> Unit,
     onNavigateBack: () -> Unit,
@@ -794,6 +805,71 @@ private fun StorageSettingsScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            var isSyncingDownloads by remember { mutableStateOf(false) }
+
+            // Botão Sincronizar Downloads (Reconciliação e recuperação de arquivos órfãos)
+            Button(
+                onClick = {
+                    if (!isSyncingDownloads) {
+                        isSyncingDownloads = true
+                        onSyncDownloads {
+                            isSyncingDownloads = false
+                        }
+                    }
+                },
+                enabled = !isSyncingDownloads,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = SpotifyCardBg,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                if (isSyncingDownloads) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = SpotifyGreen
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Sincronizando...",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = "Sincronizar Downloads",
+                        tint = SpotifyGreen,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Sincronizar Downloads",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Verifica o armazenamento local e recupera faixas baixadas não listadas na biblioteca.",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 12.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Botão Limpar Cache (estilo Spotify)
             Button(

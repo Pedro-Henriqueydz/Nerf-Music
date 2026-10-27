@@ -38,6 +38,7 @@ import com.nerf.music.data.repository.UpdateRepositoryImpl
 import com.nerf.music.updater.AppUpdateInfo
 import com.nerf.music.updater.UpdateNotificationHelper
 import com.nerf.music.data.model.TrackRelatedData
+import com.nerf.music.data.model.RelatedSection
 import com.nerf.music.data.model.LyricsData
 import com.nerf.music.data.model.SyncedLyricsLine
 import com.nerf.music.data.repository.LyricsRepository
@@ -58,6 +59,7 @@ import android.media.audiofx.AudioEffect
 import com.nerf.music.util.StorageBreakdown
 import com.nerf.music.util.StorageUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -384,6 +386,9 @@ class MusicViewModel(
                     _playbackState.value = _playbackState.value.copy(downloadedTrackIds = ids)
                 }
             }
+            viewModelScope.launch(Dispatchers.IO) {
+                libRepo.syncDownloadsWithDisk()
+            }
         }
 
         val activeLibRepo = libraryRepository
@@ -668,17 +673,28 @@ class MusicViewModel(
 
     private fun trackToMediaItem(track: Track): MediaItem {
         trackMetadataMap[track.id] = track
-        val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
+        val downloaded = libraryRepository?.downloadedTracksFlow?.value?.firstOrNull { it.track.id == track.id }
+        val localArtFile = applicationContext?.let { ctx ->
+            java.io.File(ctx.filesDir, "offline_audio/${track.id}.jpg")
+        }
+        val artworkUri = if (downloaded?.localArtworkPath != null && java.io.File(downloaded.localArtworkPath).exists()) {
+            Uri.parse("file://${downloaded.localArtworkPath}")
+        } else if (localArtFile != null && localArtFile.exists()) {
+            Uri.parse("file://${localArtFile.absolutePath}")
+        } else {
+            val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
+            artworkUrl?.let { Uri.parse(it) }
+        }
         val extras = Bundle().apply {
             putString(EXTRA_DURATION_TEXT, track.durationText)
             putLong(EXTRA_DURATION_SECONDS, track.durationSeconds)
-            putString(EXTRA_THUMBNAIL_URL, track.thumbnailUrl)
+            putString(EXTRA_THUMBNAIL_URL, artworkUri?.toString() ?: track.thumbnailUrl)
         }
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist)
             .setAlbumTitle(track.album)
-            .setArtworkUri(artworkUrl?.let { Uri.parse(it) })
+            .setArtworkUri(artworkUri)
             .setExtras(extras)
             .build()
 
@@ -1089,6 +1105,8 @@ class MusicViewModel(
                     )
                     if (upNext.relatedBrowseId != null) {
                         loadTrackRelated(upNext.relatedBrowseId)
+                    } else {
+                        loadTrackRelatedFallback()
                     }
                 }.onFailure { error ->
                     Log.w("MusicViewModel", "Falha ao abrir playlist ${track.id}: ${error.message}")
@@ -1159,6 +1177,8 @@ class MusicViewModel(
                 )
                 if (upNext.relatedBrowseId != null) {
                     loadTrackRelated(upNext.relatedBrowseId)
+                } else {
+                    loadTrackRelatedFallback()
                 }
             }.onFailure { error ->
                 Log.w("MusicViewModel", "Falha ao carregar rádio dinâmica para ${track.id}: ${error.message}")
@@ -1747,6 +1767,29 @@ class MusicViewModel(
             _isLoadingRelated.value = true
             _trackRelatedData.value = null
             repository.getTrackRelated(relatedBrowseId).onSuccess { data ->
+                if (data.sections.isEmpty()) {
+                    val currentArtist = _playbackState.value.currentTrack?.artist
+                    if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
+                        try {
+                            val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
+                            val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
+                            if (fallbackTracks.isNotEmpty()) {
+                                val fallbackSection = RelatedSection(
+                                    title = "Mais de $currentArtist",
+                                    items = fallbackTracks,
+                                    style = HomeSectionStyle.QUICK_PICKS_GRID
+                                )
+                                val enrichedData = data.copy(sections = listOf(fallbackSection))
+                                _trackRelatedData.value = enrichedData
+                                fallbackTracks.forEach { trackMetadataMap[it.id] = it }
+                                _isLoadingRelated.value = false
+                                return@launch
+                            }
+                        } catch (e: Exception) {
+                            Log.w("MusicViewModel", "Fallback artist top songs search failed: ${e.message}")
+                        }
+                    }
+                }
                 _trackRelatedData.value = data
                 data.sections.forEach { section ->
                     section.items.forEach { trackMetadataMap[it.id] = it }
@@ -1754,8 +1797,52 @@ class MusicViewModel(
                 _isLoadingRelated.value = false
             }.onFailure { error ->
                 Log.w("MusicViewModel", "Erro ao buscar conteudo relacionado: " + error.message)
+                val currentArtist = _playbackState.value.currentTrack?.artist
+                if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
+                    try {
+                        val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
+                        val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
+                        if (fallbackTracks.isNotEmpty()) {
+                            val fallbackSection = RelatedSection(
+                                title = "Mais de $currentArtist",
+                                items = fallbackTracks,
+                                style = HomeSectionStyle.QUICK_PICKS_GRID
+                            )
+                            _trackRelatedData.value = TrackRelatedData(sections = listOf(fallbackSection))
+                            fallbackTracks.forEach { trackMetadataMap[it.id] = it }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("MusicViewModel", "Fallback artist top songs search on error failed: ${e.message}")
+                    }
+                }
                 _isLoadingRelated.value = false
             }
+        }
+    }
+
+    fun loadTrackRelatedFallback() {
+        relatedFetchJob?.cancel()
+        relatedFetchJob = viewModelScope.launch {
+            _isLoadingRelated.value = true
+            val currentArtist = _playbackState.value.currentTrack?.artist
+            if (!currentArtist.isNullOrBlank() && !currentArtist.equals("Desconhecido", ignoreCase = true)) {
+                try {
+                    val searchResult = repository.search(currentArtist, SearchFilter.SONGS).getOrNull()
+                    val fallbackTracks = searchResult?.songs?.take(10).orEmpty()
+                    if (fallbackTracks.isNotEmpty()) {
+                        val fallbackSection = RelatedSection(
+                            title = "Mais de $currentArtist",
+                            items = fallbackTracks,
+                            style = HomeSectionStyle.QUICK_PICKS_GRID
+                        )
+                        _trackRelatedData.value = TrackRelatedData(sections = listOf(fallbackSection))
+                        fallbackTracks.forEach { trackMetadataMap[it.id] = it }
+                    }
+                } catch (e: Exception) {
+                    Log.w("MusicViewModel", "Fallback related songs search failed: ${e.message}")
+                }
+            }
+            _isLoadingRelated.value = false
         }
     }
 
@@ -2297,7 +2384,12 @@ class MusicViewModel(
                 durationSeconds = track.durationSeconds.toInt()
             )
             val data = res.getOrNull()
-            _currentLyrics.value = data
+            val cleanData = data?.let { d ->
+                val cleanPlain = if (d.plainLyrics.isNullOrBlank() || d.plainLyrics.equals("null", ignoreCase = true)) null else d.plainLyrics
+                val cleanSynced = d.syncedLines.filter { !it.text.equals("null", ignoreCase = true) }
+                d.copy(plainLyrics = cleanPlain, syncedLines = cleanSynced)
+            }
+            _currentLyrics.value = cleanData
             updateCurrentLyricsLine(_playbackState.value.currentPositionMs)
         }
     }
@@ -2310,7 +2402,18 @@ class MusicViewModel(
         }
         val lines = lyrics.syncedLines
         val activeLine = lines.lastOrNull { positionMs >= it.timeMs }
-        _currentLyricsLine.value = activeLine?.text
+        val rawText = activeLine?.text
+        val cleanText = if (rawText.isNullOrBlank() || rawText.equals("null", ignoreCase = true)) null else rawText
+        _currentLyricsLine.value = cleanText
+    }
+
+    fun syncDownloadsWithDisk(onComplete: ((Int) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val count = libraryRepository?.syncDownloadsWithDisk() ?: 0
+            withContext(Dispatchers.Main) {
+                onComplete?.invoke(count)
+            }
+        }
     }
 
     override fun onCleared() {

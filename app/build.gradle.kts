@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -97,6 +98,12 @@ dependencies {
 
     // NewPipeExtractor for YouTube stream extraction and cipher resolution
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+
+    // Room Persistence Library
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     // WorkManager for Background Periodic Update Checks
     implementation("androidx.work:work-runtime-ktx:2.9.1")
