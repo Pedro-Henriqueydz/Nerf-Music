@@ -4,9 +4,29 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
-## [Unreleased] (Em Desenvolvimento / Não Lançado)
-> **Status:** Unreleased (Alterações integradas à branch principal, aguardando compilação de nova versão).  
-> **Aviso para Agentes de IA e Desenvolvedores:** As alterações listadas nesta seção já estão mergeadas na branch `main`, mas ainda **NÃO** foram empacotadas nem publicadas em uma versão/tag oficial (o aplicativo no `build.gradle.kts` permanece na última versão estável lançada). Continue registrando novos desenvolvimentos nesta seção `[Unreleased]` sob os cabeçalhos apropriados (`### Adicionado`, `### Corrigido`, `### Melhorado`) até que o mantenedor decida fechar a próxima release.
+## [Unreleased]
+> **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.0.
+
+---
+
+## [1.4.0] - 2026-10-27 [RELEASED]
+
+### Adicionado
+- **NERF JAM — Escuta Sincronizada em Grupo (Arquitetura 100% No-Account):**
+  - **Servidor WebSocket Local Incorporado (`JamWebSocketServer`):** Permite que qualquer dispositivo atue como anfitrião (Host) hospedando uma sessão de escuta coletiva em tempo real com comunicação local P2P/LAN (porta `8924`) e suporte opcional a servidores de relay transparentes.
+  - **DeepLink Universal e Compartilhamento Fluido:** Convites automáticos via esquema `nerfmusic://jam?id=...&host=...&relay=...` e código QR dinâmico na interface do aplicativo (`JamSessionSheet`).
+  - **Sincronização de Reprodução e Fila em Tempo Real:** Sincronia perfeita de Play, Pause, Seek (com compensação inteligente de RTT em desvios > 350ms) e controle colaborativo de adição, remoção e reordenação de itens da fila entre anfitrião e convidados.
+- **Modo Karaokê de Próxima Geração com Troca Instantânea por Instrumental Oficial:**
+  - **Dual-ExoPlayer Crossfade em Standby:** Busca proativa em segundo plano de versões oficiais instrumentais/karaokê correspondentes (`$title $artist official instrumental`), pré-carregando o fluxo de áudio em uma instância secundária (`instrumentalPlayer`).
+  - **Transição Zero-Delay na Timeline:** Ao tocar no microfone na tela de letras, o app comuta para o instrumental no exato milissegundo em reprodução com rampa suave de crossfade equal-power (~120ms), preservando a faixa vocal original atrelada ao slider de volume de voz.
+  - **Isolamento Vocal DSP Aprimorado (Não Abafado):** Processamento local seletivo (`VocalIsolationAudioProcessor`) atuando estritamente na região central da voz (`280 Hz – 3500 Hz`) com compensação de ganho de presença (`clarityGain`), preservando graves, caixa de bateria e agudos quando não houver faixa instrumental oficial disponível.
+  - **Destaque Palavra por Palavra Condicional:** Destaque sincrônico palavra a palavra e contagem regressiva instrumental (`• • •`) ativados estritamente quando o modo Karaokê está engajado.
+- **Tradução e Pronúncia Apple Music Glass (`emil-design-eng`):**
+  - **Tradução Dinâmica Multilíngue:** Tradutor em tempo real com seletor de idiomas dedicados (`Auto`, `PT`, `EN`, `ES`, `FR`, `JA`, `KO`, `DE`, `IT`) com retradução imediata da letra ativa.
+  - **Pronúncia Fonética/Romanizada:** Transliteração internacional para acompanhar e cantar músicas em japonês, coreano, inglês e outras línguas estrangeiras.
+  - **Suporte a Letras de Fallback Estáticas:** Estruturação de letras do YouTube Music (`plainLyrics`) permitindo tradução e pronúncia linha a linha mesmo em letras não sincronizadas.
+  - **Apple Glass Popover UI:** Menu translúcido dark glass (`#1C1C1E` a 94% de opacidade) com bordas ultrafinas, switches estilo iOS, animações origin-aware e toggle para ocultar o verso original mantendo apenas a tradução ou pronúncia.
+- **Limpeza de Interface no Player:** Remoção da pílula redundante de Karaokê na tela principal do Player (mantendo o microfone exclusivo na tela de letras) e inclusão do botão dedicado JAM na barra inferior do modo Letras Fullscreen.
 
 ### Adicionado
 - **Configurações Granulares de Download (Canvas e Letras Independentes):**

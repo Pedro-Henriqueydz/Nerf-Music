@@ -770,13 +770,29 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🎵 NERF Music v1.3.5:
-            • Músicas Relacionadas: Recomendações e músicas semelhantes sempre disponíveis para qualquer faixa tocando.
-            • Letras Corrigidas: Músicas sem letra não mostram mais textos indevidos ou "Null".
-            • Capas nos Downloads: As artes de capa agora são salvas e embutidas nas músicas baixadas.
-            • Sincronizar Downloads: Novo botão em Configurações para recuperar e reconhecer músicas já salvas no aparelho.
-            • Transições Suaves: O crossfade e a troca de faixas agora acontecem de forma suave e sem interrupções bruscas.
-            • Notificações Estáveis: Reprodução em segundo plano e downloads sem travamentos na barra de notificações e tela de bloqueio.
+            🔥 NERF Music v1.4.0 — ATUALIZAÇÃO INSANA! 🚀
+            
+            🎤 Modo Karaokê & Troca Instrumental Instantânea:
+            • Troca Instantânea por Instrumental Oficial: ao tocar no microfone na tela de letras, o app busca e alterna na hora para a versão instrumental oficial sem delay, perfeitamente sincronizada no milissegundo exato!
+            • Controle de Voz Flexível: ajuste o volume da voz do cantor ou remova por completo para instrumental puro.
+            • Isolamento Vocal DSP Aprimorado: filtro local inteligente sem deixar o áudio abafado para músicas sem versão instrumental.
+            • Letras Palavra por Palavra: destaque sincronizado dinâmico ativado exclusivamente no modo Karaokê.
+            
+            🌍 Tradução & Pronúncia Apple Music Glass:
+            • Tradução em Tempo Real: letras traduzidas linha a linha com seletor de idiomas (Auto, PT, EN, ES, FR, JA, KO, DE, IT).
+            • Pronúncia Fonética/Romanizada: cante músicas em japonês, coreano ou inglês com guia de pronúncia nativo.
+            • Suporte a Letras de Fallback: tradução e pronúncia funcionam até em letras estáticas do YouTube Music!
+            • Apple Glass Popover: novo painel translúcido moderno com gestos fluidos e opção de ocultar o verso original.
+            
+            🎧 NERF JAM (Escuta Sincronizada em Grupo):
+            • Ouça junto com seus amigos em tempo real estilo Spotify Jam!
+            • 100% No-Account: conecte por QR Code, Link Direto ou IP local via WebSockets em tempo real.
+            • Sincronia perfeita de Play, Pause, Fila e Posição entre todos os dispositivos.
+            
+            ⚡ Performance, Player & Downloads:
+            • Swipe sem Delay: troca instantânea de música e capa no player sem engasgos ou atrasos.
+            • Downloads Granulares: escolha salvar áudio, letras e vídeos Canvas individualmente.
+            • Modo Offline Completo: reconexão automática e atalho rápido para suas músicas salvas.
         """.trimIndent()
     }
 
