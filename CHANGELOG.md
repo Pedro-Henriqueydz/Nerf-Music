@@ -4,6 +4,36 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.3.6] - 2026-10-27
+
+### Corrigido
+- **Aba "Relacionados" no Player (Arquitetura Multi-Tier à Prova de Falhas):**
+  - **Prevenção de estados vazios:** Implementado pipeline de enriquecimento em múltiplos níveis que assegura a exibição contínua de recomendações relevantes mesmo quando a API oficial do YouTube Music não retorna dados para faixas específicas de underground/phonk (ex.: *"Impulse"* por Altare).
+  - **Rádio Algorítmica UpNext como Fallback:** Quando a aba oficial não retorna seções, o app reaproveita a fila dinâmica gerada para a música ou busca o rádio algorítmico (`getUpNextRadio`), gerando automaticamente a seção "Músicas semelhantes".
+  - **Catálogo do Artista Principal Sanitizado:** Sanitização inteligente do nome de artista (removendo `(part. ...)`, `feat.`, `ft.` e pontuações) para consulta precisa no catálogo e preenchimento da seção "Mais de &lt;Artista&gt;".
+  - **Sincronização em Transições de Faixa:** O carregamento de relacionados passa a ser acionado automaticamente nas transições de reprodução do ExoPlayer (`onMediaItemTransition`), ao avançar faixas e ao abrir a gaveta no Player, além de botão dedicado de re-busca ("Buscar recomendações") caso o dispositivo esteja offline temporariamente.
+- **Parser de Letras (Lyrics Sanitization):**
+  - **Eliminação de string literal "Null":** Tratamento estrito em `InnerTubeCatalogClient.kt` e `LyricsRepository.kt` para desconsiderar respostas com letras nulas literais (`"null"`, `"Null"`, `"Letra não disponível"`, `"Lyrics not available"`), garantindo a renderização correta do empty state em vez de texto nulo na interface.
+
+### Adicionado
+- **Embutimento de Metadados e Capas em Mídias Baixadas (`AudioMetadataTagger`):**
+  - **Tagging Nativo MP4/M4A e MP3:** Embutimento de tags de metadados (`title`, `artist`, `album`) e arte de capa (box `covr` em átomos `moov/udta/meta/ilst` com recálculo seguro de offsets `stco`/`co64` para M4A, e frames `APIC`, `TIT2`, `TPE1`, `TALB` ID3v2.3 para MP3).
+  - **Notificação ao MediaScanner:** Invocação do `MediaScannerConnection` para indexação imediata de capas e faixas no sistema operacional Android.
+- **Recuperação de Downloads Órfãos e Sincronização Local (No-Account Sync):**
+  - **Varredura Universal de Armazenamento:** Escaneamento automático de pastas internas (`offline_audio`), pastas públicas do dispositivo (`/sdcard/Music/`, `NerfMusic/`, `/sdcard/Download/`) e consulta ao provedor `MediaStore.Audio.Media`.
+  - **Repopulação Automática do Room DB:** Arquivos de áudio desvinculados do banco de dados local têm seus metadados ID3/MP4 extraídos e reimportados automaticamente para a biblioteca offline.
+  - **Sincronização sob Demanda:** Adicionado botão "Sincronizar Downloads" na tela principal de Configurações e dentro da seção Armazenamento.
+- **Proteção contra Exclusão de Mídias em Desinstalações (`hasFragileUserData`):**
+  - Adicionado `android:hasFragileUserData="true"` no `AndroidManifest.xml` para permitir que o usuário opte por preservar suas músicas baixadas e dados do aplicativo ao desinstalar ou reinstalar compilações.
+
+### Testes
+- Adicionada suíte de testes de estresse e validação:
+  - `AudioMetadataTaggerTest`: Verificação estrutural de átomos MP4, caixas `covr`, `moov`, `mdat` e tags ID3v2.3.
+  - `LyricsNullSanitizationStressTest`: Cobertura de cenários de sanitização de strings literais de lyrics nulos.
+  - `RelatedMultiTierFallbackTest`: Validação de fallback multi-tier e extração correta de artistas principais.
+
+---
+
 ## [1.3.5] - 2026-10-27
 
 ### Corrigido
