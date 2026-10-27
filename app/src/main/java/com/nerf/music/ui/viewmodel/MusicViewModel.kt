@@ -68,6 +68,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import coil.ImageLoader
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.nerf.music.data.repository.SpotifyCanvasRepository
 import com.nerf.music.data.repository.SpotifyCanvasRepositoryImpl
 import com.nerf.music.data.repository.LibraryRepository
@@ -854,6 +857,16 @@ class MusicViewModel(
         }
         _selectedTrack.value = resolvedTrack
 
+        // Pre-fetch proativo de stream de áudio e artwork para próxima e faixa anterior
+        finalQueue.getOrNull(currentIdx + 1)?.let { nextItem ->
+            AudioPlayerService.prefetchTrack(nextItem.id, applicationContext?.filesDir)
+            prefetchArtwork(nextItem)
+        }
+        finalQueue.getOrNull(currentIdx - 1)?.let { prevItem ->
+            AudioPlayerService.prefetchTrack(prevItem.id, applicationContext?.filesDir)
+            prefetchArtwork(prevItem)
+        }
+
         _playbackState.value = _playbackState.value.copy(
             currentTrack = resolvedTrack,
             queue = finalQueue,
@@ -1426,6 +1439,25 @@ class MusicViewModel(
             return
         }
 
+        // Atualização Otimista Imediata da UI para eliminar delay perceptível
+        val targetTrack = _playbackState.value.queue.getOrNull(targetIndex)
+        if (targetTrack != null) {
+            _loadingTrackId.value = targetTrack.id
+            _selectedTrack.value = targetTrack
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = targetTrack,
+                currentQueueIndex = targetIndex,
+                isBuffering = true,
+                currentPositionMs = 0L,
+                durationMs = (targetTrack.durationSeconds * 1000L).coerceAtLeast(0L),
+                hasNext = targetIndex < count - 1,
+                hasPrevious = targetIndex > 0
+            )
+            loadLyrics(targetTrack)
+            loadCanvasVideo(targetTrack)
+            loadTrackRelatedForTrack(targetTrack)
+        }
+
         val service = AudioPlayerService.getInstance()
         if (service != null && controller.isPlaying) {
             service.smoothTransitionTo(targetIndex)
@@ -1454,6 +1486,25 @@ class MusicViewModel(
             return
         }
 
+        // Atualização Otimista Imediata da UI
+        val targetTrack = _playbackState.value.queue.getOrNull(targetIndex)
+        if (targetTrack != null) {
+            _loadingTrackId.value = targetTrack.id
+            _selectedTrack.value = targetTrack
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = targetTrack,
+                currentQueueIndex = targetIndex,
+                isBuffering = true,
+                currentPositionMs = 0L,
+                durationMs = (targetTrack.durationSeconds * 1000L).coerceAtLeast(0L),
+                hasNext = targetIndex < count - 1,
+                hasPrevious = targetIndex > 0
+            )
+            loadLyrics(targetTrack)
+            loadCanvasVideo(targetTrack)
+            loadTrackRelatedForTrack(targetTrack)
+        }
+
         val service = AudioPlayerService.getInstance()
         if (service != null && controller.isPlaying) {
             service.smoothTransitionTo(targetIndex)
@@ -1479,6 +1530,25 @@ class MusicViewModel(
         } else {
             seekTo(0L)
             return
+        }
+
+        // Atualização Otimista Imediata da UI
+        val targetTrack = _playbackState.value.queue.getOrNull(targetIndex)
+        if (targetTrack != null) {
+            _loadingTrackId.value = targetTrack.id
+            _selectedTrack.value = targetTrack
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = targetTrack,
+                currentQueueIndex = targetIndex,
+                isBuffering = true,
+                currentPositionMs = 0L,
+                durationMs = (targetTrack.durationSeconds * 1000L).coerceAtLeast(0L),
+                hasNext = targetIndex < count - 1,
+                hasPrevious = targetIndex > 0
+            )
+            loadLyrics(targetTrack)
+            loadCanvasVideo(targetTrack)
+            loadTrackRelatedForTrack(targetTrack)
         }
 
         val service = AudioPlayerService.getInstance()
@@ -2617,6 +2687,27 @@ class MusicViewModel(
             try {
                 spotifyCanvasRepository.getCanvasUrl(nextTrack.title, nextTrack.artist)
             } catch (_: Exception) {}
+        }
+    }
+
+    private fun prefetchArtwork(track: Track) {
+        val context = applicationContext ?: return
+        val artFile = java.io.File(context.filesDir, "offline_audio/${track.id}.jpg")
+        val url = if (artFile.exists()) {
+            "file://${artFile.absolutePath}"
+        } else {
+            track.highResThumbnailUrl ?: track.thumbnailUrl
+        } ?: return
+
+        try {
+            val request = ImageRequest.Builder(context)
+                .data(url)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .build()
+            ImageLoader(context).enqueue(request)
+        } catch (e: Exception) {
+            Log.w("MusicViewModel", "Falha no pre-fetch de imagem para ${track.id}: ${e.message}")
         }
     }
 

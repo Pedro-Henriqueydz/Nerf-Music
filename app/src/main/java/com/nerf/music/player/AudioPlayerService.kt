@@ -185,81 +185,123 @@ class AudioPlayerService : MediaSessionService() {
         Log.i(TAG, "Iniciando Crossfade dinâmico em tempo real: ${fadeDurationMs}ms para o índice $nextIndex (isSkip=$isSkip)")
 
         try {
-            // IMPORTANTE: incomingPlayer NÃO deve solicitar AudioFocus do sistema durante o crossfade,
-            // impedindo que o AudioManager envie AUDIOFOCUS_LOSS para o outgoingPlayer e pause a música abruptamente!
-            incomingPlayer.setAudioAttributes(audioAttributes, false)
-
-            // Previne que o outgoingPlayer avance automaticamente para a próxima faixa
-            outgoingPlayer.repeatMode = Player.REPEAT_MODE_OFF
-            outgoingPlayer.pauseAtEndOfMediaItems = true
-
-            val mediaItems = mutableListOf<MediaItem>()
-            for (i in 0 until outgoingPlayer.mediaItemCount) {
-                mediaItems.add(outgoingPlayer.getMediaItemAt(i))
-            }
-
-            incomingPlayer.volume = 0f
-            incomingPlayer.setMediaItems(mediaItems, nextIndex, 0L)
-            incomingPlayer.prepare()
-            incomingPlayer.play()
-
-            crossfadeJob?.cancel()
-            crossfadeJob = serviceScope.launch {
-                // Pre-aquece o incomingPlayer até STATE_READY antes de iniciar a rampa de volume
-                var waitTime = 0
-                while (incomingPlayer.playbackState != Player.STATE_READY && waitTime < 2500) {
-                    delay(30)
-                    waitTime += 30
+            if (isSkip) {
+                // SKIP MANUAL: a experiência do usuário requer resposta IMEDIATA.
+                // 1. Atualiza activePlayer e mediaSession instantaneamente para o incomingPlayer,
+                //    fazendo com que sistema operacional, notificações, MediaController e UI
+                //    atualizem a faixa no instante zero, eliminando o atraso de 2.5s.
+                // 2. Faz fade-out rápido (~150ms) no outgoingPlayer sem travar a interface.
+                val mediaItems = mutableListOf<MediaItem>()
+                for (i in 0 until outgoingPlayer.mediaItemCount) {
+                    mediaItems.add(outgoingPlayer.getMediaItemAt(i))
                 }
 
-                if (incomingPlayer.playbackState != Player.STATE_READY) {
-                    Log.w(TAG, "incomingPlayer não atingiu STATE_READY a tempo (${incomingPlayer.playbackState}). Abortando crossfade.")
-                    incomingPlayer.stop()
-                    incomingPlayer.volume = 1f
-                    incomingPlayer.pauseAtEndOfMediaItems = false
-                    outgoingPlayer.volume = 1f
-                    outgoingPlayer.pauseAtEndOfMediaItems = false
-                    isCrossfading = false
-                    return@launch
-                }
-
-                // Limita a duração do crossfade ao tempo restante real do outgoingPlayer (ou fade padrão em skip)
-                val remainingMs = if (isSkip) fadeDurationMs else (outgoingPlayer.duration - outgoingPlayer.currentPosition).coerceAtLeast(100L)
-                val effectiveFadeMs = fadeDurationMs.coerceAtMost(remainingMs).coerceAtLeast(200L)
-
-                // Atualiza a MediaSession para o player recebedor
+                outgoingPlayer.pauseAtEndOfMediaItems = true
                 fadingPlayer = outgoingPlayer
                 activePlayer = incomingPlayer
                 mediaSession?.setPlayer(activePlayer)
 
-                val startTime = System.currentTimeMillis()
-                while (isActive) {
-                    val elapsed = System.currentTimeMillis() - startTime
-                    val progress = (elapsed.toFloat() / effectiveFadeMs).coerceIn(0f, 1f)
+                incomingPlayer.setAudioAttributes(audioAttributes, true)
+                incomingPlayer.volume = 1f
+                incomingPlayer.setMediaItems(mediaItems, nextIndex, 0L)
+                incomingPlayer.prepare()
+                incomingPlayer.play()
 
-                    // Curva equal-power: cos(t * PI/2) e sin(t * PI/2)
-                    val volOut = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
-                    val volIn = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
+                crossfadeJob?.cancel()
+                crossfadeJob = serviceScope.launch {
+                    val fadeOutDuration = 150L
+                    val startTime = System.currentTimeMillis()
+                    val startVol = outgoingPlayer.volume
+                    while (isActive) {
+                        val elapsed = System.currentTimeMillis() - startTime
+                        val progress = (elapsed.toFloat() / fadeOutDuration).coerceIn(0f, 1f)
+                        outgoingPlayer.volume = ((1f - progress) * startVol).coerceIn(0f, 1f)
+                        if (progress >= 1f) break
+                        delay(20)
+                    }
+                    outgoingPlayer.stop()
+                    outgoingPlayer.pauseAtEndOfMediaItems = false
+                    outgoingPlayer.volume = 1f
 
-                    outgoingPlayer.volume = volOut.coerceIn(0f, 1f)
-                    incomingPlayer.volume = volIn.coerceIn(0f, 1f)
+                    fadingPlayer = null
+                    isCrossfading = false
+                    triggerPrefetchNextTrack()
+                    Log.i(TAG, "Skip manual concluído com resposta instantânea para índice $nextIndex.")
+                }
+            } else {
+                // Transição natural (fim de faixa / crossfade / automix)
+                // Mantém o incomingPlayer sem AudioFocus durante o crossfade para não interromper outgoingPlayer
+                incomingPlayer.setAudioAttributes(audioAttributes, false)
+                outgoingPlayer.repeatMode = Player.REPEAT_MODE_OFF
+                outgoingPlayer.pauseAtEndOfMediaItems = true
 
-                    if (progress >= 1f) break
-                    delay(20)
+                val mediaItems = mutableListOf<MediaItem>()
+                for (i in 0 until outgoingPlayer.mediaItemCount) {
+                    mediaItems.add(outgoingPlayer.getMediaItemAt(i))
                 }
 
-                // Transfere o foco de áudio de forma segura: outgoing é parado e incoming assume o foco exclusivo
-                outgoingPlayer.stop()
-                outgoingPlayer.pauseAtEndOfMediaItems = false
-                outgoingPlayer.volume = 1f
-                incomingPlayer.volume = 1f
-                incomingPlayer.setAudioAttributes(audioAttributes, true)
+                incomingPlayer.volume = 0f
+                incomingPlayer.setMediaItems(mediaItems, nextIndex, 0L)
+                incomingPlayer.prepare()
+                incomingPlayer.play()
 
-                fadingPlayer = null
-                isCrossfading = false
+                crossfadeJob?.cancel()
+                crossfadeJob = serviceScope.launch {
+                    // Pre-aquece o incomingPlayer até STATE_READY antes de iniciar a rampa de volume
+                    var waitTime = 0
+                    while (incomingPlayer.playbackState != Player.STATE_READY && waitTime < 2500) {
+                        delay(30)
+                        waitTime += 30
+                    }
 
-                triggerPrefetchNextTrack()
-                Log.i(TAG, "Crossfade de ${effectiveFadeMs}ms concluído com sucesso. Transição suave finalizada.")
+                    if (incomingPlayer.playbackState != Player.STATE_READY) {
+                        Log.w(TAG, "incomingPlayer não atingiu STATE_READY a tempo (${incomingPlayer.playbackState}). Abortando crossfade.")
+                        incomingPlayer.stop()
+                        incomingPlayer.volume = 1f
+                        incomingPlayer.pauseAtEndOfMediaItems = false
+                        outgoingPlayer.volume = 1f
+                        outgoingPlayer.pauseAtEndOfMediaItems = false
+                        isCrossfading = false
+                        return@launch
+                    }
+
+                    val remainingMs = (outgoingPlayer.duration - outgoingPlayer.currentPosition).coerceAtLeast(100L)
+                    val effectiveFadeMs = fadeDurationMs.coerceAtMost(remainingMs).coerceAtLeast(200L)
+
+                    // Atualiza a MediaSession para o player recebedor
+                    fadingPlayer = outgoingPlayer
+                    activePlayer = incomingPlayer
+                    mediaSession?.setPlayer(activePlayer)
+
+                    val startTime = System.currentTimeMillis()
+                    while (isActive) {
+                        val elapsed = System.currentTimeMillis() - startTime
+                        val progress = (elapsed.toFloat() / effectiveFadeMs).coerceIn(0f, 1f)
+
+                        // Curva equal-power: cos(t * PI/2) e sin(t * PI/2)
+                        val volOut = kotlin.math.cos(progress * (Math.PI / 2)).toFloat()
+                        val volIn = kotlin.math.sin(progress * (Math.PI / 2)).toFloat()
+
+                        outgoingPlayer.volume = volOut.coerceIn(0f, 1f)
+                        incomingPlayer.volume = volIn.coerceIn(0f, 1f)
+
+                        if (progress >= 1f) break
+                        delay(20)
+                    }
+
+                    // Transfere o foco de áudio de forma segura: outgoing é parado e incoming assume o foco exclusivo
+                    outgoingPlayer.stop()
+                    outgoingPlayer.pauseAtEndOfMediaItems = false
+                    outgoingPlayer.volume = 1f
+                    incomingPlayer.volume = 1f
+                    incomingPlayer.setAudioAttributes(audioAttributes, true)
+
+                    fadingPlayer = null
+                    isCrossfading = false
+
+                    triggerPrefetchNextTrack()
+                    Log.i(TAG, "Crossfade de ${effectiveFadeMs}ms concluído com sucesso. Transição suave finalizada.")
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao iniciar crossfade: ${e.message}", e)

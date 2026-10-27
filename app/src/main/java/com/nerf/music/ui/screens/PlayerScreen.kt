@@ -117,6 +117,7 @@ import androidx.media3.common.Player
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.nerf.music.R
@@ -380,10 +381,36 @@ fun FullPlayerSheet(
     onPlayRelatedTrack: (Track) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {}
 ) {
-    val track = state.currentTrack ?: return
+    val currentTrack = state.currentTrack ?: return
+    var pendingSwipeTrack by remember { mutableStateOf<Track?>(null) }
+    LaunchedEffect(currentTrack.id) {
+        if (pendingSwipeTrack?.id == currentTrack.id) {
+            pendingSwipeTrack = null
+        }
+    }
+    val track = pendingSwipeTrack ?: currentTrack
+
     val context = LocalContext.current
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+
+    // Pré-carregamento imediato no cache de memória do Coil para as capas próxima e anterior
+    LaunchedEffect(state.currentQueueIndex, state.queue) {
+        val next = state.queue.getOrNull(state.currentQueueIndex + 1)
+        val prev = state.queue.getOrNull(state.currentQueueIndex - 1)
+        listOfNotNull(next, prev).forEach { item ->
+            val f = java.io.File(context.filesDir, "offline_audio/${item.id}.jpg")
+            val art = if (f.exists()) "file://${f.absolutePath}" else (item.highResThumbnailUrl ?: item.thumbnailUrl)
+            if (!art.isNullOrBlank()) {
+                val req = ImageRequest.Builder(context)
+                    .data(art)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .build()
+                ImageLoader(context).enqueue(req)
+            }
+        }
+    }
 
     // 1. Extração de Cor Dinâmica da Capa via Palette API
     var targetPaletteColor by remember { mutableStateOf(Color(0xFF381E17)) }
@@ -1027,6 +1054,11 @@ fun FullPlayerSheet(
                                                 val swipeThreshold = 65.dp.toPx()
                                                 if (totalDragX < -swipeThreshold) {
                                                     // Arrastou para a esquerda -> Próxima música
+                                                    val nextTrack = state.queue.getOrNull(state.currentQueueIndex + 1)
+                                                        ?: if (state.queue.size > 1) state.queue.firstOrNull() else null
+                                                    if (nextTrack != null) {
+                                                        pendingSwipeTrack = nextTrack
+                                                    }
                                                     coroutineScope.launch {
                                                         artworkOffsetX.animateTo(-screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
                                                         onSkipNext()
@@ -1035,6 +1067,11 @@ fun FullPlayerSheet(
                                                     }
                                                 } else if (totalDragX > swipeThreshold) {
                                                     // Arrastou para a direita -> Música anterior direta (sem resetar!)
+                                                    val prevTrack = state.queue.getOrNull(state.currentQueueIndex - 1)
+                                                        ?: if (state.queue.size > 1) state.queue.lastOrNull() else null
+                                                    if (prevTrack != null) {
+                                                        pendingSwipeTrack = prevTrack
+                                                    }
                                                     coroutineScope.launch {
                                                         artworkOffsetX.animateTo(screenWidthPx * 0.75f, tween(140, easing = FastOutLinearInEasing))
                                                         onForceSkipPrevious()
