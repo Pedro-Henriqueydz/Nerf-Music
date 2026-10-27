@@ -4,6 +4,28 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.3.5] - 2026-10-27
+
+### Corrigido
+- **Reprodução Offline e Notificações (Downloads em Segundo Plano):**
+  - **Eliminação de crash no SystemUI:** Os bytes das capas de álbuns offline agora são injetados diretamente via `MediaMetadata.setArtworkData(...)` em vez de expor URIs `file://` locais do sandbox do aplicativo, prevenindo falhas de `SecurityException` e quebras no processo de notificação e tela de bloqueio do Android.
+  - **Integridade de arquivos baixados:** Verificação estrita de tamanho mínimo (> 1 KB) e validação de existência cobrindo todos os formatos suportados (`.opus`, `.m4a`, `.webm`, `.mp4`, `.mp3`, `.ogg`, `.aac`), evitando que arquivos incompletos ou corrompidos causem pausas e paradas repentinas na reprodução.
+  - **Estabilidade de segundo plano:** Adicionada permissão `ACCESS_WIFI_STATE` ao `AndroidManifest.xml` para garantia de funcionamento do bloqueio de rede Wi-Fi (`WifiLock`) durante a execução do serviço em segundo plano.
+
+- **Motor de Transições e Crossfade Dinâmico:**
+  - **Arquitetura Dual-Slot Imutável:** Eliminação definitiva de colisões de instância entre players através de dois slots fixos permanentes (`playerA` e `playerB`). O player de entrada é determinado de maneira estrita, impedindo que o player ativo tente transicionar sobre si mesmo ou limpe a própria playlist.
+  - **Isolamento de AudioFocus:** Durante o crossfade, o player de entrada não solicita foco de áudio do sistema concorrentemente, permitindo que a rampa equal-power (`cos`/`sin`) aconteça suavemente sem que o `AudioManager` do Android pause abruptamente a faixa anterior.
+  - **Estabilização Pós-Seek na Barra de Progresso:** Implementada janela de debounce de 500ms e trava para músicas com menos de 1,5s restantes, eliminando paradas a seco (*hardskips*) ou estalos quando o usuário adianta a música na barra de progresso para próximo da área de crossfade.
+  - **Skips e Navegação sem Corte Seco:** Aplicação de transição suave anti-pop (`smoothTransitionTo`) ao avançar ou retroceder faixas (`skipNext`, `skipPrevious`, `forceSkipPrevious`, `playQueueItemAt`).
+  - **Ajuste em Tempo Real de Configurações:** Proteção ao alterar o slider de crossfade com o player carregado, impedindo múltiplos disparos durante o arraste. Quando configurado em 0s com Automix desligado, o serviço opera 100% no modo nativo Gapless da mesma timeline do ExoPlayer.
+
+- **Aplicação Real dos Níveis de Qualidade de Áudio:**
+  - **Resolução fidedigna de bitrate e codec:** O `AudioPlayerService` passa a fornecer a qualidade alvo calculada com base no tipo de rede ativa (Wi-Fi vs Móvel) e modo Economia de Dados ao resolver fluxos sob demanda.
+  - **Invalidação imediata de cache:** Alterações nas preferências de qualidade ou modo de dados limpam o cache de URLs em tempo real (`clearStreamCache()`), garantindo que faixas subsequentes adotem a nova qualidade imediatamente.
+  - **Proteção a downloads de alta fidelidade:** Resolução de downloads em qualidade máxima não sofre downgrade indevido pelo modo de economia no `CompositeStreamResolver`.
+
+---
+
 ## [1.3.4] - 2026-10-25
 
 ### Corrigido
