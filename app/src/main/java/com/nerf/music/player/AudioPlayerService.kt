@@ -58,8 +58,9 @@ import java.util.concurrent.ConcurrentHashMap
 class AudioPlayerService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    private lateinit var playerA: ExoPlayer
+    private lateinit var playerB: ExoPlayer
     private lateinit var activePlayer: ExoPlayer
-    private var auxiliaryPlayer: ExoPlayer? = null
     private var fadingPlayer: ExoPlayer? = null
 
     private lateinit var resolvingDataSourceFactory: ResolvingDataSource.Factory
@@ -70,6 +71,10 @@ class AudioPlayerService : MediaSessionService() {
     private var isCrossfading: Boolean = false
     private var crossfadeJob: Job? = null
     private var transitionMonitorJob: Job? = null
+    private var lastSeekTimestampMs: Long = 0L
+
+    private val incomingPlayerCandidate: ExoPlayer
+        get() = if (::activePlayer.isInitialized && activePlayer === playerA) playerB else playerA
 
     private fun getCrossfadeSeconds(): Int {
         val prefs = applicationContext.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
@@ -122,7 +127,10 @@ class AudioPlayerService : MediaSessionService() {
 
     private fun checkAndTriggerTransition() {
         if (isCrossfading) return
-        if (!activePlayer.isPlaying) return
+        if (!::activePlayer.isInitialized || !activePlayer.isPlaying) return
+
+        // Janela de estabilização pós-seek: impede que o arraste do slider dispare crossfades múltiplos ou prematuros
+        if (System.currentTimeMillis() - lastSeekTimestampMs < 500L) return
 
         val duration = activePlayer.duration
         val position = activePlayer.currentPosition
@@ -142,8 +150,10 @@ class AudioPlayerService : MediaSessionService() {
 
         if (targetFadeMs <= 0L) return
 
-        // Limite de segurança: nunca cruzar mais de um terço da música e limitar ao tempo restante
         val remainingMs = (duration - position).coerceAtLeast(0L)
+        // Se restar menos de 1500ms, não força um crossfade artificial; deixa transicionar naturalmente (gapless)
+        if (remainingMs < 1500L) return
+
         val effectiveFadeMs = targetFadeMs.coerceAtMost(duration / 3).coerceAtMost(remainingMs)
         val triggerThresholdMs = effectiveFadeMs + 600L
 
@@ -154,25 +164,27 @@ class AudioPlayerService : MediaSessionService() {
 
     @OptIn(UnstableApi::class)
     private fun executeCrossfade(nextIndex: Int, fadeDurationMs: Long, isSkip: Boolean = false) {
+        if (!::activePlayer.isInitialized) return
         if (nextIndex !in 0 until activePlayer.mediaItemCount) return
+
+        val outgoingPlayer = activePlayer
+        val incomingPlayer = if (activePlayer === playerA) playerB else playerA
+
         if (isCrossfading) {
             // Se já houver um crossfade ocorrendo e um novo comando de skip for recebido, finaliza o anterior com segurança
             crossfadeJob?.cancel()
-            val prevFading = fadingPlayer
             fadingPlayer = null
-            prevFading?.let {
-                it.stop()
-                it.volume = 1f
-            }
+            incomingPlayer.stop()
+            incomingPlayer.volume = 1f
+            incomingPlayer.pauseAtEndOfMediaItems = false
+            outgoingPlayer.volume = 1f
+            outgoingPlayer.pauseAtEndOfMediaItems = false
             isCrossfading = false
         }
         isCrossfading = true
         Log.i(TAG, "Iniciando Crossfade dinâmico em tempo real: ${fadeDurationMs}ms para o índice $nextIndex (isSkip=$isSkip)")
 
         try {
-            val outgoingPlayer = activePlayer
-            val incomingPlayer = auxiliaryPlayer ?: createExoPlayer(handleAudioFocus = false).also { auxiliaryPlayer = it }
-
             // IMPORTANTE: incomingPlayer NÃO deve solicitar AudioFocus do sistema durante o crossfade,
             // impedindo que o AudioManager envie AUDIOFOCUS_LOSS para o outgoingPlayer e pause a música abruptamente!
             incomingPlayer.setAudioAttributes(audioAttributes, false)
@@ -200,9 +212,11 @@ class AudioPlayerService : MediaSessionService() {
                     waitTime += 30
                 }
 
-                if (incomingPlayer.playbackState != Player.STATE_READY && incomingPlayer.playbackState != Player.STATE_BUFFERING) {
+                if (incomingPlayer.playbackState != Player.STATE_READY) {
                     Log.w(TAG, "incomingPlayer não atingiu STATE_READY a tempo (${incomingPlayer.playbackState}). Abortando crossfade.")
                     incomingPlayer.stop()
+                    incomingPlayer.volume = 1f
+                    incomingPlayer.pauseAtEndOfMediaItems = false
                     outgoingPlayer.volume = 1f
                     outgoingPlayer.pauseAtEndOfMediaItems = false
                     isCrossfading = false
@@ -241,7 +255,6 @@ class AudioPlayerService : MediaSessionService() {
                 incomingPlayer.volume = 1f
                 incomingPlayer.setAudioAttributes(audioAttributes, true)
 
-                auxiliaryPlayer = outgoingPlayer
                 fadingPlayer = null
                 isCrossfading = false
 
@@ -251,9 +264,12 @@ class AudioPlayerService : MediaSessionService() {
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao iniciar crossfade: ${e.message}", e)
             isCrossfading = false
-            activePlayer.volume = 1f
-            fadingPlayer?.stop()
-            fadingPlayer = null
+            outgoingPlayer.volume = 1f
+            outgoingPlayer.pauseAtEndOfMediaItems = false
+            incomingPlayer.stop()
+            incomingPlayer.volume = 1f
+            incomingPlayer.pauseAtEndOfMediaItems = false
+            activePlayer = outgoingPlayer
             mediaSession?.setPlayer(activePlayer)
         }
     }
@@ -530,30 +546,42 @@ class AudioPlayerService : MediaSessionService() {
                 newPosition: Player.PositionInfo,
                 reason: Int
             ) {
-                if (reason == Player.DISCONTINUITY_REASON_SEEK && isCrossfading) {
-                    // Se o usuário buscar na timeline durante um crossfade, encerra a transição sem colapso abrupto
-                    crossfadeJob?.cancel()
-                    val oldFading = fadingPlayer
-                    fadingPlayer = null
-                    isCrossfading = false
-                    serviceScope.launch {
-                        oldFading?.let { fp ->
-                            val startVol = fp.volume
-                            for (step in 1..4) {
-                                delay(12)
-                                fp.volume = (startVol * (1f - step / 4f)).coerceIn(0f, 1f)
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    lastSeekTimestampMs = System.currentTimeMillis()
+                    if (isCrossfading) {
+                        // Se o usuário buscar na timeline durante um crossfade, encerra a transição sem colapso abrupto
+                        crossfadeJob?.cancel()
+                        val otherPlayer = incomingPlayerCandidate
+                        val oldFading = fadingPlayer
+                        fadingPlayer = null
+                        isCrossfading = false
+
+                        serviceScope.launch {
+                            oldFading?.let { fp ->
+                                val startVol = fp.volume
+                                for (step in 1..4) {
+                                    delay(12)
+                                    fp.volume = (startVol * (1f - step / 4f)).coerceIn(0f, 1f)
+                                }
+                                fp.stop()
+                                fp.volume = 1f
+                                fp.pauseAtEndOfMediaItems = false
                             }
-                            fp.stop()
-                            fp.volume = 1f
+                            if (otherPlayer != oldFading) {
+                                otherPlayer.stop()
+                                otherPlayer.volume = 1f
+                                otherPlayer.pauseAtEndOfMediaItems = false
+                            }
                         }
-                    }
-                    serviceScope.launch {
-                        val startVol = activePlayer.volume
-                        for (step in 1..5) {
-                            delay(16)
-                            activePlayer.volume = (startVol + (1f - startVol) * (step / 5f)).coerceIn(0f, 1f)
+                        serviceScope.launch {
+                            val startVol = activePlayer.volume
+                            for (step in 1..5) {
+                                delay(16)
+                                activePlayer.volume = (startVol + (1f - startVol) * (step / 5f)).coerceIn(0f, 1f)
+                            }
+                            activePlayer.volume = 1f
+                            activePlayer.pauseAtEndOfMediaItems = false
                         }
-                        activePlayer.volume = 1f
                     }
                 }
             }
@@ -655,7 +683,10 @@ class AudioPlayerService : MediaSessionService() {
             }
         )
 
-        activePlayer = createExoPlayer(handleAudioFocus = true)
+        playerA = createExoPlayer(handleAudioFocus = true)
+        playerB = createExoPlayer(handleAudioFocus = false)
+        activePlayer = playerA
+        fadingPlayer = null
         try {
             val openIntent = Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
                 putExtra(AudioEffect.EXTRA_AUDIO_SESSION, activePlayer.audioSessionId)
@@ -698,12 +729,14 @@ class AudioPlayerService : MediaSessionService() {
         serviceScope.cancel()
         transitionMonitorJob?.cancel()
         crossfadeJob?.cancel()
-        fadingPlayer?.release()
         fadingPlayer = null
-        auxiliaryPlayer?.release()
-        auxiliaryPlayer = null
+        if (::playerA.isInitialized) {
+            playerA.release()
+        }
+        if (::playerB.isInitialized) {
+            playerB.release()
+        }
         mediaSession?.run {
-            player.release()
             release()
             mediaSession = null
         }

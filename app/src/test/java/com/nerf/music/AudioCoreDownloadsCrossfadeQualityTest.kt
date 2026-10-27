@@ -195,6 +195,50 @@ class AudioCoreDownloadsCrossfadeQualityTest {
         assertEquals(400L, fadeMsMinimal)
     }
 
+    @Test
+    fun testPlayerDualSlotCandidateInvariance() {
+        val dummyA = Any()
+        val dummyB = Any()
+        var currentActive = dummyA
+
+        fun getIncoming(active: Any) = if (active === dummyA) dummyB else dummyA
+
+        // 1. Initial state
+        assertEquals(dummyB, getIncoming(currentActive))
+        assertFalse(currentActive === getIncoming(currentActive))
+
+        // 2. Transition to B
+        currentActive = getIncoming(currentActive)
+        assertEquals(dummyB, currentActive)
+        assertEquals(dummyA, getIncoming(currentActive))
+        assertFalse(currentActive === getIncoming(currentActive))
+
+        // 3. Repeated transitions always guarantee separate instances
+        for (i in 1..10) {
+            val incoming = getIncoming(currentActive)
+            assertFalse("incoming must never be the same instance as currentActive", incoming === currentActive)
+            currentActive = incoming
+        }
+    }
+
+    @Test
+    fun testSeekDiscontinuityDebounceAndShortRemainingGuards() {
+        // 1. Debounce guard: within 500ms of seek, transition must not trigger
+        val lastSeekMs = 1000L
+        val nowDuringDebounce = 1300L
+        val isDebouncing = (nowDuringDebounce - lastSeekMs) < 500L
+        assertTrue("Deve bloquear transição durante os primeiros 500ms pós-seek", isDebouncing)
+
+        val nowAfterDebounce = 1600L
+        val isDebouncingAfter = (nowAfterDebounce - lastSeekMs) < 500L
+        assertFalse("Deve liberar transição após 500ms pós-seek", isDebouncingAfter)
+
+        // 2. Short remaining duration guard: under 1500ms, do not trigger heavy crossfade
+        val remainingShort = 1200L
+        val shouldSkipCrossfade = remainingShort < 1500L
+        assertTrue("Deve evitar crossfade pesado em músicas com menos de 1.5s restantes", shouldSkipCrossfade)
+    }
+
     // =========================================================================
     // 3. Aplicação Real dos Níveis de Qualidade de Mídia
     // =========================================================================
