@@ -4,7 +4,34 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
-## [1.3.5] - 2026-10-27
+## [Unreleased] (Em Desenvolvimento / Não Lançado)
+> **Status:** Unreleased (Alterações integradas à branch principal, aguardando compilação de nova versão).  
+> **Aviso para Agentes de IA e Desenvolvedores:** As alterações listadas nesta seção já estão mergeadas na branch `main`, mas ainda **NÃO** foram empacotadas nem publicadas em uma versão/tag oficial (o aplicativo no `build.gradle.kts` permanece na última versão estável lançada). Continue registrando novos desenvolvimentos nesta seção `[Unreleased]` sob os cabeçalhos apropriados (`### Adicionado`, `### Corrigido`, `### Melhorado`) até que o mantenedor decida fechar a próxima release.
+
+### Adicionado
+- **Configurações Granulares de Download (Canvas e Letras Independentes):**
+  - Opções independentes nas Configurações e nos diálogos de download permitindo baixar "Canvas" e "Letras" de forma desacoplada do áudio.
+  - Opção "Letras" habilitada por padrão (`DEFAULT_DOWNLOAD_LYRICS = true`).
+  - Estimativa dinâmica de espaço em disco atualizada em tempo real conforme os toggles selecionados pelo usuário.
+- **Empty State Offline Estilo YouTube Music:**
+  - Interface dedicada na tela inicial (Home) exibida quando o aparelho estiver sem conexão à internet, com layout padronizado informando o estado offline e botão de atalho direto para a aba de downloads/arquivos locais.
+- **Reconexão Automática e Pull-to-Refresh em Tempo Real (`ConnectivityObserver`):**
+  - Integração de monitor de conectividade reativo que restaura automaticamente os dados do feed da Home assim que o dispositivo restabelece a conexão com a internet, sem necessidade de intervenção do usuário.
+  - Suporte nativo a arrastar para baixo para recarregar (Pull-to-Refresh) com o feed já no topo.
+
+### Corrigido
+- **Foco e Centralização Automática na Fila do Player (Queue Auto-Scroll):**
+  - Ajustada a gaveta da fila no Player (`FullPlayerSheet`) para rolar suavemente e focar de imediato na música atual em reprodução (`scrollToItem(currentQueueIndex)`), em vez de renderizar no topo.
+- **Eliminação de Delay e Flickering de Capa no Swipe do Player:**
+  - Eliminação da exibição repetida da capa antiga durante a animação de swipe horizontal através de estado otimista antecipado (`pendingSwipeTrack`).
+  - Pré-aquecimento das capas das faixas adjacentes (próxima e anterior) no cache de memória do Coil, com suporte a arquivos offline e capas remotas.
+  - Troca instantânea (milissegundo zero) de `activePlayer` e `MediaSession` no `AudioPlayerService` durante skips manuais, removendo o atraso anterior de 2.5 a 5 segundos de espera assíncrona.
+- **Validação Estrita de Economia de Dados (Data Saver Enforcement):**
+  - Aplicação de regras que impedem o download de recursos pesados (Canvas e capas de alta resolução) quando o modo Economia de Dados estiver ativo (`Sempre ativado` ou `Automático` em redes móveis). Faixas já presentes no cache local são executadas sem consumo de franquia.
+
+---
+
+## [1.3.5] - 2026-10-27 [RELEASED]
 
 ### Corrigido
 - **Aba "Relacionados" no Player (Arquitetura Multi-Tier à Prova de Falhas):**
