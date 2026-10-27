@@ -381,6 +381,11 @@ fun MainScreen(
                             navController.navigate("settings") {
                                 launchSingleTop = true
                             }
+                        },
+                        onNavigateToDownloads = {
+                            navController.navigate(Screen.Library.route) {
+                                launchSingleTop = true
+                            }
                         }
                     )
                 }

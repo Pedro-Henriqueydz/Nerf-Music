@@ -314,15 +314,39 @@ class SmartDownloadManager(
         private const val TAG = "SmartDownloadManager"
         private val globalSyncMutex = Mutex()
 
-        /**
-         * Estimativa de consumo em disco para N músicas em qualidade Lossless/Máxima Fidelidade (~5.2MB por faixa).
-         */
-        fun estimateStorageBytes(trackCount: Int): Long {
-            return trackCount * 5_450_000L // ~5.2 MB por música Opus/AAC estéreo
+        fun getEstimatedMbPerTrack(quality: DownloadAudioQuality): Double {
+            return when (quality) {
+                DownloadAudioQuality.LOSSLESS -> 35.0
+                DownloadAudioQuality.VERY_HIGH -> 10.0
+                DownloadAudioQuality.HIGH -> 6.5
+                DownloadAudioQuality.NORMAL -> 3.5
+            }
         }
 
-        fun formatStorageEstimate(trackCount: Int): String {
-            val bytes = estimateStorageBytes(trackCount)
+        /**
+         * Estimativa de consumo em disco dinâmica baseada na qualidade de áudio e inclusão de Canvas e Lyrics.
+         */
+        fun estimateStorageBytes(
+            trackCount: Int,
+            quality: DownloadAudioQuality = DownloadAudioQuality.LOSSLESS,
+            includeCanvas: Boolean = false,
+            includeLyrics: Boolean = true
+        ): Long {
+            val safeCount = trackCount.coerceAtLeast(0)
+            val audioMb = getEstimatedMbPerTrack(quality)
+            val canvasMb = if (includeCanvas) 8.0 else 0.0
+            val lyricsMb = if (includeLyrics) 0.05 else 0.0
+            val totalMb = (safeCount * (audioMb + canvasMb + lyricsMb)).toLong()
+            return totalMb * 1024L * 1024L
+        }
+
+        fun formatStorageEstimate(
+            trackCount: Int,
+            quality: DownloadAudioQuality = DownloadAudioQuality.LOSSLESS,
+            includeCanvas: Boolean = false,
+            includeLyrics: Boolean = true
+        ): String {
+            val bytes = estimateStorageBytes(trackCount, quality, includeCanvas, includeLyrics)
             val mb = bytes / (1024 * 1024)
             return if (mb >= 1000) {
                 String.format(java.util.Locale.US, "%.1f GB", mb / 1024.0)

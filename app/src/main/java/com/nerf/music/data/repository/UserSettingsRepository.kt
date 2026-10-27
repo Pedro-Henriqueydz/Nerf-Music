@@ -57,6 +57,10 @@ interface UserSettingsRepository {
     val cellularAudioQuality: StateFlow<AudioQuality>
     val downloadAudioQuality: StateFlow<DownloadAudioQuality>
 
+    // Opções Granulares de Download (Canvas & Lyrics)
+    val isDownloadCanvasEnabled: StateFlow<Boolean>
+    val isDownloadLyricsEnabled: StateFlow<Boolean>
+
     // Smart Downloads (Downloads Inteligentes - YouTube Music Style)
     val isSmartDownloadsEnabled: StateFlow<Boolean>
     val smartDownloadsLimit: StateFlow<Int>
@@ -76,6 +80,9 @@ interface UserSettingsRepository {
     fun setWifiAudioQuality(quality: AudioQuality)
     fun setCellularAudioQuality(quality: AudioQuality)
     fun setDownloadAudioQuality(quality: DownloadAudioQuality)
+
+    fun setDownloadCanvasEnabled(enabled: Boolean)
+    fun setDownloadLyricsEnabled(enabled: Boolean)
 
     fun setSmartDownloadsEnabled(enabled: Boolean)
     fun setSmartDownloadsLimit(limit: Int)
@@ -122,6 +129,12 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
     private val _downloadAudioQuality = MutableStateFlow(loadDownloadAudioQuality())
     override val downloadAudioQuality: StateFlow<DownloadAudioQuality> = _downloadAudioQuality.asStateFlow()
 
+    private val _isDownloadCanvasEnabled = MutableStateFlow(prefs.getBoolean(KEY_DOWNLOAD_CANVAS_ENABLED, false))
+    override val isDownloadCanvasEnabled: StateFlow<Boolean> = _isDownloadCanvasEnabled.asStateFlow()
+
+    private val _isDownloadLyricsEnabled = MutableStateFlow(prefs.getBoolean(KEY_DOWNLOAD_LYRICS_ENABLED, true))
+    override val isDownloadLyricsEnabled: StateFlow<Boolean> = _isDownloadLyricsEnabled.asStateFlow()
+
     private val _isSmartDownloadsEnabled = MutableStateFlow(prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, false))
     override val isSmartDownloadsEnabled: StateFlow<Boolean> = _isSmartDownloadsEnabled.asStateFlow()
 
@@ -145,6 +158,8 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
             KEY_WIFI_AUDIO_QUALITY -> _wifiAudioQuality.value = loadWifiAudioQuality()
             KEY_CELLULAR_AUDIO_QUALITY -> _cellularAudioQuality.value = loadCellularAudioQuality()
             KEY_DOWNLOAD_AUDIO_QUALITY -> _downloadAudioQuality.value = loadDownloadAudioQuality()
+            KEY_DOWNLOAD_CANVAS_ENABLED -> _isDownloadCanvasEnabled.value = prefs.getBoolean(KEY_DOWNLOAD_CANVAS_ENABLED, false)
+            KEY_DOWNLOAD_LYRICS_ENABLED -> _isDownloadLyricsEnabled.value = prefs.getBoolean(KEY_DOWNLOAD_LYRICS_ENABLED, true)
             KEY_SMART_DOWNLOADS_ENABLED -> _isSmartDownloadsEnabled.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, false)
             KEY_SMART_DOWNLOADS_LIMIT -> _smartDownloadsLimit.value = prefs.getInt(KEY_SMART_DOWNLOADS_LIMIT, 100)
             KEY_SMART_DOWNLOADS_WIFI_ONLY -> _isSmartDownloadsWifiOnly.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, true)
@@ -252,6 +267,16 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         prefs.edit().putString(KEY_DOWNLOAD_AUDIO_QUALITY, quality.name).apply()
     }
 
+    override fun setDownloadCanvasEnabled(enabled: Boolean) {
+        _isDownloadCanvasEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_DOWNLOAD_CANVAS_ENABLED, enabled).apply()
+    }
+
+    override fun setDownloadLyricsEnabled(enabled: Boolean) {
+        _isDownloadLyricsEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_DOWNLOAD_LYRICS_ENABLED, enabled).apply()
+    }
+
     override fun setSmartDownloadsEnabled(enabled: Boolean) {
         _isSmartDownloadsEnabled.value = enabled
         prefs.edit().putBoolean(KEY_SMART_DOWNLOADS_ENABLED, enabled).apply()
@@ -282,6 +307,8 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         private const val KEY_WIFI_AUDIO_QUALITY = "key_wifi_audio_quality"
         private const val KEY_CELLULAR_AUDIO_QUALITY = "key_cellular_audio_quality"
         private const val KEY_DOWNLOAD_AUDIO_QUALITY = "key_download_audio_quality"
+        private const val KEY_DOWNLOAD_CANVAS_ENABLED = "key_download_canvas_enabled"
+        private const val KEY_DOWNLOAD_LYRICS_ENABLED = "key_download_lyrics_enabled"
         private const val KEY_SMART_DOWNLOADS_ENABLED = "key_smart_downloads_enabled"
         private const val KEY_SMART_DOWNLOADS_LIMIT = "key_smart_downloads_limit"
         private const val KEY_SMART_DOWNLOADS_WIFI_ONLY = "key_smart_downloads_wifi_only"

@@ -53,6 +53,8 @@ import com.nerf.music.player.SmartRadioEngine
 import com.nerf.music.player.RadioTuningMode
 import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.util.NetworkUtils
+import com.nerf.music.util.ConnectivityObserver
+import com.nerf.music.util.NetworkConnectivityObserver
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.media.audiofx.AudioEffect
@@ -150,6 +152,17 @@ class MusicViewModel(
 
     private val _downloadAudioQuality = MutableStateFlow(DownloadAudioQuality.LOSSLESS)
     val downloadAudioQuality: StateFlow<DownloadAudioQuality> = _downloadAudioQuality.asStateFlow()
+
+    private val _isDownloadCanvasEnabled = MutableStateFlow(false)
+    val isDownloadCanvasEnabled: StateFlow<Boolean> = _isDownloadCanvasEnabled.asStateFlow()
+
+    private val _isDownloadLyricsEnabled = MutableStateFlow(true)
+    val isDownloadLyricsEnabled: StateFlow<Boolean> = _isDownloadLyricsEnabled.asStateFlow()
+
+    private var connectivityObserver: ConnectivityObserver? = null
+    private val _connectivityStatus = MutableStateFlow(ConnectivityObserver.Status.Available)
+    val connectivityStatus: StateFlow<ConnectivityObserver.Status> = _connectivityStatus.asStateFlow()
+    private var connectivityObserverJob: Job? = null
 
     private val _isSmartDownloadsEnabled = MutableStateFlow(false)
     val isSmartDownloadsEnabled: StateFlow<Boolean> = _isSmartDownloadsEnabled.asStateFlow()
@@ -339,6 +352,8 @@ class MusicViewModel(
             _wifiAudioQuality.value = settingsRepo.wifiAudioQuality.value
             _cellularAudioQuality.value = settingsRepo.cellularAudioQuality.value
             _downloadAudioQuality.value = settingsRepo.downloadAudioQuality.value
+            _isDownloadCanvasEnabled.value = settingsRepo.isDownloadCanvasEnabled.value
+            _isDownloadLyricsEnabled.value = settingsRepo.isDownloadLyricsEnabled.value
             _isSmartDownloadsEnabled.value = settingsRepo.isSmartDownloadsEnabled.value
             _smartDownloadsLimit.value = settingsRepo.smartDownloadsLimit.value
             _isSmartDownloadsWifiOnly.value = settingsRepo.isSmartDownloadsWifiOnly.value
@@ -424,6 +439,26 @@ class MusicViewModel(
             _isSpotifyConnected.value = migManager.isSpotifyConnected()
         }
 
+        if (connectivityObserver == null) {
+            val observer = NetworkConnectivityObserver(context.applicationContext)
+            connectivityObserver = observer
+            var prevStatus: ConnectivityObserver.Status? = null
+            connectivityObserverJob?.cancel()
+            connectivityObserverJob = viewModelScope.launch {
+                observer.observe().collect { status ->
+                    _connectivityStatus.value = status
+                    if (prevStatus != null &&
+                        prevStatus != ConnectivityObserver.Status.Available &&
+                        status == ConnectivityObserver.Status.Available
+                    ) {
+                        Log.i("MusicViewModel", "Conectividade restabelecida ($prevStatus -> $status). Recarregando Home automaticamente...")
+                        loadHomeFeed(force = true)
+                    }
+                    prevStatus = status
+                }
+            }
+        }
+
         if (!hasCheckedForUpdates) {
             hasCheckedForUpdates = true
             checkForAppUpdates()
@@ -453,7 +488,7 @@ class MusicViewModel(
         }, MoreExecutors.directExecutor())
     }
 
-    fun loadHomeFeed(params: String? = _selectedHomeChip.value?.params) {
+    fun loadHomeFeed(params: String? = _selectedHomeChip.value?.params, force: Boolean = false) {
         viewModelScope.launch {
             _isLoadingHome.value = true
             _homeError.value = null
@@ -701,7 +736,8 @@ class MusicViewModel(
                 null
             }
         } else {
-            val artworkUrl = track.highResThumbnailUrl ?: track.thumbnailUrl
+            val isDataSaver = isDataSaverActive()
+            val artworkUrl = if (isDataSaver) track.thumbnailUrl else (track.highResThumbnailUrl ?: track.thumbnailUrl)
             artworkUrl?.let { Uri.parse(it) }
         }
 
@@ -1512,6 +1548,29 @@ class MusicViewModel(
             libRepo.removeDownload(trackId)
             _userMessage.value = "Download removido"
         } else {
+            // Validação de Economia de Dados
+            val mode = userSettingsRepository?.dataSaverMode?.value ?: _dataSaverMode.value
+            val allowCellular = userSettingsRepository?.isDownloadOverCellular?.value ?: _isDownloadOverCellular.value
+            val context = applicationContext
+            val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: false
+            val isNetworkAvailable = context?.let { NetworkUtils.isNetworkAvailable(it) } ?: false
+            val isCellular = isNetworkAvailable && !isWifi
+
+            if (mode == DataSaverMode.ALWAYS_ON) {
+                _userMessage.value = "Downloads bloqueados: modo Economia de Dados (Sempre ativado) está ativo."
+                return
+            }
+            if (!isWifi && (isCellular || !isNetworkAvailable)) {
+                if (!allowCellular) {
+                    _userMessage.value = "Download pausado: 'Downloads via dados móveis' está desativado nas configurações."
+                    return
+                }
+                if (mode == DataSaverMode.AUTOMATIC) {
+                    _userMessage.value = "Downloads bloqueados em rede móvel pela Economia de Dados."
+                    return
+                }
+            }
+
             _userMessage.value = "Iniciando download para reprodução offline..."
             viewModelScope.launch {
                 val currentProg = _downloadProgressMap.value.toMutableMap()
@@ -1676,7 +1735,31 @@ class MusicViewModel(
             _userMessage.value = "Todas as músicas já foram baixadas"
             return
         }
-        _userMessage.value = "Baixando  músicas..."
+
+        // Validação de Economia de Dados
+        val mode = userSettingsRepository?.dataSaverMode?.value ?: _dataSaverMode.value
+        val allowCellular = userSettingsRepository?.isDownloadOverCellular?.value ?: _isDownloadOverCellular.value
+        val context = applicationContext
+        val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: false
+        val isNetworkAvailable = context?.let { NetworkUtils.isNetworkAvailable(it) } ?: false
+        val isCellular = isNetworkAvailable && !isWifi
+
+        if (mode == DataSaverMode.ALWAYS_ON) {
+            _userMessage.value = "Downloads bloqueados: modo Economia de Dados (Sempre ativado) está ativo."
+            return
+        }
+        if (!isWifi && (isCellular || !isNetworkAvailable)) {
+            if (!allowCellular) {
+                _userMessage.value = "Download pausado: 'Downloads via dados móveis' está desativado nas configurações."
+                return
+            }
+            if (mode == DataSaverMode.AUTOMATIC) {
+                _userMessage.value = "Downloads bloqueados em rede móvel pela Economia de Dados."
+                return
+            }
+        }
+
+        _userMessage.value = "Baixando músicas..."
         viewModelScope.launch {
             for (track in toDownload) {
                 trackMetadataMap[track.id] = track
@@ -2057,6 +2140,17 @@ class MusicViewModel(
         AudioPlayerService.clearStreamCache()
     }
 
+    fun isDataSaverActive(): Boolean {
+        val mode = userSettingsRepository?.dataSaverMode?.value ?: _dataSaverMode.value
+        val context = applicationContext ?: return mode == DataSaverMode.ALWAYS_ON
+        val isWifi = NetworkUtils.isConnectedToWifi(context)
+        return when (mode) {
+            DataSaverMode.ALWAYS_ON -> true
+            DataSaverMode.AUTOMATIC -> !isWifi
+            DataSaverMode.ALWAYS_OFF -> false
+        }
+    }
+
     fun setDownloadOverCellular(enabled: Boolean) {
         _isDownloadOverCellular.value = enabled
         userSettingsRepository?.setDownloadOverCellular(enabled)
@@ -2078,6 +2172,16 @@ class MusicViewModel(
         _downloadAudioQuality.value = quality
         userSettingsRepository?.setDownloadAudioQuality(quality)
         AudioPlayerService.clearStreamCache()
+    }
+
+    fun setDownloadCanvasEnabled(enabled: Boolean) {
+        _isDownloadCanvasEnabled.value = enabled
+        userSettingsRepository?.setDownloadCanvasEnabled(enabled)
+    }
+
+    fun setDownloadLyricsEnabled(enabled: Boolean) {
+        _isDownloadLyricsEnabled.value = enabled
+        userSettingsRepository?.setDownloadLyricsEnabled(enabled)
     }
 
     fun setSmartDownloadsEnabled(enabled: Boolean) {
@@ -2461,9 +2565,18 @@ class MusicViewModel(
             return
         }
 
-        val isWifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        // Validação de Economia de Dados: suprime Canvas em ALWAYS_ON ou AUTOMATIC em redes não-Wi-Fi
+        val currentMode = settings?.dataSaverMode?.value ?: _dataSaverMode.value
         val context = applicationContext
-        if (isWifiOnly && context != null && !NetworkUtils.isConnectedToWifi(context)) {
+        val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: false
+        if (currentMode == DataSaverMode.ALWAYS_ON || (currentMode == DataSaverMode.AUTOMATIC && !isWifi)) {
+            Log.i("MusicViewModel", "Canvas suprimido: Economia de Dados ativa.")
+            _isLoadingCanvasVideo.value = false
+            return
+        }
+
+        val isWifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        if (isWifiOnly && !isWifi) {
             Log.i("MusicViewModel", "Canvas ignorado: Wi-Fi Only ativado e não conectado ao Wi-Fi.")
             _isLoadingCanvasVideo.value = false
             return
@@ -2490,9 +2603,13 @@ class MusicViewModel(
         val isEnabled = settings?.isCanvasEnabled?.value ?: _isCanvasEnabled.value
         if (!isEnabled) return
 
-        val isWifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        val currentMode = settings?.dataSaverMode?.value ?: _dataSaverMode.value
         val context = applicationContext
-        if (isWifiOnly && context != null && !NetworkUtils.isConnectedToWifi(context)) return
+        val isWifi = context?.let { NetworkUtils.isConnectedToWifi(it) } ?: false
+        if (currentMode == DataSaverMode.ALWAYS_ON || (currentMode == DataSaverMode.AUTOMATIC && !isWifi)) return
+
+        val isWifiOnly = settings?.isCanvasWifiOnly?.value ?: _isCanvasWifiOnly.value
+        if (isWifiOnly && !isWifi) return
 
         val currentIdx = _playbackState.value.currentQueueIndex
         val nextTrack = _playbackState.value.queue.getOrNull(currentIdx + 1) ?: return

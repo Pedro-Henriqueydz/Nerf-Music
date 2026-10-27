@@ -33,6 +33,7 @@ import java.util.UUID
 import java.util.Locale
 import android.os.Environment
 import com.nerf.music.util.AudioMetadataTagger
+import com.nerf.music.util.DataSaverInterceptor
 
 interface LibraryRepository {
     val likedTracksFlow: StateFlow<List<Track>>
@@ -63,7 +64,11 @@ interface LibraryRepository {
 class LibraryRepositoryImpl(
     private val context: Context,
     private val streamResolver: StreamResolver = NewPipeStreamResolver(context),
-    private val httpClient: OkHttpClient = OkHttpClient()
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(DataSaverInterceptor(context))
+        .build(),
+    private val spotifyCanvasRepository: SpotifyCanvasRepository = SpotifyCanvasRepositoryImpl(httpClient),
+    private val lyricsRepository: LyricsRepository = LyricsRepositoryImpl()
 ) : LibraryRepository {
 
     companion object {
@@ -269,13 +274,39 @@ class LibraryRepositoryImpl(
         if (track.id.isBlank()) return@withContext Result.failure(IllegalArgumentException("TrackId vazio"))
 
         val isWifi = NetworkUtils.isConnectedToWifi(context)
+        val isNetworkAvailable = NetworkUtils.isNetworkAvailable(context)
+        val isCellular = isNetworkAvailable && !isWifi
         val settingsPrefs = context.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
         val allowCellular = settingsPrefs.getBoolean("key_download_over_cellular", false)
-        if (!isWifi && !allowCellular) {
+        val dataSaverModeStr = settingsPrefs.getString("key_data_saver_mode", "ALWAYS_OFF") ?: "ALWAYS_OFF"
+        val dataSaverMode = try {
+            DataSaverMode.valueOf(dataSaverModeStr)
+        } catch (_: Exception) {
+            DataSaverMode.ALWAYS_OFF
+        }
+
+        if (dataSaverMode == DataSaverMode.ALWAYS_ON) {
             return@withContext Result.failure(
-                IllegalStateException("Download pausado: 'Downloads via dados móveis' está desativado nas configurações.")
+                IllegalStateException("Download bloqueado: Economia de Dados (Sempre ativado) está ativo.")
             )
         }
+
+        if (!isWifi && (isCellular || !isNetworkAvailable)) {
+            if (!allowCellular) {
+                return@withContext Result.failure(
+                    IllegalStateException("Download pausado: 'Downloads via dados móveis' está desativado nas configurações.")
+                )
+            }
+            if (dataSaverMode == DataSaverMode.AUTOMATIC) {
+                return@withContext Result.failure(
+                    IllegalStateException("Download bloqueado em rede móvel pela Economia de Dados.")
+                )
+            }
+        }
+
+        val isDataSaverActive = dataSaverMode == DataSaverMode.ALWAYS_ON || (dataSaverMode == DataSaverMode.AUTOMATIC && !isWifi)
+        val isDownloadCanvasEnabled = settingsPrefs.getBoolean("key_download_canvas_enabled", false)
+        val isDownloadLyricsEnabled = settingsPrefs.getBoolean("key_download_lyrics_enabled", true)
 
         try {
             val downloadQualityStr = settingsPrefs.getString("key_download_audio_quality", "LOSSLESS") ?: "LOSSLESS"
@@ -453,9 +484,14 @@ class LibraryRepositoryImpl(
             }
 
             // Baixa o companion artwork para persistência offline
+            // Se Economia de Dados estiver ativa, suprime o download da capa HD pesada
             var artworkLocalPath: String? = null
             val artworkFile = File(downloadsDir, "${track.id}.jpg")
-            val candidateArtUrl = track.highResThumbnailUrl?.takeIf { it.isNotBlank() } ?: track.thumbnailUrl
+            val candidateArtUrl = if (isDataSaverActive) {
+                track.thumbnailUrl
+            } else {
+                track.highResThumbnailUrl?.takeIf { it.isNotBlank() } ?: track.thumbnailUrl
+            }
 
             if (!candidateArtUrl.isNullOrBlank() && !candidateArtUrl.startsWith("file://")) {
                 try {
@@ -480,6 +516,64 @@ class LibraryRepositoryImpl(
                 }
             } else if (artworkFile.exists() && artworkFile.length() > 0) {
                 artworkLocalPath = artworkFile.absolutePath
+            }
+
+            // Baixa o Canvas de vídeo (.mp4) se habilitado e não suprimido por Economia de Dados
+            if (isDownloadCanvasEnabled && !isDataSaverActive) {
+                val canvasFile = File(downloadsDir, "${track.id}.mp4")
+                try {
+                    val canvasRes = spotifyCanvasRepository.getCanvasUrl(track.title, track.artist)
+                    val canvasUrl = canvasRes.getOrNull()
+                    if (!canvasUrl.isNullOrBlank()) {
+                        val canvasReq = Request.Builder()
+                            .url(canvasUrl)
+                            .get()
+                            .build()
+                        httpClient.newCall(canvasReq).execute().use { cResp ->
+                            if (cResp.isSuccessful) {
+                                cResp.body?.byteStream()?.use { cIn ->
+                                    FileOutputStream(canvasFile).use { cOut ->
+                                        cIn.copyTo(cOut)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Falha ao baixar companion Canvas para ${track.id}: ${e.message}")
+                }
+            }
+
+            // Baixa o companion LRC de letras se habilitado
+            if (isDownloadLyricsEnabled) {
+                val lrcFile = File(downloadsDir, "${track.id}.lrc")
+                try {
+                    val lyricsRes = lyricsRepository.getLyrics(
+                        trackId = track.id,
+                        title = track.title,
+                        artist = track.artist,
+                        durationSeconds = track.durationSeconds.toInt()
+                    )
+                    val lyricsData = lyricsRes.getOrNull()
+                    if (lyricsData != null) {
+                        val lrcContent = if (lyricsData.syncedLines.isNotEmpty()) {
+                            lyricsData.syncedLines.joinToString("\n") { line ->
+                                val min = (line.timeMs / 60000).toString().padStart(2, '0')
+                                val sec = ((line.timeMs % 60000) / 1000).toString().padStart(2, '0')
+                                val csec = ((line.timeMs % 1000) / 10).toString().padStart(2, '0')
+                                "[$min:$sec.$csec]${line.text}"
+                            }
+                        } else if (!lyricsData.plainLyrics.isNullOrBlank() && !lyricsData.plainLyrics.trim().equals("null", ignoreCase = true)) {
+                            lyricsData.plainLyrics.trim()
+                        } else null
+
+                        if (!lrcContent.isNullOrBlank()) {
+                            lrcFile.writeText(lrcContent)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Falha ao baixar companion Letras para ${track.id}: ${e.message}")
+                }
             }
 
             // Embuti metadados (Título, Artista, Álbum e Arte da Capa) diretamente no arquivo físico de áudio
@@ -541,7 +635,7 @@ class LibraryRepositoryImpl(
             _downloadedTracksFlow.value = current
             saveDownloads(current)
         }
-        listOf("opus", "m4a", "webm").forEach { ext ->
+        listOf("opus", "m4a", "webm", "mp4").forEach { ext ->
             val f = File(downloadsDir, "$trackId.$ext")
             if (f.exists()) {
                 f.delete()
@@ -551,6 +645,11 @@ class LibraryRepositoryImpl(
         val artFile = File(downloadsDir, "$trackId.jpg")
         if (artFile.exists()) {
             artFile.delete()
+        }
+        val lrcFile = File(downloadsDir, "$trackId.lrc")
+        if (lrcFile.exists()) {
+            lrcFile.delete()
+            deletedAny = true
         }
 
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)

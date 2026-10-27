@@ -122,6 +122,8 @@ fun SettingsScreen(
     val sleepTimerAtEndOfTrack by viewModel.sleepTimerAtEndOfTrack.collectAsState()
     val storageBreakdown by viewModel.storageBreakdown.collectAsState()
     val downloadAudioQuality by viewModel.downloadAudioQuality.collectAsState()
+    val isDownloadCanvasEnabled by viewModel.isDownloadCanvasEnabled.collectAsState()
+    val isDownloadLyricsEnabled by viewModel.isDownloadLyricsEnabled.collectAsState()
     val isSmartDownloadsEnabled by viewModel.isSmartDownloadsEnabled.collectAsState()
     val smartDownloadsLimit by viewModel.smartDownloadsLimit.collectAsState()
     val isSmartDownloadsWifiOnly by viewModel.isSmartDownloadsWifiOnly.collectAsState()
@@ -267,6 +269,11 @@ fun SettingsScreen(
             SettingsSubScreen.STORAGE -> {
                 StorageSettingsScreen(
                     breakdown = storageBreakdown,
+                    downloadAudioQuality = downloadAudioQuality,
+                    isDownloadCanvasEnabled = isDownloadCanvasEnabled,
+                    onDownloadCanvasEnabledChange = { viewModel.setDownloadCanvasEnabled(it) },
+                    isDownloadLyricsEnabled = isDownloadLyricsEnabled,
+                    onDownloadLyricsEnabledChange = { viewModel.setDownloadLyricsEnabled(it) },
                     isSmartDownloadsEnabled = isSmartDownloadsEnabled,
                     onSmartDownloadsEnabledChange = { viewModel.setSmartDownloadsEnabled(it) },
                     smartDownloadsLimit = smartDownloadsLimit,
@@ -353,6 +360,8 @@ private fun SettingsMainContent(
             SearchableSetting("Canvas apenas no Wi-Fi", "Economiza dados móveis reproduzindo Canvas só no Wi-Fi", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
             SearchableSetting("Letras sincronizadas no Player", "Exibe a frase da letra em tempo real acima do título", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
             SearchableSetting("Armazenamento e Cache", "Espaço de downloads, cache e botão de limpar cache", "Armazenamento", SettingsSubScreen.STORAGE),
+            SearchableSetting("Download de Canvas", "Baixar vídeo em looping do Canvas nas faixas offline", "Armazenamento", SettingsSubScreen.STORAGE),
+            SearchableSetting("Download de Letras", "Baixar letras sincronizadas (.lrc) para ouvir offline", "Armazenamento", SettingsSubScreen.STORAGE),
         SearchableSetting("Importar biblioteca e migração", "Migre do Spotify, YouTube Music ou arquivos de backup", "Migração", SettingsSubScreen.MIGRATION),
         SearchableSetting("Conectar YouTube Music", "Sincronização de Músicas Curtidas e Playlists", "Migração", SettingsSubScreen.MIGRATION),
         SearchableSetting("Conectar Spotify", "Importação de Liked Songs e Playlists", "Migração", SettingsSubScreen.MIGRATION),
@@ -701,6 +710,11 @@ private fun SettingsMainContent(
 @Composable
 private fun StorageSettingsScreen(
     breakdown: StorageBreakdown?,
+    downloadAudioQuality: DownloadAudioQuality = DownloadAudioQuality.LOSSLESS,
+    isDownloadCanvasEnabled: Boolean = false,
+    onDownloadCanvasEnabledChange: (Boolean) -> Unit = {},
+    isDownloadLyricsEnabled: Boolean = true,
+    onDownloadLyricsEnabledChange: (Boolean) -> Unit = {},
     isSmartDownloadsEnabled: Boolean,
     onSmartDownloadsEnabledChange: (Boolean) -> Unit,
     smartDownloadsLimit: Int,
@@ -998,12 +1012,30 @@ private fun StorageSettingsScreen(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "Espaço estimado: ~${SmartDownloadManager.formatStorageEstimate(smartDownloadsLimit)} (Padrão Lossless)",
+                    text = "Espaço estimado: ~${SmartDownloadManager.formatStorageEstimate(smartDownloadsLimit, downloadAudioQuality, isDownloadCanvasEnabled, isDownloadLyricsEnabled)} (${downloadAudioQuality.displayName})",
                     fontFamily = YouTubeSansFontFamily,
                     fontSize = 12.sp,
                     color = SpotifyTextSecondary,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
+
+                SpotifySectionHeader(title = "Opções granulares de download")
+
+                SpotifySwitchItem(
+                    title = "Baixar Canvas de vídeo",
+                    subtitle = "Salva o vídeo em looping do Canvas junto com as faixas offline (+~8 MB/faixa)",
+                    checked = isDownloadCanvasEnabled,
+                    onCheckedChange = onDownloadCanvasEnabledChange
+                )
+
+                SpotifySwitchItem(
+                    title = "Baixar Letras sincronizadas",
+                    subtitle = "Salva o arquivo de letras (.lrc) para visualização offline (ativado por padrão)",
+                    checked = isDownloadLyricsEnabled,
+                    onCheckedChange = onDownloadLyricsEnabledChange
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 SpotifySwitchItem(
                     title = "Apenas no Wi-Fi",

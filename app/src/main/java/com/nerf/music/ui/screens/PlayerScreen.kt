@@ -391,7 +391,14 @@ fun FullPlayerSheet(
         val artFile = java.io.File(context.filesDir, "offline_audio/${track.id}.jpg")
         if (artFile.exists()) "file://${artFile.absolutePath}" else null
     }
-    val artworkUrl = localArtwork ?: track.highResThumbnailUrl ?: track.thumbnailUrl
+    val isDataSaverActive = remember(context) {
+        val prefs = context.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
+        val mode = prefs.getString("key_data_saver_mode", "ALWAYS_OFF") ?: "ALWAYS_OFF"
+        val isWifi = com.nerf.music.util.NetworkUtils.isConnectedToWifi(context)
+        mode == "ALWAYS_ON" || (mode == "AUTOMATIC" && !isWifi)
+    }
+    val candidateArtUrl = if (isDataSaverActive) track.thumbnailUrl else (track.highResThumbnailUrl ?: track.thumbnailUrl)
+    val artworkUrl = localArtwork ?: candidateArtUrl
 
     LaunchedEffect(track.id, artworkUrl) {
         if (artworkUrl.isNullOrBlank()) {
@@ -789,6 +796,24 @@ fun FullPlayerSheet(
                 }
 
                 val queueLazyListState = rememberLazyListState()
+
+                // 1. Ao abrir a gaveta da fila, foca e rola imediatamente para a faixa atual em execução
+                LaunchedEffect(queueState) {
+                    if (queueState != QueueExpansionState.COLLAPSED && state.queue.isNotEmpty()) {
+                        val targetIndex = state.currentQueueIndex.coerceIn(0, state.queue.lastIndex)
+                        queueLazyListState.scrollToItem(targetIndex)
+                    }
+                }
+
+                // 2. Ao mudar de faixa com a fila aberta, faz scroll suave sem interromper gestos ativos do usuário
+                LaunchedEffect(state.currentQueueIndex) {
+                    if (queueState != QueueExpansionState.COLLAPSED && state.queue.isNotEmpty()) {
+                        val targetIndex = state.currentQueueIndex.coerceIn(0, state.queue.lastIndex)
+                        if (!queueLazyListState.isScrollInProgress) {
+                            queueLazyListState.animateScrollToItem(targetIndex)
+                        }
+                    }
+                }
 
                 val queueNestedScrollConnection = remember(anchorExpandedY, anchorHalfExpandedY, anchorCollapsedY) {
                     object : NestedScrollConnection {

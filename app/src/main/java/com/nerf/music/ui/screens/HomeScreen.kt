@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
@@ -23,10 +24,12 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,12 +53,15 @@ import com.nerf.music.data.model.Track
 import com.nerf.music.ui.components.AnimatedEqualizerBars
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
+import com.nerf.music.util.ConnectivityObserver
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: MusicViewModel,
     onOpenAlbum: (browseId: String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onNavigateToDownloads: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val homeChips by viewModel.homeChips.collectAsState()
@@ -63,6 +70,11 @@ fun HomeScreen(
     val isLoading by viewModel.isLoadingHome.collectAsState()
     val homeError by viewModel.homeError.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
+    val connectivityStatus by viewModel.connectivityStatus.collectAsState()
+
+    val isOffline = connectivityStatus == ConnectivityObserver.Status.Unavailable ||
+            connectivityStatus == ConnectivityObserver.Status.Lost
+    val showOfflineCard = (isOffline || homeError != null) && homeSections.isEmpty()
 
     Box(
         modifier = modifier
@@ -90,7 +102,7 @@ fun HomeScreen(
             YtmTopBar(onOpenSettings = onOpenSettings)
 
             when {
-                isLoading && homeSections.isEmpty() -> {
+                isLoading && homeSections.isEmpty() && !isOffline -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -112,46 +124,115 @@ fun HomeScreen(
                     }
                 }
 
-                homeError != null && homeSections.isEmpty() -> {
-                    Column(
+                showOfflineCard -> {
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                            .padding(horizontal = 32.dp, vertical = 24.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = homeError ?: "Erro ao carregar a Home",
-                            fontFamily = YouTubeSansFontFamily,
-                            color = ErrorColor,
-                            fontSize = 16.sp
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { viewModel.loadHomeFeed() },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = YtmWhite,
-                                contentColor = YtmBlack
-                            ),
-                            shape = RoundedCornerShape(50)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(96.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF212121)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudOff,
+                                    contentDescription = "Offline",
+                                    tint = YtmWhite,
+                                    modifier = Modifier.size(44.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
                             Text(
-                                text = "Tentar novamente",
+                                text = "Você está off-line",
                                 fontFamily = YouTubeSansFontFamily,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 22.sp,
+                                color = YtmWhite,
+                                textAlign = TextAlign.Center
                             )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "As músicas salvas estão disponíveis nos seus downloads. Conecte-se à internet para atualizar seu feed inicial.",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 14.sp,
+                                color = YtmTextSecondary,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 20.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(28.dp))
+
+                            Button(
+                                onClick = onNavigateToDownloads,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = YtmWhite,
+                                    contentColor = YtmBlack
+                                ),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = YtmBlack
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Ir para downloads",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            TextButton(
+                                onClick = { viewModel.loadHomeFeed(force = true) }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = YtmTextSecondary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Tentar novamente",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = YtmTextSecondary
+                                )
+                            }
                         }
                     }
                 }
 
                 else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 110.dp),
-                        verticalArrangement = Arrangement.spacedBy(28.dp)
+                    PullToRefreshBox(
+                        isRefreshing = isLoading && homeSections.isNotEmpty(),
+                        onRefresh = { viewModel.loadHomeFeed(force = true) },
+                        modifier = Modifier.fillMaxSize()
                     ) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 110.dp),
+                            verticalArrangement = Arrangement.spacedBy(28.dp)
+                        ) {
                         // 1. Fileira de Chips de Humor e Atividade (Energia, Relax, Foco, etc.)
                         if (homeChips.isNotEmpty()) {
                             item {
@@ -272,6 +353,7 @@ fun HomeScreen(
             }
         }
     }
+}
 }
 
 /**
