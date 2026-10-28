@@ -36,6 +36,7 @@ import com.nerf.music.BuildConfig
 import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.data.repository.DataSaverMode
 import com.nerf.music.data.repository.DownloadAudioQuality
+import com.nerf.music.data.repository.LoudnessStandard
 import com.nerf.music.data.repository.SmartDownloadManager
 import com.nerf.music.data.repository.SmartDownloadSyncState
 import com.nerf.music.ui.theme.*
@@ -114,6 +115,7 @@ fun SettingsScreen(
     val isGaplessEnabled by viewModel.isGaplessEnabled.collectAsState()
     val isAutomixEnabled by viewModel.isAutomixEnabled.collectAsState()
     val crossfadeSeconds by viewModel.crossfadeSeconds.collectAsState()
+    val loudnessStandard by viewModel.loudnessStandard.collectAsState()
     val dataSaverMode by viewModel.dataSaverMode.collectAsState()
     val isDownloadOverCellular by viewModel.isDownloadOverCellular.collectAsState()
     val wifiAudioQuality by viewModel.wifiAudioQuality.collectAsState()
@@ -246,6 +248,8 @@ fun SettingsScreen(
                     onGaplessChange = { viewModel.setGaplessEnabled(it) },
                     isAutomixEnabled = isAutomixEnabled,
                     onAutomixChange = { viewModel.setAutomixEnabled(it) },
+                    loudnessStandard = loudnessStandard,
+                    onLoudnessStandardChange = { viewModel.setLoudnessStandard(it) },
                     sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
                     sleepTimerAtEndOfTrack = sleepTimerAtEndOfTrack,
                     onOpenSleepTimer = { showSleepTimerSheet = true },
@@ -354,6 +358,7 @@ private fun SettingsMainContent(
             SearchableSetting("Crossfade", "Transição suave e sobreposição entre faixas (0s-12s)", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Reprodução sem pausas (Gapless)", "Elimina o silêncio entre músicas consecutivas", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Automix", "Transições fluidas inteligentes em playlists", "Reprodução", SettingsSubScreen.PLAYBACK),
+            SearchableSetting("Normalização de volume (Loudness)", "Padronização de áudio em tempo real (-14 LUFS Spotify, -16 LUFS Apple Music, -11 LUFS CD, -9 LUFS CD Moderno)", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Equalizador", "Abre o painel de equalização de áudio", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Temporizador de sono (Sleep Timer)", "Pausa a reprodução após tempo determinado ou fim da faixa", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Canvas", "Exibe efeitos visuais curtos em loop no player", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
@@ -1419,6 +1424,8 @@ private fun PlaybackSettingsScreen(
     onGaplessChange: (Boolean) -> Unit,
     isAutomixEnabled: Boolean,
     onAutomixChange: (Boolean) -> Unit,
+    loudnessStandard: LoudnessStandard,
+    onLoudnessStandardChange: (LoudnessStandard) -> Unit,
     sleepTimerRemainingSeconds: Long?,
     sleepTimerAtEndOfTrack: Boolean,
     onOpenSleepTimer: () -> Unit,
@@ -1495,6 +1502,26 @@ private fun PlaybackSettingsScreen(
                 onCheckedChange = onAutomixChange
             )
 
+            SpotifySectionHeader(title = "Processamento de Áudio (DSP)")
+
+            var showLoudnessSheet by remember { mutableStateOf(false) }
+
+            SpotifyActionItemWithStatus(
+                title = "Normalização de volume",
+                subtitle = "Padroniza o volume sonoro entre faixas em tempo real",
+                statusText = loudnessStandard.displayName,
+                isStatusActive = loudnessStandard != LoudnessStandard.OFF,
+                onClick = { showLoudnessSheet = true }
+            )
+
+            if (showLoudnessSheet) {
+                LoudnessNormalizationBottomSheet(
+                    currentStandard = loudnessStandard,
+                    onSelectStandard = onLoudnessStandardChange,
+                    onDismiss = { showLoudnessSheet = false }
+                )
+            }
+
             SpotifySectionHeader(title = "Controles de áudio")
 
             // Equalizador de som
@@ -1525,6 +1552,59 @@ private fun PlaybackSettingsScreen(
             )
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Modal BottomSheet estilo Spotify para Normalização de Volume (Loudness DSP)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LoudnessNormalizationBottomSheet(
+    currentStandard: LoudnessStandard,
+    onSelectStandard: (LoudnessStandard) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = SpotifyCardBg,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = SpotifyTextSecondary) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "Normalização de volume",
+                fontFamily = YouTubeSansFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = Color.White,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Text(
+                text = "Equilibra o volume de reprodução em tempo real (chunk a chunk) usando o padrão internacional ITU-R BS.1770 / EBU R128 para evitar surpresas de volume entre faixas.",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+
+            LoudnessStandard.values().forEach { standard ->
+                SpotifyRadioOptionItem(
+                    title = standard.displayName,
+                    subtitle = standard.description,
+                    selected = currentStandard == standard,
+                    onSelect = {
+                        onSelectStandard(standard)
+                        onDismiss()
+                    }
+                )
+            }
         }
     }
 }

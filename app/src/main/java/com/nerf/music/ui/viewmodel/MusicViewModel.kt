@@ -48,6 +48,7 @@ import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import com.nerf.music.data.repository.DataSaverMode
 import com.nerf.music.data.repository.AudioQuality
+import com.nerf.music.data.repository.LoudnessStandard
 import com.nerf.music.data.repository.UserAffinityRepository
 import com.nerf.music.data.repository.UserAffinityRepositoryImpl
 import com.nerf.music.player.SmartRadioEngine
@@ -137,6 +138,9 @@ class MusicViewModel(
 
     private val _crossfadeSeconds = MutableStateFlow(0)
     val crossfadeSeconds: StateFlow<Int> = _crossfadeSeconds.asStateFlow()
+
+    private val _loudnessStandard = MutableStateFlow(LoudnessStandard.SPOTIFY)
+    val loudnessStandard: StateFlow<LoudnessStandard> = _loudnessStandard.asStateFlow()
 
     private val _dataSaverMode = MutableStateFlow(DataSaverMode.ALWAYS_OFF)
     val dataSaverMode: StateFlow<DataSaverMode> = _dataSaverMode.asStateFlow()
@@ -446,6 +450,7 @@ class MusicViewModel(
             _isGaplessEnabled.value = settingsRepo.isGaplessEnabled.value
             _isAutomixEnabled.value = settingsRepo.isAutomixEnabled.value
             _crossfadeSeconds.value = settingsRepo.crossfadeSeconds.value
+            _loudnessStandard.value = settingsRepo.loudnessStandard.value
             _dataSaverMode.value = settingsRepo.dataSaverMode.value
             _isDownloadOverCellular.value = settingsRepo.isDownloadOverCellular.value
             _wifiAudioQuality.value = settingsRepo.wifiAudioQuality.value
@@ -1162,7 +1167,7 @@ class MusicViewModel(
                         updateCurrentLyricsLine(pos)
                     }
                 }
-                delay(45)
+                delay(90)
             }
         }
     }
@@ -2592,6 +2597,12 @@ class MusicViewModel(
         if (jamSessionState.value.isInJam && jamSessionState.value.isHost) {
             jamSessionManager.broadcastHostStateSnapshot()
         }
+    }
+
+    fun setLoudnessStandard(standard: LoudnessStandard) {
+        _loudnessStandard.value = standard
+        userSettingsRepository?.setLoudnessStandard(standard)
+        AudioPlayerService.setLoudnessStandard(standard)
     }
 
     fun setDataSaverMode(mode: DataSaverMode) {

@@ -122,6 +122,9 @@ class VocalIsolationAudioProcessor : AudioProcessor {
     @Volatile
     var isKaraokeEnabled: Boolean = false
 
+    @Volatile
+    var isEnvelopeCaptureEnabled: Boolean = false
+
     /**
      * Nível de presença do vocal principal:
      * `0.0f` = Remoção máxima do vocal (Karaokê Puro)
@@ -226,6 +229,17 @@ class VocalIsolationAudioProcessor : AudioProcessor {
         }
 
         val karaokeActive = isKaraokeEnabled && inputAudioFormat.channelCount == 2
+        val captureActive = isEnvelopeCaptureEnabled && envelopeWriteCount < MAX_ENVELOPE_FRAMES
+
+        // Otimização Crítica de CPU/Térmica: se o Karaokê e a Captura estiverem inativos,
+        // realiza memcpy direto via internalBuffer.put(inputBuffer) sem custo de filtros Biquad.
+        if (!karaokeActive && !captureActive) {
+            internalBuffer.put(inputBuffer)
+            internalBuffer.flip()
+            outputBuffer = internalBuffer
+            return
+        }
+
         val rawVLevel = vocalLevel.coerceIn(0f, 1f)
         // Curva quadrática para que valores baixos no slider (0%..25%) mantenham atenuação profunda da voz
         val vGain = (rawVLevel * rawVLevel).toDouble()
@@ -239,9 +253,11 @@ class VocalIsolationAudioProcessor : AudioProcessor {
             val rightNorm = rightShort / 32768.0
             val mid = (leftNorm + rightNorm) * 0.5
 
-            // Registra envelope sub-grave continuamente para alinhamento automático de batidas
-            val envBass = envelopeSubLp.process(mid)
-            recordEnvelopeSample(envBass)
+            if (captureActive) {
+                // Registra envelope sub-grave apenas quando necessário para alinhamento automático de batidas
+                val envBass = envelopeSubLp.process(mid)
+                recordEnvelopeSample(envBass)
+            }
 
             if (!karaokeActive) {
                 internalBuffer.putShort(leftShort)

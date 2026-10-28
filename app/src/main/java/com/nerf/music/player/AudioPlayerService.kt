@@ -29,6 +29,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.data.repository.LibraryRepositoryImpl
+import com.nerf.music.data.repository.LoudnessStandard
 import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
 import com.nerf.music.util.NetworkUtils
@@ -69,6 +70,7 @@ class AudioPlayerService : MediaSessionService() {
     private lateinit var instrumentalPlayer: ExoPlayer
     private var fadingPlayer: ExoPlayer? = null
     private val vocalProcessors = mutableListOf<VocalIsolationAudioProcessor>()
+    private val loudnessProcessors = mutableListOf<LoudnessNormalizationAudioProcessor>()
     private val playerProcessorMap = HashMap<ExoPlayer, VocalIsolationAudioProcessor>()
     private val instrumentalEnvelopeProcessor = VocalIsolationAudioProcessor().apply {
         isKaraokeEnabled = false
@@ -135,6 +137,8 @@ class AudioPlayerService : MediaSessionService() {
             karaokeCrossfadeJob?.cancel()
             instrumentalSyncMonitorJob?.cancel()
             beatAlignmentJob?.cancel()
+            instrumentalEnvelopeProcessor.isEnvelopeCaptureEnabled = false
+            vocalProcessors.forEach { it.isEnvelopeCaptureEnabled = false }
             if (::instrumentalPlayer.isInitialized) {
                 instrumentalPlayer.pause()
                 instrumentalPlayer.stop()
@@ -235,14 +239,22 @@ class AudioPlayerService : MediaSessionService() {
                 delay(200)
             }
 
+            activeProc.isEnvelopeCaptureEnabled = true
+            instrumentalEnvelopeProcessor.isEnvelopeCaptureEnabled = true
             activeProc.clearEnvelopeHistory()
             instrumentalEnvelopeProcessor.clearEnvelopeHistory()
 
             delay(4800)
-            if (!isActive) return@launch
+            if (!isActive) {
+                activeProc.isEnvelopeCaptureEnabled = false
+                instrumentalEnvelopeProcessor.isEnvelopeCaptureEnabled = false
+                return@launch
+            }
 
             val mainEnv = activeProc.getCapturedBassEnvelope()
             val instEnv = instrumentalEnvelopeProcessor.getCapturedBassEnvelope()
+            activeProc.isEnvelopeCaptureEnabled = false
+            instrumentalEnvelopeProcessor.isEnvelopeCaptureEnabled = false
             val detectedLagMs = VocalIsolationAudioProcessor.computeBestBeatOffsetMs(
                 mainEnvelope = mainEnv,
                 instEnvelope = instEnv,
@@ -660,6 +672,11 @@ class AudioPlayerService : MediaSessionService() {
             instance?.applyKaraokeState(isKaraokeEnabled, karaokeVocalLevel)
         }
 
+        fun setLoudnessStandard(standard: LoudnessStandard) {
+            instance?.settingsRepository?.setLoudnessStandard(standard)
+            instance?.loudnessProcessors?.forEach { it.standard = standard }
+        }
+
         fun prepareStandbyInstrumental(
             originalTrackId: String,
             instrumentalVideoId: String,
@@ -878,6 +895,15 @@ class AudioPlayerService : MediaSessionService() {
         }
         vocalProcessors.add(vocalProcessor)
 
+        val loudnessProcessor = LoudnessNormalizationAudioProcessor().apply {
+            standard = if (::settingsRepository.isInitialized) {
+                settingsRepository.loudnessStandard.value
+            } else {
+                LoudnessStandard.SPOTIFY
+            }
+        }
+        loudnessProcessors.add(loudnessProcessor)
+
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -887,7 +913,7 @@ class AudioPlayerService : MediaSessionService() {
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(vocalProcessor))
+                    .setAudioProcessors(arrayOf(vocalProcessor, loudnessProcessor))
                     .build()
             }
         }
@@ -1221,6 +1247,12 @@ class AudioPlayerService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, activePlayer).apply {
             sessionActivityPendingIntent?.let { setSessionActivity(it) }
         }.build()
+
+        serviceScope.launch {
+            settingsRepository.loudnessStandard.collect { std ->
+                loudnessProcessors.forEach { it.standard = std }
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -1247,6 +1279,7 @@ class AudioPlayerService : MediaSessionService() {
         crossfadeJob?.cancel()
         fadingPlayer = null
         vocalProcessors.clear()
+        loudnessProcessors.clear()
         if (::playerA.isInitialized) {
             playerA.release()
         }

@@ -7,6 +7,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * Padrões de normalização de volume (Loudness Normalization) segundo normas da indústria e DSP.
+ */
+enum class LoudnessStandard(
+    val displayName: String,
+    val targetLufs: Float?,
+    val description: String
+) {
+    OFF("Desativado", null, "Reproduz o áudio com a dinâmica original do arquivo sem processamento"),
+    SPOTIFY("Spotify / Streaming (-14 LUFS)", -14f, "Padrão de streaming recomendado para equilíbrio e clareza"),
+    APPLE_MUSIC("Apple Music / Podcasts (-16 LUFS)", -16f, "Maior alcance dinâmico com graves preservados"),
+    CD_STANDARD("Padrão CD / Master Dinâmico (-11 LUFS)", -11f, "Equilíbrio entre fidelidade e intensidade sonora clássica"),
+    CD_LOUD("CD Moderno / Alta Potência (-9 LUFS)", -9f, "Máxima pressão sonora para fones e ambientes ruidosos"),
+    BROADCAST_EBU("EBU R128 / Broadcast (-23 LUFS)", -23f, "Padrão europeu de transmissão com alta faixa dinâmica")
+}
+
+/**
  * Modos de economia de dados móveis (idêntico ao Spotify 9.1.94)
  */
 enum class DataSaverMode(val displayName: String, val description: String) {
@@ -43,10 +59,11 @@ interface UserSettingsRepository {
     val isLyricsAboveTitleEnabled: StateFlow<Boolean>
     val isLibraryGridView: StateFlow<Boolean>
 
-    // Transições de Faixa (Track Transitions)
+    // Transições de Faixa (Track Transitions) e DSP
     val isGaplessEnabled: StateFlow<Boolean>
     val isAutomixEnabled: StateFlow<Boolean>
     val crossfadeSeconds: StateFlow<Int>
+    val loudnessStandard: StateFlow<LoudnessStandard>
 
     // Economia de Dados (Data-saving and offline)
     val dataSaverMode: StateFlow<DataSaverMode>
@@ -77,6 +94,7 @@ interface UserSettingsRepository {
     fun setGaplessEnabled(enabled: Boolean)
     fun setAutomixEnabled(enabled: Boolean)
     fun setCrossfadeSeconds(seconds: Int)
+    fun setLoudnessStandard(standard: LoudnessStandard)
 
     fun setDataSaverMode(mode: DataSaverMode)
     fun setDownloadOverCellular(enabled: Boolean)
@@ -118,6 +136,9 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
 
     private val _crossfadeSeconds = MutableStateFlow(prefs.getInt(KEY_CROSSFADE_SECONDS, 0))
     override val crossfadeSeconds: StateFlow<Int> = _crossfadeSeconds.asStateFlow()
+
+    private val _loudnessStandard = MutableStateFlow(loadLoudnessStandard())
+    override val loudnessStandard: StateFlow<LoudnessStandard> = _loudnessStandard.asStateFlow()
 
     private val _dataSaverMode = MutableStateFlow(loadDataSaverMode())
     override val dataSaverMode: StateFlow<DataSaverMode> = _dataSaverMode.asStateFlow()
@@ -161,6 +182,7 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
             KEY_GAPLESS_ENABLED -> _isGaplessEnabled.value = prefs.getBoolean(KEY_GAPLESS_ENABLED, true)
             KEY_AUTOMIX_ENABLED -> _isAutomixEnabled.value = prefs.getBoolean(KEY_AUTOMIX_ENABLED, true)
             KEY_CROSSFADE_SECONDS -> _crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE_SECONDS, 0)
+            KEY_LOUDNESS_STANDARD -> _loudnessStandard.value = loadLoudnessStandard()
             KEY_DATA_SAVER_MODE -> _dataSaverMode.value = loadDataSaverMode()
             KEY_DOWNLOAD_OVER_CELLULAR -> _isDownloadOverCellular.value = prefs.getBoolean(KEY_DOWNLOAD_OVER_CELLULAR, false)
             KEY_WIFI_AUDIO_QUALITY -> _wifiAudioQuality.value = loadWifiAudioQuality()
@@ -177,6 +199,15 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+    }
+
+    private fun loadLoudnessStandard(): LoudnessStandard {
+        val raw = prefs.getString(KEY_LOUDNESS_STANDARD, LoudnessStandard.SPOTIFY.name)
+        return try {
+            LoudnessStandard.valueOf(raw ?: LoudnessStandard.SPOTIFY.name)
+        } catch (_: Exception) {
+            LoudnessStandard.SPOTIFY
+        }
     }
 
     private fun loadDataSaverMode(): DataSaverMode {
@@ -251,6 +282,11 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         prefs.edit().putInt(KEY_CROSSFADE_SECONDS, clamped).apply()
     }
 
+    override fun setLoudnessStandard(standard: LoudnessStandard) {
+        _loudnessStandard.value = standard
+        prefs.edit().putString(KEY_LOUDNESS_STANDARD, standard.name).apply()
+    }
+
     override fun setDataSaverMode(mode: DataSaverMode) {
         _dataSaverMode.value = mode
         prefs.edit().putString(KEY_DATA_SAVER_MODE, mode.name).apply()
@@ -317,6 +353,7 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         private const val KEY_GAPLESS_ENABLED = "key_gapless_enabled"
         private const val KEY_AUTOMIX_ENABLED = "key_automix_enabled"
         private const val KEY_CROSSFADE_SECONDS = "key_crossfade_seconds"
+        private const val KEY_LOUDNESS_STANDARD = "key_loudness_standard"
         private const val KEY_DATA_SAVER_MODE = "key_data_saver_mode"
         private const val KEY_DOWNLOAD_OVER_CELLULAR = "key_download_over_cellular"
         private const val KEY_WIFI_AUDIO_QUALITY = "key_wifi_audio_quality"
