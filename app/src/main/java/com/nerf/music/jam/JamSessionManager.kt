@@ -4,6 +4,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import com.nerf.music.data.model.Track
+import com.nerf.music.player.AudioPlayerService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,7 +34,13 @@ data class JamPlaybackSnapshot(
     val queue: List<Track>,
     val currentQueueIndex: Int,
     val isPlaying: Boolean,
-    val positionMs: Long
+    val positionMs: Long,
+    val repeatModeName: String = "OFF",
+    val hostCrossfadeSeconds: Int = 0,
+    val hostAutomixEnabled: Boolean = true,
+    val hostGaplessEnabled: Boolean = true,
+    val isKaraokeActive: Boolean = false,
+    val karaokeVocalLevel: Float = 0.0f
 )
 
 /**
@@ -84,11 +91,108 @@ class JamSessionManager(
 
     private var embeddedServer: JamWebSocketServer? = null
     private var clientWebSocket: WebSocket? = null
+    private var globalRelayClient: JamGlobalRelayClient? = null
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
 
-    // Mapeia clientId do socket do servidor -> JamParticipant
+    // Mapeia clientId do socket do servidor (ou peerId no relay global) -> JamParticipant
     private val connectedGuestsBySocketId = ConcurrentHashMap<String, JamParticipant>()
+
+    fun updateHostRoomSettings(transform: (JamRoomSettings) -> JamRoomSettings) {
+        val cur = _sessionState.value
+        val updatedSettings = transform(cur.roomSettings)
+        _sessionState.value = cur.copy(roomSettings = updatedSettings)
+        if (cur.isInJam && cur.isHost) {
+            broadcastHostStateSnapshot()
+        }
+    }
+
+    fun kickParticipant(targetPeerId: String) {
+        val cur = _sessionState.value
+        if (!cur.isInJam || !cur.isHost || targetPeerId == localPeerId) return
+
+        val keysToRemove = connectedGuestsBySocketId.entries
+            .filter { it.value.peerId == targetPeerId }
+            .map { it.key }
+        var kickedName = "Convidado"
+        for (k in keysToRemove) {
+            connectedGuestsBySocketId.remove(k)?.let { kickedName = it.displayName }
+        }
+        refreshHostParticipantsList()
+
+        val kickMsg = JamWireMessage(
+            type = JamMessageType.COMMAND,
+            sessionId = cur.sessionId,
+            senderId = localPeerId,
+            senderName = localDisplayName,
+            hostId = localPeerId,
+            command = JamCommandType.KICK_PARTICIPANT,
+            targetPeerId = targetPeerId
+        )
+        val encoded = json.encodeToString(kickMsg)
+        embeddedServer?.broadcast(encoded)
+        clientWebSocket?.send(encoded)
+        globalRelayClient?.send(encoded, retain = false)
+
+        onUserFeedback("$kickedName foi removido da JAM.")
+        broadcastHostStateSnapshot()
+    }
+
+    fun requestImmediateSyncFromHost() {
+        val cur = _sessionState.value
+        if (!cur.isInJam) return
+        if (cur.isHost) {
+            broadcastHostStateSnapshot()
+            onUserFeedback("Sincronização enviada para todos na sala.")
+        } else {
+            val req = JamWireMessage(
+                type = JamMessageType.COMMAND,
+                sessionId = cur.sessionId,
+                senderId = localPeerId,
+                senderName = localDisplayName,
+                command = JamCommandType.REQUEST_SYNC
+            )
+            val encoded = json.encodeToString(req)
+            clientWebSocket?.send(encoded)
+            globalRelayClient?.send(encoded, retain = false)
+            onUserFeedback("Ressincronizando áudio com o Host...")
+        }
+    }
+
+    private fun isGuestCommandAllowed(cmd: JamCommandType, settings: JamRoomSettings): Boolean {
+        return when (cmd) {
+            JamCommandType.REQUEST_SYNC -> true
+            JamCommandType.KICK_PARTICIPANT -> false
+            JamCommandType.ADD_TO_QUEUE,
+            JamCommandType.PLAY_NEXT_IN_QUEUE,
+            JamCommandType.REMOVE_QUEUE_ITEM,
+            JamCommandType.MOVE_QUEUE_ITEM -> settings.allowGuestsToQueue
+            JamCommandType.PLAY,
+            JamCommandType.PAUSE,
+            JamCommandType.SEEK,
+            JamCommandType.SKIP_NEXT,
+            JamCommandType.SKIP_PREV,
+            JamCommandType.PLAY_TRACK,
+            JamCommandType.SELECT_QUEUE_INDEX,
+            JamCommandType.SET_REPEAT_MODE -> settings.allowGuestsToControlPlayback
+        }
+    }
+
+    private fun buildGuestCommandAnnouncement(msg: JamWireMessage): String? {
+        val guestName = msg.senderName.ifBlank { "Convidado" }
+        return when (msg.command) {
+            JamCommandType.ADD_TO_QUEUE, JamCommandType.PLAY_NEXT_IN_QUEUE -> {
+                val trackTitle = msg.targetTrack?.title ?: msg.targetTracks.firstOrNull()?.title
+                if (!trackTitle.isNullOrBlank()) "$guestName adicionou '$trackTitle' à fila" else null
+            }
+            JamCommandType.SKIP_NEXT -> "$guestName pulou para a próxima faixa"
+            JamCommandType.PLAY_TRACK -> {
+                val trackTitle = msg.targetTrack?.title
+                if (!trackTitle.isNullOrBlank()) "$guestName colocou '$trackTitle' para tocar" else null
+            }
+            else -> null
+        }
+    }
 
     fun updateDisplayName(newName: String) {
         val clean = newName.trim().ifEmpty { Build.MODEL ?: "NERF Listener" }
@@ -131,7 +235,57 @@ class JamSessionManager(
         connectedGuestsBySocketId.clear()
 
         val cleanRelay = customRelayWsUrl?.trim().orEmpty()
-        if (cleanRelay.isNotBlank()) {
+        val forceLocalOnly = cleanRelay.equals("local", ignoreCase = true)
+
+        var localWsUrl: String? = null
+        try {
+            val server = JamWebSocketServer(
+                onClientConnected = { socketId ->
+                    Log.i(TAG, "Cliente WebSocket local conectado ao Host: $socketId")
+                },
+                onClientMessage = { socketId, rawText ->
+                    handleServerIncomingMessage(socketId, rawText)
+                },
+                onClientDisconnected = { socketId ->
+                    val removed = connectedGuestsBySocketId.remove(socketId)
+                    if (removed != null) {
+                        scope.launch {
+                            refreshHostParticipantsList()
+                            onUserFeedback("${removed.displayName} saiu da JAM")
+                            broadcastHostStateSnapshot()
+                        }
+                    }
+                }
+            )
+            val boundPort = server.start(JamWebSocketServer.DEFAULT_PORT)
+            embeddedServer = server
+            val localIp = JamWebSocketServer.resolveLocalIpAddress()
+            localWsUrl = "ws://$localIp:$boundPort/jam/$sessionId"
+        } catch (e: Exception) {
+            Log.w(TAG, "Servidor WebSocket local indisponível: ${e.message}")
+        }
+
+        if (forceLocalOnly && localWsUrl != null) {
+            val inviteLink = buildInviteDeepLink(sessionId, localWsUrl, localDisplayName)
+            _sessionState.value = JamSessionState(
+                isInJam = true,
+                isHost = true,
+                sessionId = sessionId,
+                localPeerId = localPeerId,
+                localDisplayName = localDisplayName,
+                hostName = localDisplayName,
+                wsEndpointUrl = localWsUrl,
+                inviteDeepLink = inviteLink,
+                participants = listOf(hostParticipant),
+                connectionStatus = JamConnectionStatus.CONNECTED,
+                errorMessage = null
+            )
+            startHostHeartbeatLoop()
+            onUserFeedback("JAM Local iniciada! Compartilhe o link na mesma rede Wi-Fi.")
+            return
+        }
+
+        if (cleanRelay.isNotBlank() && !forceLocalOnly && !JamGlobalRelayClient.isGlobalRelayUrl(cleanRelay)) {
             val normalizedWs = normalizeWsUrl(cleanRelay)
             val inviteLink = buildInviteDeepLink(sessionId, normalizedWs, localDisplayName)
             _sessionState.value = JamSessionState(
@@ -150,62 +304,33 @@ class JamSessionManager(
             return
         }
 
-        try {
-            val server = JamWebSocketServer(
-                onClientConnected = { socketId ->
-                    Log.i(TAG, "Cliente WebSocket conectado ao Host: $socketId")
-                },
-                onClientMessage = { socketId, rawText ->
-                    handleServerIncomingMessage(socketId, rawText)
-                },
-                onClientDisconnected = { socketId ->
-                    val removed = connectedGuestsBySocketId.remove(socketId)
-                    if (removed != null) {
-                        scope.launch {
-                            refreshHostParticipantsList()
-                            onUserFeedback("${removed.displayName} saiu da JAM")
-                            broadcastHostStateSnapshot()
-                        }
-                    }
-                }
-            )
-            val boundPort = server.start(JamWebSocketServer.DEFAULT_PORT)
-            embeddedServer = server
-
-            val localIp = JamWebSocketServer.resolveLocalIpAddress()
-            val wsUrl = "ws://$localIp:$boundPort/jam/$sessionId"
-            val inviteLink = buildInviteDeepLink(sessionId, wsUrl, localDisplayName)
-
-            _sessionState.value = JamSessionState(
-                isInJam = true,
-                isHost = true,
-                sessionId = sessionId,
-                localPeerId = localPeerId,
-                localDisplayName = localDisplayName,
-                hostName = localDisplayName,
-                wsEndpointUrl = wsUrl,
-                inviteDeepLink = inviteLink,
-                participants = listOf(hostParticipant),
-                connectionStatus = JamConnectionStatus.CONNECTED,
-                errorMessage = null
-            )
-
-            startHostHeartbeatLoop()
-            onUserFeedback("JAM iniciada! Compartilhe o link para ouvirem juntos.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Erro ao iniciar servidor WebSocket da JAM", e)
-            _sessionState.value = _sessionState.value.copy(
-                connectionStatus = JamConnectionStatus.ERROR,
-                errorMessage = "Erro ao iniciar JAM: ${e.message}"
-            )
-            onUserFeedback("Não foi possível iniciar o servidor da JAM.")
+        val targetGlobalWss = if (cleanRelay.isNotBlank() && !forceLocalOnly) {
+            normalizeWsUrl(cleanRelay)
+        } else {
+            JamGlobalRelayClient.DEFAULT_GLOBAL_WSS_URL
         }
+        val inviteLink = buildInviteDeepLink(sessionId, targetGlobalWss, localDisplayName)
+        _sessionState.value = JamSessionState(
+            isInJam = true,
+            isHost = true,
+            sessionId = sessionId,
+            localPeerId = localPeerId,
+            localDisplayName = localDisplayName,
+            hostName = localDisplayName,
+            wsEndpointUrl = targetGlobalWss,
+            inviteDeepLink = inviteLink,
+            participants = listOf(hostParticipant),
+            connectionStatus = JamConnectionStatus.CONNECTING,
+            errorMessage = null
+        )
+
+        connectGlobalRelay(
+            preferredWssUrl = targetGlobalWss,
+            sessionId = sessionId,
+            isHost = true
+        )
     }
 
-    /**
-     * Processa um DeepLink `nerfmusic://jam/join?...` ou `https://nerfmusic.app/jam/join?...`
-     * e conecta automaticamente à sessão JAM sem necessidade de conta.
-     */
     fun handleDeepLink(uri: Uri): Boolean {
         val scheme = uri.scheme?.lowercase() ?: return false
         val host = uri.host?.lowercase().orEmpty()
@@ -216,21 +341,26 @@ class JamSessionManager(
 
         if (!isJamUri) return false
 
+        val sessionId = uri.getQueryParameter("session")
+            ?.let { try { URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it } }
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: "NERF-JAM"
+
         val rawWs = uri.getQueryParameter("ws")?.let {
             try { URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
-        } ?: return false
+        }?.takeIf { it.isNotBlank() } ?: JamGlobalRelayClient.DEFAULT_GLOBAL_WSS_URL
 
-        val sessionId = uri.getQueryParameter("session")?.takeIf { it.isNotBlank() } ?: "NERF-JAM"
-        val hostName = uri.getQueryParameter("host")?.takeIf { it.isNotBlank() } ?: "Host"
+        val hostName = uri.getQueryParameter("host")
+            ?.let { try { URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it } }
+            ?.takeIf { it.isNotBlank() }
+            ?: "Host"
 
         joinSession(wsUrlInput = rawWs, sessionId = sessionId, hostName = hostName)
         return true
     }
 
-    /**
-     * Permite entrar em uma JAM colando tanto um DeepLink (`nerfmusic://jam/...`) quanto um endereço
-     * WebSocket (`ws://192.168.x.x:8765`) ou apenas o `IP:PORT` do Host.
-     */
     fun joinFromUserInput(input: String) {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return
@@ -245,16 +375,30 @@ class JamSessionManager(
             } catch (_: Exception) {}
         }
 
+        val roomCode = JamGlobalRelayClient.extractRoomCodeOrNull(trimmed)
+        if (roomCode != null) {
+            joinSession(
+                wsUrlInput = JamGlobalRelayClient.DEFAULT_GLOBAL_WSS_URL,
+                sessionId = roomCode,
+                hostName = "Host"
+            )
+            return
+        }
+
         val normalizedWs = normalizeWsUrl(trimmed)
-        val extractedSession = trimmed.substringAfterLast("/jam/", "").takeIf { it.isNotBlank() } ?: "NERF-JAM"
+        val extractedSession = trimmed.substringAfterLast("/jam/", "")
+            .takeIf { it.isNotBlank() }
+            ?.uppercase()
+            ?: "NERF-JAM"
         joinSession(wsUrlInput = normalizedWs, sessionId = extractedSession, hostName = "Host")
     }
 
     fun joinSession(wsUrlInput: String, sessionId: String = "NERF-JAM", hostName: String = "Host") {
         leaveSession(silent = true)
 
+        val cleanSessionId = sessionId.trim().uppercase().ifBlank { "NERF-JAM" }
         val normalizedWs = normalizeWsUrl(wsUrlInput)
-        val inviteLink = buildInviteDeepLink(sessionId, normalizedWs, hostName)
+        val inviteLink = buildInviteDeepLink(cleanSessionId, normalizedWs, hostName)
         val selfParticipant = JamParticipant(
             peerId = localPeerId,
             displayName = localDisplayName,
@@ -264,7 +408,7 @@ class JamSessionManager(
         _sessionState.value = JamSessionState(
             isInJam = true,
             isHost = false,
-            sessionId = sessionId,
+            sessionId = cleanSessionId,
             localPeerId = localPeerId,
             localDisplayName = localDisplayName,
             hostName = hostName,
@@ -275,7 +419,231 @@ class JamSessionManager(
             errorMessage = null
         )
 
-        connectClientWebSocket(normalizedWs, sessionId, isHostOnRelay = false)
+        if (JamGlobalRelayClient.isGlobalRelayUrl(normalizedWs)) {
+            connectGlobalRelay(
+                preferredWssUrl = normalizedWs,
+                sessionId = cleanSessionId,
+                isHost = false
+            )
+        } else {
+            connectClientWebSocket(normalizedWs, cleanSessionId, isHostOnRelay = false)
+        }
+    }
+
+    private fun connectGlobalRelay(
+        preferredWssUrl: String,
+        sessionId: String,
+        isHost: Boolean
+    ) {
+        globalRelayClient?.close()
+        val relay = JamGlobalRelayClient(
+            okHttpClient = okHttpClient,
+            scope = scope,
+            sessionId = sessionId,
+            localPeerId = localPeerId,
+            onConnected = { connectedEndpoint ->
+                val updatedInvite = buildInviteDeepLink(
+                    sessionId = sessionId,
+                    wsUrl = connectedEndpoint,
+                    hostName = _sessionState.value.hostName
+                )
+                _sessionState.value = _sessionState.value.copy(
+                    wsEndpointUrl = connectedEndpoint,
+                    inviteDeepLink = updatedInvite,
+                    connectionStatus = JamConnectionStatus.CONNECTED,
+                    errorMessage = null
+                )
+                if (isHost) {
+                    startHostHeartbeatLoop()
+                    broadcastHostStateSnapshot()
+                    onUserFeedback("JAM Global ativa ($sessionId)! Compartilhe o código ou link com qualquer pessoa.")
+                } else {
+                    val joinMsg = JamWireMessage(
+                        type = JamMessageType.JOIN,
+                        sessionId = sessionId,
+                        senderId = localPeerId,
+                        senderName = localDisplayName
+                    )
+                    globalRelayClient?.send(json.encodeToString(joinMsg), retain = false)
+                    startGlobalGuestPingLoop(sessionId)
+                    onUserFeedback("Conectado à sala $sessionId!")
+                }
+            },
+            onMessageReceived = { rawJson ->
+                handleGlobalRelayIncomingMessage(rawJson, isHost = isHost)
+            },
+            onReconnecting = { reason ->
+                if (_sessionState.value.isInJam) {
+                    _sessionState.value = _sessionState.value.copy(
+                        connectionStatus = JamConnectionStatus.RECONNECTING,
+                        errorMessage = "Reconectando ao Relay Global... ($reason)"
+                    )
+                }
+            }
+        )
+        globalRelayClient = relay
+        relay.connect(preferredWssUrl)
+    }
+
+    private fun handleGlobalRelayIncomingMessage(rawText: String, isHost: Boolean) {
+        if (rawText.isBlank()) return
+        val msg = try {
+            json.decodeFromString<JamWireMessage>(rawText)
+        } catch (e: Exception) {
+            return
+        }
+        if (msg.senderId == localPeerId) return
+
+        if (isHost) {
+            when (msg.type) {
+                JamMessageType.JOIN -> {
+                    val guest = JamParticipant(
+                        peerId = msg.senderId,
+                        displayName = msg.senderName.ifBlank { "Convidado" },
+                        isHost = false,
+                        rttMs = 0L
+                    )
+                    connectedGuestsBySocketId["global_${msg.senderId}"] = guest
+                    refreshHostParticipantsList()
+                    onUserFeedback("${guest.displayName} entrou na JAM!")
+                    broadcastHostStateSnapshot()
+                }
+                JamMessageType.COMMAND -> {
+                    val cmd = msg.command ?: return
+                    if (cmd == JamCommandType.REQUEST_SYNC) {
+                        broadcastHostStateSnapshot()
+                        return
+                    }
+                    if (!isGuestCommandAllowed(cmd, _sessionState.value.roomSettings)) {
+                        Log.i(TAG, "Comando $cmd de ${msg.senderName} ignorado (bloqueado pelas permissões do Host)")
+                        return
+                    }
+                    val announcement = buildGuestCommandAnnouncement(msg)
+                    if (announcement != null) {
+                        onUserFeedback(announcement)
+                    }
+                    onExecuteGuestCommandOnHost(msg)
+                    scope.launch {
+                        delay(60L)
+                        broadcastHostStateSnapshot(actionAnnouncement = announcement)
+                    }
+                }
+                JamMessageType.PING -> {
+                    val pong = JamWireMessage(
+                        type = JamMessageType.PONG,
+                        sessionId = _sessionState.value.sessionId,
+                        senderId = localPeerId,
+                        senderName = localDisplayName,
+                        pingTimestampMs = msg.pingTimestampMs
+                    )
+                    globalRelayClient?.send(json.encodeToString(pong), retain = false)
+                }
+                JamMessageType.LEAVE -> {
+                    val removed = connectedGuestsBySocketId.remove("global_${msg.senderId}")
+                    refreshHostParticipantsList()
+                    if (removed != null) {
+                        onUserFeedback("${removed.displayName} saiu da JAM")
+                    }
+                    broadcastHostStateSnapshot()
+                }
+                else -> {}
+            }
+            return
+        }
+
+        when (msg.type) {
+            JamMessageType.WELCOME, JamMessageType.STATE_SNAPSHOT -> {
+                val rtt = _sessionState.value.rttMs
+                val oneWayLatency = (rtt / 2L).coerceIn(0L, 1_500L)
+                val clockDelta = (System.currentTimeMillis() - msg.timestampMs).coerceIn(0L, 4_000L)
+                val compensatedPos = if (msg.isPlaying) {
+                    msg.positionMs + maxOf(oneWayLatency, clockDelta)
+                } else {
+                    msg.positionMs
+                }
+
+                val hostTitle = msg.hostName?.takeIf { it.isNotBlank() } ?: _sessionState.value.hostName
+                val updatedInvite = buildInviteDeepLink(
+                    sessionId = msg.sessionId.ifBlank { _sessionState.value.sessionId },
+                    wsUrl = _sessionState.value.wsEndpointUrl,
+                    hostName = hostTitle
+                )
+
+                val mergedParticipants = if (msg.participants.any { it.peerId == localPeerId }) {
+                    msg.participants
+                } else {
+                    msg.participants + JamParticipant(
+                        peerId = localPeerId,
+                        displayName = localDisplayName,
+                        isHost = false,
+                        rttMs = _sessionState.value.rttMs
+                    )
+                }
+
+                _sessionState.value = _sessionState.value.copy(
+                    sessionId = msg.sessionId.ifBlank { _sessionState.value.sessionId },
+                    hostName = hostTitle,
+                    inviteDeepLink = updatedInvite,
+                    participants = mergedParticipants,
+                    roomSettings = msg.roomSettings,
+                    connectionStatus = JamConnectionStatus.CONNECTED,
+                    errorMessage = null
+                )
+
+                if (!msg.actionAnnouncement.isNullOrBlank()) {
+                    onUserFeedback(msg.actionAnnouncement)
+                }
+
+                onApplyRemoteSnapshot(msg, compensatedPos)
+            }
+
+            JamMessageType.COMMAND -> {
+                if (msg.command == JamCommandType.KICK_PARTICIPANT && msg.targetPeerId == localPeerId) {
+                    leaveSession(silent = true)
+                    onUserFeedback("Você foi removido da sessão JAM pelo Host.")
+                }
+            }
+
+            JamMessageType.PONG -> {
+                val sentAt = msg.pingTimestampMs ?: return
+                val rtt = (System.currentTimeMillis() - sentAt).coerceAtLeast(1L)
+                val updatedParts = _sessionState.value.participants.map {
+                    if (it.peerId == localPeerId) it.copy(rttMs = rtt) else it
+                }
+                _sessionState.value = _sessionState.value.copy(
+                    rttMs = rtt,
+                    participants = updatedParts
+                )
+            }
+
+            JamMessageType.LEAVE -> {
+                if (msg.senderId == msg.hostId) {
+                    leaveSession(silent = true)
+                    onUserFeedback("O Host encerrou a sessão JAM.")
+                }
+            }
+
+            else -> {}
+        }
+    }
+
+    private fun startGlobalGuestPingLoop(sessionId: String) {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (isActive && _sessionState.value.isInJam && !_sessionState.value.isHost) {
+                val ping = JamWireMessage(
+                    type = JamMessageType.PING,
+                    sessionId = sessionId,
+                    senderId = localPeerId,
+                    senderName = localDisplayName,
+                    pingTimestampMs = System.currentTimeMillis()
+                )
+                try {
+                    globalRelayClient?.send(json.encodeToString(ping), retain = false)
+                } catch (_: Exception) {}
+                delay(3000L)
+            }
+        }
     }
 
     private fun connectClientWebSocket(wsUrl: String, sessionId: String, isHostOnRelay: Boolean) {
@@ -398,10 +766,21 @@ class JamSessionManager(
                 }
 
                 JamMessageType.COMMAND -> {
-                    // Executa comando do convidado no Host e propaga o novo estado para toda a sala
+                    val cmd = msg.command ?: return@launch
+                    if (cmd == JamCommandType.REQUEST_SYNC) {
+                        broadcastHostStateSnapshot()
+                        return@launch
+                    }
+                    if (!isGuestCommandAllowed(cmd, _sessionState.value.roomSettings)) {
+                        return@launch
+                    }
+                    val announcement = buildGuestCommandAnnouncement(msg)
+                    if (announcement != null) {
+                        onUserFeedback(announcement)
+                    }
                     onExecuteGuestCommandOnHost(msg)
                     delay(60L)
-                    broadcastHostStateSnapshot()
+                    broadcastHostStateSnapshot(actionAnnouncement = announcement)
                 }
 
                 JamMessageType.LEAVE -> {
@@ -442,10 +821,23 @@ class JamSessionManager(
                     broadcastHostStateSnapshot()
                 }
                 JamMessageType.COMMAND -> {
+                    val cmd = msg.command ?: return
+                    if (cmd == JamCommandType.REQUEST_SYNC) {
+                        broadcastHostStateSnapshot()
+                        return
+                    }
+                    if (!isGuestCommandAllowed(cmd, _sessionState.value.roomSettings)) {
+                        Log.i(TAG, "Comando $cmd de ${msg.senderName} ignorado (bloqueado pelas permissões do Host)")
+                        return
+                    }
+                    val announcement = buildGuestCommandAnnouncement(msg)
+                    if (announcement != null) {
+                        onUserFeedback(announcement)
+                    }
                     onExecuteGuestCommandOnHost(msg)
                     scope.launch {
                         delay(60L)
-                        broadcastHostStateSnapshot()
+                        broadcastHostStateSnapshot(actionAnnouncement = announcement)
                     }
                 }
                 JamMessageType.PING -> {
@@ -486,10 +878,22 @@ class JamSessionManager(
                     hostName = hostTitle,
                     inviteDeepLink = updatedInvite,
                     participants = msg.participants.ifEmpty { _sessionState.value.participants },
+                    roomSettings = msg.roomSettings,
                     connectionStatus = JamConnectionStatus.CONNECTED
                 )
 
+                if (!msg.actionAnnouncement.isNullOrBlank()) {
+                    onUserFeedback(msg.actionAnnouncement)
+                }
+
                 onApplyRemoteSnapshot(msg, compensatedPos)
+            }
+
+            JamMessageType.COMMAND -> {
+                if (msg.command == JamCommandType.KICK_PARTICIPANT && msg.targetPeerId == localPeerId) {
+                    leaveSession(silent = true)
+                    onUserFeedback("Você foi removido da sessão JAM pelo Host.")
+                }
             }
 
             JamMessageType.PONG -> {
@@ -558,14 +962,26 @@ class JamSessionManager(
     }
 
     /**
-     * Chamado pelo Host sempre que o estado do player muda (play, pause, seek, faixa, fila)
+     * Chamado pelo Host sempre que o estado do player muda (play, pause, seek, faixa, fila, repeat, crossfade)
      * ou periodicamente pelo heartbeat.
      */
-    fun broadcastHostStateSnapshot() {
+    fun broadcastHostStateSnapshot(actionAnnouncement: String? = null) {
         val cur = _sessionState.value
         if (!cur.isInJam || !cur.isHost) return
 
         val snap = providePlaybackSnapshot()
+        val syncedRoomSettings = cur.roomSettings.copy(
+            repeatModeName = snap.repeatModeName,
+            hostCrossfadeSeconds = snap.hostCrossfadeSeconds,
+            hostAutomixEnabled = snap.hostAutomixEnabled,
+            hostGaplessEnabled = snap.hostGaplessEnabled,
+            isKaraokeActiveInRoom = snap.isKaraokeActive,
+            karaokeVocalLevelInRoom = snap.karaokeVocalLevel
+        )
+        if (syncedRoomSettings != cur.roomSettings) {
+            _sessionState.value = cur.copy(roomSettings = syncedRoomSettings)
+        }
+
         val msg = JamWireMessage(
             type = JamMessageType.STATE_SNAPSHOT,
             sessionId = cur.sessionId,
@@ -579,17 +995,39 @@ class JamSessionManager(
             queue = snap.queue,
             currentQueueIndex = snap.currentQueueIndex,
             isPlaying = snap.isPlaying,
-            positionMs = snap.positionMs
+            positionMs = snap.positionMs,
+            roomSettings = syncedRoomSettings,
+            actionAnnouncement = actionAnnouncement
         )
         val encoded = json.encodeToString(msg)
         embeddedServer?.broadcast(encoded)
         clientWebSocket?.send(encoded)
+        globalRelayClient?.send(encoded, retain = true)
     }
 
     /**
-     * Envia um comando de reprodução/fila caso o usuário seja um Convidado (Guest),
-     * ou propaga o estado imediatamente caso o usuário seja o Host.
+     * Verifica se o usuário atual pode executar o comando [command] na JAM.
+     * Retorna `true` se não estiver em JAM, se for o Host, ou se a permissão do convidado estiver ativa.
      */
+    fun checkPermissionOrNotify(command: JamCommandType): Boolean {
+        val cur = _sessionState.value
+        if (!cur.isInJam || cur.isHost) return true
+        val allowed = isGuestCommandAllowed(command, cur.roomSettings)
+        if (!allowed) {
+            val reason = when (command) {
+                JamCommandType.ADD_TO_QUEUE,
+                JamCommandType.PLAY_NEXT_IN_QUEUE,
+                JamCommandType.REMOVE_QUEUE_ITEM,
+                JamCommandType.MOVE_QUEUE_ITEM ->
+                    "Apenas o Host (${cur.hostName}) pode alterar a fila nesta Jam."
+                else ->
+                    "Apenas o Host (${cur.hostName}) pode pular faixas ou controlar o player nesta Jam."
+            }
+            onUserFeedback(reason)
+        }
+        return allowed
+    }
+
     fun dispatchOrBroadcastPlayerAction(
         command: JamCommandType,
         targetPositionMs: Long? = null,
@@ -597,7 +1035,8 @@ class JamSessionManager(
         fromQueueIndex: Int? = null,
         toQueueIndex: Int? = null,
         targetTrack: Track? = null,
-        targetTracks: List<Track> = emptyList()
+        targetTracks: List<Track> = emptyList(),
+        targetRepeatModeName: String? = null
     ) {
         val cur = _sessionState.value
         if (!cur.isInJam) return
@@ -608,6 +1047,7 @@ class JamSessionManager(
                 broadcastHostStateSnapshot()
             }
         } else {
+            if (!checkPermissionOrNotify(command)) return
             val cmdMsg = JamWireMessage(
                 type = JamMessageType.COMMAND,
                 sessionId = cur.sessionId,
@@ -619,9 +1059,12 @@ class JamSessionManager(
                 fromQueueIndex = fromQueueIndex,
                 toQueueIndex = toQueueIndex,
                 targetTrack = targetTrack,
-                targetTracks = targetTracks
+                targetTracks = targetTracks,
+                targetRepeatModeName = targetRepeatModeName
             )
-            clientWebSocket?.send(json.encodeToString(cmdMsg))
+            val encodedCmd = json.encodeToString(cmdMsg)
+            clientWebSocket?.send(encodedCmd)
+            globalRelayClient?.send(encodedCmd, retain = false)
         }
     }
 
@@ -642,6 +1085,10 @@ class JamSessionManager(
                 val encoded = json.encodeToString(leaveMsg)
                 embeddedServer?.broadcast(encoded)
                 clientWebSocket?.send(encoded)
+                globalRelayClient?.send(encoded, retain = false)
+                if (cur.isHost) {
+                    globalRelayClient?.send("", retain = true)
+                }
             } catch (_: Exception) {}
         }
 
@@ -650,9 +1097,13 @@ class JamSessionManager(
         } catch (_: Exception) {}
         clientWebSocket = null
 
+        globalRelayClient?.close()
+        globalRelayClient = null
+
         embeddedServer?.stop()
         embeddedServer = null
         connectedGuestsBySocketId.clear()
+        AudioPlayerService.setJamAudioSettingsOverride(null, null, null)
 
         _sessionState.value = JamSessionState(
             isInJam = false,

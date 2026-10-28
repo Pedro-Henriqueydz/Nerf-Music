@@ -585,7 +585,21 @@ fun MainScreen(
             onStartHostJam = { customRelayWs -> viewModel.startHostJam(customRelayWs) },
             onJoinJamInput = { input -> viewModel.joinJamFromInput(input) },
             onLeaveJam = { viewModel.leaveJam() },
-            onUpdateDisplayName = { name -> viewModel.updateJamDisplayName(name) }
+            onUpdateDisplayName = { name -> viewModel.updateJamDisplayName(name) },
+            onToggleAllowGuestsToQueue = { allowed -> viewModel.setJamAllowGuestsToQueue(allowed) },
+            onToggleAllowGuestsToControlPlayback = { allowed -> viewModel.setJamAllowGuestsToControlPlayback(allowed) },
+            onSelectRepeatMode = { modeName ->
+                val mode = when (modeName) {
+                    "ONE" -> androidx.media3.common.Player.REPEAT_MODE_ONE
+                    "ALL" -> androidx.media3.common.Player.REPEAT_MODE_ALL
+                    else -> androidx.media3.common.Player.REPEAT_MODE_OFF
+                }
+                viewModel.setRepeatModeExplicit(mode)
+            },
+            onChangeHostCrossfadeSeconds = { seconds -> viewModel.setCrossfadeSeconds(seconds) },
+            onToggleSyncKaraokeWithRoom = { sync -> viewModel.setJamSyncKaraokeWithRoom(sync) },
+            onKickParticipant = { peerId -> viewModel.kickJamParticipant(peerId) },
+            onRequestAudioResync = { viewModel.requestJamAudioResync() }
         )
     }
 
