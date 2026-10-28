@@ -72,6 +72,7 @@ fun SearchScreen(
     onNavigateBack: (() -> Unit)? = null,
     onOpenAlbum: (String) -> Unit = {},
     onOpenArtist: (String) -> Unit = {},
+    onTrackOptionsClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -415,7 +416,8 @@ fun SearchScreen(
                                 } else {
                                     viewModel.playTrack(track)
                                 }
-                            }
+                            },
+                            onOptionsClick = { onTrackOptionsClick(track) }
                         )
                     }
 
@@ -635,6 +637,7 @@ private fun SearchSongRowItem(
     track: Track,
     isPlaying: Boolean,
     onClick: () -> Unit,
+    onOptionsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -694,7 +697,7 @@ private fun SearchSongRowItem(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        IconButton(onClick = { /* Opções */ }, modifier = Modifier.size(36.dp)) {
+        IconButton(onClick = onOptionsClick, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = Icons.Default.MoreVert,
                 contentDescription = "Mais opções",

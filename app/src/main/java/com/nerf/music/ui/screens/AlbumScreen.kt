@@ -51,6 +51,7 @@ fun AlbumScreen(
     viewModel: MusicViewModel,
     onNavigateBack: () -> Unit,
     onOpenArtist: ((String) -> Unit)? = null,
+    onTrackOptionsClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val album by viewModel.albumDetail.collectAsState()
@@ -157,7 +158,8 @@ fun AlbumScreen(
                             isPlaying = isCurrent && playbackState.isPlaying,
                             onClick = {
                                 viewModel.playAlbum(currentAlbum, startIndex = index)
-                            }
+                            },
+                            onOptionsClick = { onTrackOptionsClick(track) }
                         )
                     }
                 }
@@ -443,6 +445,7 @@ private fun AlbumTrackRow(
     isCurrentTrack: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
+    onOptionsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -515,7 +518,7 @@ private fun AlbumTrackRow(
 
         // Menu de opções (3 pontos)
         IconButton(
-            onClick = { /* Opções da faixa */ },
+            onClick = onOptionsClick,
             modifier = Modifier.size(36.dp)
         ) {
             Icon(

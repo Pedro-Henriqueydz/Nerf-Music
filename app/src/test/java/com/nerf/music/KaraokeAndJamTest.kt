@@ -334,4 +334,25 @@ class KaraokeAndJamTest {
         assertEquals(1, decodedPayloads.size)
         assertEquals(jsonPayload, decodedPayloads.first())
     }
+
+    @Test
+    fun `JamWireMessage encodes and decodes MOVE_QUEUE_ITEM command payload correctly`() {
+        val moveMsg = JamWireMessage(
+            type = JamMessageType.COMMAND,
+            sessionId = "NERF-JAM",
+            senderId = "participant_42",
+            senderName = "Guest",
+            command = JamCommandType.MOVE_QUEUE_ITEM,
+            fromQueueIndex = 1,
+            toQueueIndex = 3
+        )
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val serialized = json.encodeToString(JamWireMessage.serializer(), moveMsg)
+        val deserialized = json.decodeFromString(JamWireMessage.serializer(), serialized)
+
+        assertEquals(JamMessageType.COMMAND, deserialized.type)
+        assertEquals(JamCommandType.MOVE_QUEUE_ITEM, deserialized.command)
+        assertEquals(1, deserialized.fromQueueIndex)
+        assertEquals(3, deserialized.toQueueIndex)
+    }
 }

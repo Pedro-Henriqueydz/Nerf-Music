@@ -64,6 +64,7 @@ fun HomeScreen(
     onOpenAlbum: (browseId: String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onTrackOptionsClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val homeChips by viewModel.homeChips.collectAsState()
@@ -325,7 +326,8 @@ fun HomeScreen(
                                         onTrackClick = { track ->
                                             val idx = section.items.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
                                             viewModel.playSection(section, startIndex = idx)
-                                        }
+                                        },
+                                        onTrackOptionsClick = onTrackOptionsClick
                                     )
                                 }
 
@@ -1101,6 +1103,7 @@ fun YtmQuickPicksGridCarousel(
     currentPlayingId: String?,
     isPlaybackActive: Boolean = false,
     onTrackClick: (Track) -> Unit,
+    onTrackOptionsClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val columns = remember(tracks) { tracks.chunked(4) }
@@ -1121,7 +1124,8 @@ fun YtmQuickPicksGridCarousel(
                         track = track,
                         isCurrentTrack = isCurrent,
                         isPlaying = isCurrent && isPlaybackActive,
-                        onClick = { onTrackClick(track) }
+                        onClick = { onTrackClick(track) },
+                        onOptionsClick = { onTrackOptionsClick(track) }
                     )
                 }
             }
@@ -1135,6 +1139,7 @@ fun YtmQuickPickRowItem(
     isCurrentTrack: Boolean = false,
     isPlaying: Boolean = false,
     onClick: () -> Unit,
+    onOptionsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1220,7 +1225,7 @@ fun YtmQuickPickRowItem(
         }
 
         IconButton(
-            onClick = onClick,
+            onClick = onOptionsClick,
             modifier = Modifier.size(32.dp)
         ) {
             Icon(

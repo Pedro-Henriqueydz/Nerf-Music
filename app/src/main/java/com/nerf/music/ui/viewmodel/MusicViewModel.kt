@@ -1310,6 +1310,14 @@ class MusicViewModel(
             )
         }
 
+        // Se for participante em uma JAM, a fila é ditada pelo Host; não buscamos rádio dinâmica para não sobrescrever a fila da sala
+        if (jamSessionState.value.isInJam && !jamSessionState.value.isHost) {
+            _playbackState.value = _playbackState.value.copy(
+                isLoadingQueueRadio = false
+            )
+            return
+        }
+
         // Busca a Rádio Dinâmica ("A seguir") e os Chips em background
         radioFetchJob = viewModelScope.launch {
             val radioResult = repository.getUpNextRadio(videoId = track.id, params = null)
@@ -1441,6 +1449,25 @@ class MusicViewModel(
         if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SELECT_QUEUE_INDEX)) {
             return
         }
+        val isParticipantInJam = jamSessionState.value.isInJam && !jamSessionState.value.isHost
+        if (isParticipantInJam) {
+            val targetTrack = _playbackState.value.queue.getOrNull(index) ?: return
+            _loadingTrackId.value = targetTrack.id
+            loadLyrics(targetTrack)
+            loadCanvasVideo(targetTrack)
+            _playbackState.value = _playbackState.value.copy(
+                currentTrack = targetTrack,
+                currentQueueIndex = index,
+                currentPositionMs = 0L,
+                isBuffering = true
+            )
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.SELECT_QUEUE_INDEX,
+                targetQueueIndex = index
+            )
+            return
+        }
+
         val controller = mediaController ?: return
         if (index !in 0 until controller.mediaItemCount) return
 
@@ -1505,7 +1532,18 @@ class MusicViewModel(
             currentQueueIndex = newActiveIdx
         )
 
-        mediaController?.moveMediaItem(fromIndex, toIndex)
+        val isParticipantInJam = jamSessionState.value.isInJam && !jamSessionState.value.isHost
+        if (!isParticipantInJam) {
+            val controller = mediaController
+            if (controller != null && fromIndex in 0 until controller.mediaItemCount && toIndex in 0 until controller.mediaItemCount) {
+                try {
+                    controller.moveMediaItem(fromIndex, toIndex)
+                } catch (e: Exception) {
+                    Log.e("MusicViewModel", "Erro ao mover item na timeline do player: ${e.message}")
+                }
+            }
+        }
+
         if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
             jamSessionManager.dispatchOrBroadcastPlayerAction(
                 command = JamCommandType.MOVE_QUEUE_ITEM,
@@ -1522,13 +1560,38 @@ class MusicViewModel(
         if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.REMOVE_QUEUE_ITEM)) {
             return
         }
-        val controller = mediaController ?: return
         val currentQueue = _playbackState.value.queue
         if (index !in currentQueue.indices) return
 
         val removedTrack = currentQueue[index]
-        controller.removeMediaItem(index)
+        val mutableQueue = currentQueue.toMutableList()
+        mutableQueue.removeAt(index)
+
+        val oldActiveIdx = _playbackState.value.currentQueueIndex
+        val newActiveIdx = when {
+            index < oldActiveIdx -> oldActiveIdx - 1
+            index == oldActiveIdx -> oldActiveIdx.coerceAtMost((mutableQueue.size - 1).coerceAtLeast(0))
+            else -> oldActiveIdx
+        }
+
+        _playbackState.value = _playbackState.value.copy(
+            queue = mutableQueue,
+            currentQueueIndex = newActiveIdx
+        )
         _userMessage.value = "Removida da fila: ${removedTrack.title}"
+
+        val isParticipantInJam = jamSessionState.value.isInJam && !jamSessionState.value.isHost
+        if (!isParticipantInJam) {
+            val controller = mediaController
+            if (controller != null && index in 0 until controller.mediaItemCount) {
+                try {
+                    controller.removeMediaItem(index)
+                } catch (e: Exception) {
+                    Log.e("MusicViewModel", "Erro ao remover item do player: ${e.message}")
+                }
+            }
+        }
+
         if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
             jamSessionManager.dispatchOrBroadcastPlayerAction(
                 command = JamCommandType.REMOVE_QUEUE_ITEM,
@@ -2078,11 +2141,33 @@ class MusicViewModel(
         if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.ADD_TO_QUEUE)) {
             return
         }
-        val controller = mediaController ?: return
         if (tracks.isEmpty()) return
+        tracks.forEach { trackMetadataMap[it.id] = it }
+
+        val isParticipantInJam = jamSessionState.value.isInJam && !jamSessionState.value.isHost
+        if (isParticipantInJam) {
+            val cur = _playbackState.value
+            _playbackState.value = cur.copy(
+                queue = cur.queue + tracks,
+                hasNext = true
+            )
+            _userMessage.value = if (tracks.size == 1) "Música adicionada à fila" else "${tracks.size} músicas adicionadas à fila"
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.ADD_TO_QUEUE,
+                targetTracks = tracks
+            )
+            return
+        }
+
+        val controller = mediaController ?: return
         val mediaItems = tracks.map { trackToMediaItem(it) }
         controller.addMediaItems(mediaItems)
-        _userMessage.value = "${tracks.size} músicas adicionadas à fila"
+        val cur = _playbackState.value
+        _playbackState.value = cur.copy(
+            queue = cur.queue + tracks,
+            hasNext = true
+        )
+        _userMessage.value = if (tracks.size == 1) "Música adicionada à fila" else "${tracks.size} músicas adicionadas à fila"
         if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
             jamSessionManager.dispatchOrBroadcastPlayerAction(
                 command = JamCommandType.ADD_TO_QUEUE,
@@ -2095,12 +2180,38 @@ class MusicViewModel(
         if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.PLAY_NEXT_IN_QUEUE)) {
             return
         }
-        val controller = mediaController ?: return
         if (tracks.isEmpty()) return
+        tracks.forEach { trackMetadataMap[it.id] = it }
+
+        val isParticipantInJam = jamSessionState.value.isInJam && !jamSessionState.value.isHost
+        if (isParticipantInJam) {
+            val cur = _playbackState.value
+            val insertIdx = (cur.currentQueueIndex + 1).coerceIn(0, cur.queue.size)
+            val newQueue = cur.queue.toMutableList().apply { addAll(insertIdx, tracks) }
+            _playbackState.value = cur.copy(
+                queue = newQueue,
+                hasNext = true
+            )
+            _userMessage.value = if (tracks.size == 1) "Música adicionada para tocar a seguir" else "${tracks.size} músicas adicionadas para tocar a seguir"
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.PLAY_NEXT_IN_QUEUE,
+                targetTracks = tracks
+            )
+            return
+        }
+
+        val controller = mediaController ?: return
         val nextIndex = (controller.currentMediaItemIndex + 1).coerceAtLeast(0)
         val mediaItems = tracks.map { trackToMediaItem(it) }
         controller.addMediaItems(nextIndex, mediaItems)
-        _userMessage.value = "${tracks.size} músicas adicionadas para tocar a seguir"
+        val cur = _playbackState.value
+        val insertIdx = (cur.currentQueueIndex + 1).coerceIn(0, cur.queue.size)
+        val newQueue = cur.queue.toMutableList().apply { addAll(insertIdx, tracks) }
+        _playbackState.value = cur.copy(
+            queue = newQueue,
+            hasNext = true
+        )
+        _userMessage.value = if (tracks.size == 1) "Música adicionada para tocar a seguir" else "${tracks.size} músicas adicionadas para tocar a seguir"
         if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
             jamSessionManager.dispatchOrBroadcastPlayerAction(
                 command = JamCommandType.PLAY_NEXT_IN_QUEUE,

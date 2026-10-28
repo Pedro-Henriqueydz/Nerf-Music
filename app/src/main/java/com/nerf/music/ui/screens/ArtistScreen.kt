@@ -59,6 +59,7 @@ fun ArtistScreen(
     onNavigateBack: () -> Unit,
     onOpenAlbum: (String) -> Unit,
     onOpenArtist: (String) -> Unit,
+    onTrackOptionsClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val artist by viewModel.artistDetail.collectAsState()
@@ -188,7 +189,8 @@ fun ArtistScreen(
                                         isPlaying = isCurrent && playbackState.isPlaying,
                                         onClick = {
                                             viewModel.playTrackList("Top músicas de ${currentArtist.name}", currentArtist.topSongs, startIndex = index)
-                                        }
+                                        },
+                                        onOptionsClick = { onTrackOptionsClick(track) }
                                     )
                                 }
                             }
@@ -555,6 +557,7 @@ private fun ArtistTopSongRow(
     isCurrentTrack: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
+    onOptionsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -647,7 +650,7 @@ private fun ArtistTopSongRow(
         }
 
         IconButton(
-            onClick = { /* Opções */ },
+            onClick = onOptionsClick,
             modifier = Modifier.size(36.dp)
         ) {
             Icon(

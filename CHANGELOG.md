@@ -7,6 +7,23 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ## [Unreleased]
 > **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.1.
 
+### Corrigido
+- **Crash ao Reordenar Fila na JAM como Participante (`MusicViewModel` / `PlayerScreen`):**
+  - **Eliminação de `IndexOutOfBoundsException`:** Corrigida a falha crítica que derrubava o aplicativo ao arrastar e reordenar músicas na fila da JAM como participante. O participante agora aplica reordenação otimista imediata na UI e despacha o comando `JamCommandType.MOVE_QUEUE_ITEM` ao Host sem tentar invocar `mediaController.moveMediaItem` na timeline local do ExoPlayer (que contém apenas a faixa atual sincronizada).
+  - **Validação Defensiva de Timeline no Host:** Adicionada validação de limites (`fromIndex in 0 until controller.mediaItemCount && toIndex in 0 until controller.mediaItemCount`) e proteção contra exceções na reordenação da timeline mestre.
+  - **Remoção e Seleção de Itens da Fila na JAM:**
+    - Em `removeQueueItem`, o participante atualiza otimisticamente sua fila visual e delega a exclusão ao Host via `JamCommandType.REMOVE_QUEUE_ITEM`, evitando chamadas de remoção fora dos limites locais do player.
+    - Em `playQueueItemAt`, convidados agora conseguem selecionar qualquer faixa da fila para tocar para todos na sala (via `JamCommandType.SELECT_QUEUE_INDEX`), removendo a trava que impedia a seleção de índices maiores que 0 no participante.
+  - **Isolamento de Rádio Dinâmica na JAM:** Convidados não disparam mais `radioFetchJob` em background ao receber faixas remotas da sessão, impedindo que rádios do YouTube Music sobrescrevam a fila colaborativa da sala.
+  - **Prevenção de Colisão de Chaves no Compose (`PlayerScreen`):** A fila agora utiliza chaves compostas seguras (`key = { index, track -> "${track.id}_$index" }`), prevenindo crashes caso faixas duplicadas sejam inseridas na fila colaborativa da sala.
+
+### Adicionado
+- **Menu de Opções de Faixa Oficial (3 Pontinhos) Estilo YouTube Music (`TrackOptionsBottomSheet`):**
+  - **Novo BottomSheet Nativo:** Implementado painel oficial com capa em alta resolução, título, artista, duração e botão de fechar.
+  - **Cards Rápidos Lado a Lado:** Acesso com 1 toque para *"Tocar a seguir"* e *"Iniciar rádio"*.
+  - **Menu de Ações Completo:** Opções para *"Adicionar à fila"*, *"Salvar na playlist"* (conectado ao modal de playlists com suporte a qualquer faixa), *"Salvar/Remover de Músicas Curtidas"*, *"Fazer/Remover download"*, *"Compartilhar"* (link nativo do YouTube Music), *"Ver artista"* e *"Ver álbum"*.
+  - **Integração Global dos 3 Pontinhos:** Conectados todos os botões de 3 pontinhos que estavam inativos na **Pesquisa** (`SearchScreen`), na **Home** (`HomeScreen`), no **Álbum** (`AlbumScreen`) e no **Artista** (`ArtistScreen`).
+
 ---
 
 ## [1.4.1] - 2026-10-27 [RELEASED]

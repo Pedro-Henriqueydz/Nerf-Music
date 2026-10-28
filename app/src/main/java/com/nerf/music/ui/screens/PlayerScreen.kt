@@ -2596,7 +2596,7 @@ private fun QueueTrackList(
     ) {
         itemsIndexed(
             items = queue,
-            key = { _, track -> track.id }
+            key = { index, track -> "${track.id}_$index" }
         ) { index, track ->
             val currentIndex by rememberUpdatedState(index)
             val isHistory = index < currentQueueIndex

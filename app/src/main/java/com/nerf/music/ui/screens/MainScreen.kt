@@ -54,6 +54,7 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.compose.rememberNavController
 import com.nerf.music.BuildConfig
 import com.nerf.music.ui.theme.*
+import com.nerf.music.data.model.Track
 import com.nerf.music.ui.viewmodel.MusicViewModel
 import com.nerf.music.updater.UpdateNotificationHelper
 import com.nerf.music.updater.UpdateCheckWorker
@@ -136,7 +137,10 @@ fun MainScreen(
 
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val likedTracks by viewModel.likedTracks.collectAsState()
+    val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     var showSaveToPlaylistSheet by remember { mutableStateOf(false) }
+    var trackForOptions by remember { mutableStateOf<Track?>(null) }
+    var trackToSaveInPlaylist by remember { mutableStateOf<Track?>(null) }
     var showCreatePlaylistFromPlayer by remember { mutableStateOf(false) }
     var newPlaylistFromPlayerTitle by remember { mutableStateOf("") }
     var newPlaylistFromPlayerVisibility by remember { mutableStateOf("Pública") }
@@ -399,6 +403,9 @@ fun MainScreen(
                             navController.navigate(Screen.Library.route) {
                                 launchSingleTop = true
                             }
+                        },
+                        onTrackOptionsClick = { track ->
+                            trackForOptions = track
                         }
                     )
                 }
@@ -430,6 +437,9 @@ fun MainScreen(
                             navController.navigate("artist/$artistId") {
                                 launchSingleTop = true
                             }
+                        },
+                        onTrackOptionsClick = { track ->
+                            trackForOptions = track
                         }
                     )
                 }
@@ -466,6 +476,9 @@ fun MainScreen(
                             navController.navigate("artist/$artistId") {
                                 launchSingleTop = true
                             }
+                        },
+                        onTrackOptionsClick = { track ->
+                            trackForOptions = track
                         }
                     )
                 }
@@ -487,6 +500,9 @@ fun MainScreen(
                             navController.navigate("artist/$artistId") {
                                 launchSingleTop = true
                             }
+                        },
+                        onTrackOptionsClick = { track ->
+                            trackForOptions = track
                         }
                     )
                 }
@@ -603,14 +619,63 @@ fun MainScreen(
         )
     }
 
-    if (showSaveToPlaylistSheet && playbackState.currentTrack != null) {
-        val currentTrack = playbackState.currentTrack!!
+    trackForOptions?.let { track ->
+        val isLiked = likedTracks.any { it.id == track.id }
+        val isDownloaded = downloadedTracks.any { it.track.id == track.id }
+        TrackOptionsBottomSheet(
+            track = track,
+            isLiked = isLiked,
+            isDownloaded = isDownloaded,
+            onDismiss = { trackForOptions = null },
+            onPlayNext = {
+                viewModel.addTracksToPlayNext(listOf(track))
+                trackForOptions = null
+            },
+            onAddToQueue = {
+                viewModel.addTracksToQueue(listOf(track))
+                trackForOptions = null
+            },
+            onStartRadio = {
+                viewModel.playTrack(track)
+                trackForOptions = null
+            },
+            onSaveToPlaylist = {
+                trackToSaveInPlaylist = track
+                trackForOptions = null
+                showSaveToPlaylistSheet = true
+            },
+            onToggleFavorite = {
+                viewModel.toggleFavorite(track.id)
+            },
+            onToggleDownload = {
+                viewModel.toggleDownload(track.id)
+            },
+            onOpenArtist = { artistId ->
+                trackForOptions = null
+                navController.navigate("artist/$artistId") {
+                    launchSingleTop = true
+                }
+            },
+            onOpenAlbum = { albumId ->
+                trackForOptions = null
+                navController.navigate("album/$albumId") {
+                    launchSingleTop = true
+                }
+            }
+        )
+    }
+
+    if (showSaveToPlaylistSheet && (trackToSaveInPlaylist != null || playbackState.currentTrack != null)) {
+        val currentTrack = trackToSaveInPlaylist ?: playbackState.currentTrack!!
         SaveToPlaylistSheet(
             track = currentTrack,
             userPlaylists = userPlaylists,
             isLiked = likedTracks.any { it.id == currentTrack.id },
             likedCount = likedTracks.size,
-            onDismiss = { showSaveToPlaylistSheet = false },
+            onDismiss = {
+                showSaveToPlaylistSheet = false
+                trackToSaveInPlaylist = null
+            },
             onToggleLiked = { viewModel.toggleFavorite(currentTrack.id) },
             onTogglePlaylist = { pl, shouldAdd ->
                 if (shouldAdd) {
