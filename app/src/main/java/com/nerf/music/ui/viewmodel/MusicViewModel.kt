@@ -2939,42 +2939,39 @@ class MusicViewModel(
         if (track.id.isBlank() || track.id.startsWith("playlist_")) return
         val lowerTitle = track.title.lowercase()
         // Se a própria faixa já for instrumental, não precisa buscar outra
-        if (lowerTitle.contains("instrumental") || lowerTitle.contains("karaoke")) return
+        if (lowerTitle.contains("instrumental") || lowerTitle.contains("karaoke") || lowerTitle.contains("playback")) return
 
         instrumentalFetchJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val baseTitle = track.title
-                    .replace(Regex("""\s*\([^)]*\)\s*"""), " ")
-                    .replace(Regex("""\s*\[[^\]]*\]\s*"""), " ")
-                    .trim()
-                val primaryArtist = track.artist.split(",", "&", "/", "feat.", "ft.").firstOrNull()?.trim().orEmpty()
-                val query = "$baseTitle $primaryArtist official instrumental".trim()
+                val queries = KaraokeLyricsEngine.buildInstrumentalSearchQueries(track)
+                val collectedCandidates = mutableListOf<Track>()
 
-                val songsRes = repository.search(query, SearchFilter.SONGS).getOrNull()?.songs.orEmpty()
-                val allRes = if (songsRes.isEmpty()) {
-                    repository.search(query, SearchFilter.ALL).getOrNull()?.songs.orEmpty()
-                } else {
-                    emptyList()
-                }
-                val candidates: List<Track> = songsRes + allRes
+                for (query in queries) {
+                    val songsRes = repository.search(query, SearchFilter.SONGS).getOrNull()?.songs.orEmpty()
+                    val allRes = if (songsRes.isEmpty()) {
+                        repository.search(query, SearchFilter.ALL).getOrNull()?.songs.orEmpty()
+                    } else {
+                        emptyList()
+                    }
+                    collectedCandidates.addAll(songsRes)
+                    collectedCandidates.addAll(allRes)
 
-                val bestMatch = candidates.firstOrNull { cand ->
-                    if (cand.id == track.id) return@firstOrNull false
-                    val cTitle = cand.title.lowercase()
-                    val hasInstKeyword = cTitle.contains("instrumental") ||
-                        cTitle.contains("karaoke") ||
-                        cTitle.contains("karaokê") ||
-                        cTitle.contains("off vocal") ||
-                        cTitle.contains("backing track")
-                    val titleMatches = cTitle.contains(baseTitle.lowercase().take(10))
-                    val durationOk = track.durationSeconds <= 0L ||
-                        cand.durationSeconds <= 0L ||
-                        kotlin.math.abs(cand.durationSeconds - track.durationSeconds) <= 8L
-                    hasInstKeyword && titleMatches && durationOk
+                    val earlyMatch = KaraokeLyricsEngine.selectBestInstrumentalCandidate(track, collectedCandidates)
+                    if (earlyMatch != null) {
+                        break
+                    }
                 }
+
+                val bestMatch = KaraokeLyricsEngine.selectBestInstrumentalCandidate(
+                    originalTrack = track,
+                    candidates = collectedCandidates.distinctBy { it.id }
+                )
 
                 if (bestMatch != null && _playbackState.value.currentTrack?.id == track.id) {
-                    Log.i("MusicViewModel", "Faixa Instrumental compatível encontrada para ${track.title}: ${bestMatch.title} (${bestMatch.id})")
+                    Log.i(
+                        "MusicViewModel",
+                        "Faixa Instrumental validada com alta precisão para '${track.title}' (${track.artist}): '${bestMatch.title}' por '${bestMatch.artist}' (${bestMatch.id})"
+                    )
                     withContext(Dispatchers.Main) {
                         _isInstrumentalTrackReady.value = true
                         AudioPlayerService.prepareStandbyInstrumental(
@@ -2982,6 +2979,11 @@ class MusicViewModel(
                             instrumentalVideoId = bestMatch.id
                         )
                     }
+                } else {
+                    Log.i(
+                        "MusicViewModel",
+                        "Nenhuma faixa instrumental confiável encontrada para '${track.title}' (${track.artist}). Usando isolamento vocal DSP de fase preservada."
+                    )
                 }
             } catch (e: Exception) {
                 Log.w("MusicViewModel", "Busca de instrumental em standby falhou: ${e.message}")

@@ -287,14 +287,14 @@ fun JamSessionSheet(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Hospedar uma sessão Jam",
+                            text = "Hospedar uma sessão Jam Global",
                             fontFamily = YouTubeSansFontFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp,
                             color = YtmWhite
                         )
                         Text(
-                            text = "Inicia um servidor WebSocket de baixa latência diretamente no seu dispositivo e gera um DeepLink de convite instantâneo.",
+                            text = "Conecta automaticamente via WebSocket Global (Internet / 4G / 5G / Wi-Fi) para você ouvir em tempo real com amigos em qualquer lugar do mundo usando um código de sala ou DeepLink.",
                             fontSize = 13.sp,
                             color = YtmTextSecondary,
                             lineHeight = 18.sp
@@ -305,7 +305,7 @@ fun JamSessionSheet(
                                 value = customRelayInput,
                                 onValueChange = { customRelayInput = it },
                                 placeholder = {
-                                    Text("Opcional: ws://seu-relay:porta/jam", color = YtmTextSecondary, fontSize = 13.sp)
+                                    Text("Opcional: 'local' (só Wi-Fi) ou wss://seu-relay", color = YtmTextSecondary, fontSize = 13.sp)
                                 },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -328,7 +328,7 @@ fun JamSessionSheet(
                                 onClick = { showAdvancedRelayInput = !showAdvancedRelayInput }
                             ) {
                                 Text(
-                                    text = if (showAdvancedRelayInput) "Usar Servidor Local P2P" else "Configurar Relay WS (Opcional)",
+                                    text = if (showAdvancedRelayInput) "Usar Relay Global Padrão" else "Opções Avançadas / LAN",
                                     fontSize = 12.sp,
                                     color = YtmTextSecondary
                                 )
@@ -383,7 +383,7 @@ fun JamSessionSheet(
                             color = YtmWhite
                         )
                         Text(
-                            text = "Abra um DeepLink de convite (nerfmusic://jam/join?...) ou cole o link / IP WebSocket abaixo:",
+                            text = "Digite apenas o código da sala (ex: NERF-4821 ou 4821) para conectar de qualquer lugar via Internet, ou cole o DeepLink de convite:",
                             fontSize = 13.sp,
                             color = YtmTextSecondary,
                             lineHeight = 18.sp
@@ -394,7 +394,7 @@ fun JamSessionSheet(
                             onValueChange = { joinLinkOrIpInput = it },
                             placeholder = {
                                 Text(
-                                    text = "nerfmusic://jam/join?... ou ws://192.168.x.x:8765",
+                                    text = "Código (ex: NERF-4821) ou nerfmusic://jam/join?...",
                                     color = YtmTextSecondary,
                                     fontSize = 13.sp
                                 )
@@ -517,21 +517,73 @@ fun JamSessionSheet(
                             }
                         }
 
-                        // Endpoint WebSocket e DeepLink
+                        // Código da Sala em destaque + Endpoint WebSocket e DeepLink
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color.Black.copy(alpha = 0.35f),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color.Black.copy(alpha = 0.42f),
+                            border = BorderStroke(0.5.dp, JamAccentGreen.copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    clipboard?.setPrimaryClip(ClipData.newPlainText("Código da Sala JAM", jamState.sessionId))
+                                    Toast.makeText(context, "Código ${jamState.sessionId} copiado!", Toast.LENGTH_SHORT).show()
+                                }
                         ) {
                             Column(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(14.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "CÓDIGO DA SALA (INTERNET GLOBAL)",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = YtmTextSecondary
+                                        )
+                                        Text(
+                                            text = jamState.sessionId,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 22.sp,
+                                            color = JamAccentGreen,
+                                            letterSpacing = 1.5.sp
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = Color.White.copy(alpha = 0.08f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = null,
+                                                tint = YtmWhite,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Text(
+                                                text = "Copiar código",
+                                                fontSize = 11.sp,
+                                                color = YtmWhite
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "WebSocket: ${jamState.wsEndpointUrl}",
+                                    text = "Relay: ${jamState.wsEndpointUrl}",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.8f),
+                                    color = Color.White.copy(alpha = 0.72f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -539,7 +591,7 @@ fun JamSessionSheet(
                                     text = "DeepLink: ${jamState.inviteDeepLink}",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
-                                    color = JamAccentGreen.copy(alpha = 0.9f),
+                                    color = JamAccentGreen.copy(alpha = 0.85f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -565,7 +617,7 @@ fun JamSessionSheet(
                                         type = "text/plain"
                                         putExtra(
                                             Intent.EXTRA_TEXT,
-                                            "Entre na minha Jam no NERF Music para ouvirmos juntos em tempo real!\n\n${jamState.inviteDeepLink}"
+                                            "Entre na minha Jam no NERF Music para ouvirmos juntos em tempo real de qualquer lugar!\n\nCódigo da Sala: ${jamState.sessionId}\nOu toque no link: ${jamState.inviteDeepLink}"
                                         )
                                     }
                                     context.startActivity(Intent.createChooser(sendIntent, "Convidar para a Jam"))

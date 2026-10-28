@@ -5,12 +5,14 @@ import android.util.Log
 import com.nerf.music.data.model.LyricsData
 import com.nerf.music.data.model.SyncedLyricsLine
 import com.nerf.music.data.model.SyncedLyricsWord
+import com.nerf.music.data.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import java.net.URLEncoder
+import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -856,5 +858,261 @@ object KaraokeLyricsEngine {
         val ptTokens = setOf("não", "nao", "você", "voce", "coração", "amor", "então", "pra", "meu", "minha", "tudo", "mais", "quando", "porque")
         val tokens = lower.split(Regex("""\W+""")).filter { it.isNotBlank() }
         return tokens.count { it in ptTokens } >= 2
+    }
+
+    // =========================================================================
+    // SELEÇÃO DE INSTRUMENTAL DE ALTA PRECISÃO (ANTI FALSO-POSITIVO)
+    // =========================================================================
+
+    private val instrumentalKeywords = listOf(
+        "instrumental",
+        "karaoke",
+        "karaokê",
+        "off vocal",
+        "off-vocal",
+        "backing track",
+        "playback",
+        "sem voz",
+        "minus one"
+    )
+
+    private val forbiddenModifiers = listOf(
+        "slowed",
+        "reverb",
+        "sped up",
+        "speed up",
+        "nightcore",
+        "8d",
+        "remix",
+        "bootleg",
+        "mashup",
+        "lofi",
+        "lo-fi",
+        "8 bit",
+        "8-bit",
+        "piano cover",
+        "guitar cover",
+        "violin cover",
+        "cello cover",
+        "flute cover",
+        "saxophone cover",
+        "kalimba",
+        "music box",
+        "ringtone",
+        "parodia",
+        "parody"
+    )
+
+    fun normalizeForMatch(input: String): String {
+        if (input.isBlank()) return ""
+        val decomposed = Normalizer.normalize(input, Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+        return decomposed
+            .lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
+    }
+
+    fun extractCleanBaseTitle(rawTitle: String): String {
+        return rawTitle
+            .replace(Regex("""\s*\([^)]*(?:official|video|audio|lyric|clipe|cli?p|visualizer|remaster|hd|4k|feat|ft\.|prod\.)[^)]*\)\s*""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""\s*\[[^\]]*(?:official|video|audio|lyric|clipe|cli?p|visualizer|remaster|hd|4k|feat|ft\.|prod\.)[^\]]*\]\s*""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""\s*-\s*(?:official\s*(?:music\s*)?(?:video|audio|lyric\s*video)|clipe\s*oficial|áudio\s*oficial).*$""", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .ifBlank { rawTitle.trim() }
+    }
+
+    fun extractPrimaryArtist(rawArtist: String): String {
+        return rawArtist
+            .split(",", "&", "/", ";", "feat.", "ft.", "Feat.", "FT.", "part.", "Part.")
+            .firstOrNull()
+            ?.replace(Regex("""\s*-\s*Topic$""", RegexOption.IGNORE_CASE), "")
+            ?.trim()
+            .orEmpty()
+    }
+
+    fun buildInstrumentalSearchQueries(track: Track): List<String> {
+        val baseTitle = extractCleanBaseTitle(track.title)
+        val primaryArtist = extractPrimaryArtist(track.artist)
+        val queries = mutableListOf<String>()
+        if (primaryArtist.isNotBlank()) {
+            queries.add("$baseTitle $primaryArtist instrumental")
+            queries.add("$baseTitle $primaryArtist karaoke playback")
+        } else {
+            queries.add("$baseTitle official instrumental")
+        }
+        return queries.distinct()
+    }
+
+    fun selectBestInstrumentalCandidate(
+        originalTrack: Track,
+        candidates: List<Track>
+    ): Track? {
+        if (candidates.isEmpty()) return null
+
+        val cleanBaseTitle = extractCleanBaseTitle(originalTrack.title)
+        val normBaseTitle = normalizeForMatch(cleanBaseTitle)
+        if (normBaseTitle.isBlank()) return null
+        val baseTitleWords = normBaseTitle.split(" ").filter { it.isNotBlank() }
+
+        val primaryArtist = extractPrimaryArtist(originalTrack.artist)
+        val normPrimaryArtist = normalizeForMatch(primaryArtist)
+        val artistWords = normPrimaryArtist.split(" ").filter { it.isNotBlank() }
+
+        val normOrigFullTitle = normalizeForMatch(originalTrack.title)
+        val origIsLive = normOrigFullTitle.contains("ao vivo") || containsWholeWord(normOrigFullTitle, "live")
+        val origIsAcoustic = normOrigFullTitle.contains("acustico") || normOrigFullTitle.contains("acoustic")
+
+        var bestCandidate: Track? = null
+        var bestScore = -1
+
+        for (cand in candidates) {
+            if (cand.id.isBlank() || cand.id == originalTrack.id) continue
+
+            val rawCandTitleLower = cand.title.lowercase(Locale.ROOT)
+            val normCandTitle = normalizeForMatch(cand.title)
+            val normCandArtist = normalizeForMatch(cand.artist)
+
+            val hasInstKeyword = instrumentalKeywords.any { kw ->
+                val normKw = normalizeForMatch(kw)
+                rawCandTitleLower.contains(kw) || containsWholePhrase(normCandTitle, normKw)
+            }
+            if (!hasInstKeyword) continue
+
+            val hasForbiddenModifier = forbiddenModifiers.any { mod ->
+                val normMod = normalizeForMatch(mod)
+                containsWholePhrase(normCandTitle, normMod) && !containsWholePhrase(normOrigFullTitle, normMod)
+            }
+            if (hasForbiddenModifier) continue
+
+            val candIsLive = normCandTitle.contains("ao vivo") || containsWholeWord(normCandTitle, "live")
+            if (candIsLive != origIsLive) continue
+
+            val candIsAcoustic = normCandTitle.contains("acustico") || normCandTitle.contains("acoustic")
+            if (candIsAcoustic != origIsAcoustic) continue
+
+            val artistMatchesChannel = normPrimaryArtist.isNotBlank() && (
+                containsWholePhrase(normCandArtist, normPrimaryArtist) ||
+                    (normCandArtist.length >= 3 && containsWholePhrase(normPrimaryArtist, normCandArtist)) ||
+                    (artistWords.size >= 2 && artistWords.all { containsWholeWord(normCandArtist, it) })
+                )
+
+            val artistMatchesInTitle = normPrimaryArtist.isNotBlank() && (
+                containsWholePhrase(normCandTitle, normPrimaryArtist) ||
+                    (artistWords.size >= 2 && artistWords.all { containsWholeWord(normCandTitle, it) })
+                )
+
+            if (normPrimaryArtist.isNotBlank() && !artistMatchesChannel && !artistMatchesInTitle) {
+                continue
+            }
+
+            if (!containsWholePhrase(normCandTitle, normBaseTitle)) {
+                val matchedWords = baseTitleWords.count { containsWholeWord(normCandTitle, it) }
+                if (baseTitleWords.size < 2 || matchedWords < baseTitleWords.size) {
+                    continue
+                }
+            }
+
+            val strippedCandTitle = stripInstrumentalAndArtistTokens(normCandTitle, artistWords)
+            val strippedWords = strippedCandTitle.split(" ").filter { it.isNotBlank() }
+
+            val extraWordsCount = strippedWords.count { it !in baseTitleWords }
+            if (baseTitleWords.size == 1 && extraWordsCount > 0) {
+                continue
+            }
+            if (extraWordsCount > 2) {
+                continue
+            }
+
+            val origDur = originalTrack.durationSeconds
+            val candDur = cand.durationSeconds
+            var durationScore = 0
+            if (origDur > 0L && candDur > 0L) {
+                val diffSec = kotlin.math.abs(candDur - origDur)
+                if (diffSec > 5L) continue
+                durationScore = when {
+                    diffSec <= 1L -> 25
+                    diffSec <= 2L -> 20
+                    diffSec <= 3L -> 14
+                    else -> 8
+                }
+            } else {
+                if (!artistMatchesChannel || extraWordsCount > 0) continue
+                durationScore = 5
+            }
+
+            var score = durationScore
+            if (artistMatchesChannel) {
+                score += 45
+            } else if (artistMatchesInTitle) {
+                score += 32
+            }
+
+            if (strippedCandTitle == normBaseTitle || extraWordsCount == 0) {
+                score += 35
+            } else if (extraWordsCount == 1) {
+                score += 20
+            }
+
+            if (normCandTitle.contains("instrumental") || normCandTitle.contains("off vocal")) {
+                score += 10
+            }
+
+            if (score >= 75 && score > bestScore) {
+                bestScore = score
+                bestCandidate = cand
+            }
+        }
+
+        return bestCandidate
+    }
+
+    private fun containsWholeWord(haystack: String, word: String): Boolean {
+        if (haystack.isBlank() || word.isBlank()) return false
+        return Regex("""(?:^|\s)${Regex.escape(word)}(?:\s|$)""").containsMatchIn(haystack)
+    }
+
+    private fun containsWholePhrase(haystack: String, phrase: String): Boolean {
+        if (haystack.isBlank() || phrase.isBlank()) return false
+        return Regex("""(?:^|\s)${Regex.escape(phrase)}(?:\s|$)""").containsMatchIn(haystack)
+    }
+
+    private fun stripInstrumentalAndArtistTokens(normTitle: String, artistWords: List<String>): String {
+        var working = " $normTitle "
+        val removablePhrases = listOf(
+            "official instrumental",
+            "instrumental version",
+            "versao instrumental",
+            "official karaoke",
+            "karaoke version",
+            "versao karaoke",
+            "originally performed by",
+            "in the style of",
+            "backing track",
+            "off vocal",
+            "minus one",
+            "sem voz",
+            "instrumental",
+            "karaoke",
+            "playback",
+            "official",
+            "oficial",
+            "audio",
+            "video",
+            "version",
+            "versao",
+            "hd",
+            "hq"
+        )
+        for (phrase in removablePhrases) {
+            working = working.replace(Regex("""(?:^|\s)${Regex.escape(phrase)}(?:\s|$)"""), " ")
+        }
+        for (artistWord in artistWords) {
+            if (artistWord.length >= 2) {
+                working = working.replace(Regex("""(?:^|\s)${Regex.escape(artistWord)}(?:\s|$)"""), " ")
+            }
+        }
+        return working.trim().replace(Regex("\\s+"), " ")
     }
 }

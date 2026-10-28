@@ -1,226 +1,434 @@
 package com.nerf.music.player
 
-import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.audio.BaseAudioProcessor
+import androidx.media3.common.audio.AudioProcessor.AudioFormat
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Processador DSP em tempo real para Isolamento/Remoção Vocal (Modo Karaokê / Sing)
- * rodando 100% localmente no pipeline PCM do ExoPlayer (Media3).
+ * Processador DSP em tempo real para Isolamento Vocal (Modo Karaokê / Apple Music Sing)
+ * e Extração de Envelope Rítmico Sub-Grave para alinhamento automático de batidas.
  *
- * Algoritmo: Decomposição Estéreo Mid/Side com Filtragem Biquad Band-Isolated:
- * - Decompõe o sinal estéreo em Canal Central (Mid = (L + R)/2) e Lateral (Side = (L - R)/2).
- * - Preserva os graves centrais (< 160 Hz, bumbo e contrabaixo) via filtro Butterworth Low-Pass de 2ª ordem.
- * - Preserva o brilho/agudos centrais (> 6200 Hz, pratos e ambiência) via filtro Butterworth High-Pass de 2ª ordem.
- * - Atenua seletivamente a banda vocal central (160 Hz – 6200 Hz) de acordo com [vocalLevel] (0.0 = remoção máxima,
- *   0.15 = voz-guia suave estilo Apple Music Sing, 1.0 = voz original 100%).
+ * Arquitetura Acústica (v2 - Fase Estéreo Preservada + Linkwitz-Riley 4ª Ordem):
+ * 1. Decomposição Mid-Side:
+ *    - `Mid = (L + R) * 0.5` (contém o vocal principal + sub-grave centralizado)
+ *    - `Side = (L - R) * 0.5` (contém 100% dos instrumentos estéreo sem o vocal central)
+ * 2. Isolamento Cirúrgico do Canal Central (`Mid`):
+ *    - Filtro Linkwitz-Riley de 4ª ordem (24 dB/oitava) Low-Pass em `115 Hz` (`midSubBass`):
+ *      mantém apenas o peso do bumbo (kick) e sub-baixo, cortando 100% dos fundamentais
+ *      da voz masculina e feminina (`130 Hz – 400 Hz`) que antes deixavam a música abafada e a voz nítida.
+ *    - Filtro Linkwitz-Riley de 4ª ordem (24 dB/oitava) High-Pass em `8000 Hz` (`midAir`):
+ *      mantém apenas o brilho de pratos/hi-hats sem vazar formantes ou sibilância vocal (`1 kHz – 6 kHz`).
+ * 3. Decorrelação All-Pass em Quadratura (`90°`) no Canal `Side` (Anti-Cancelamento em Alto-Falante):
+ *    - Antes, jogar `+Side` no canal L e `-Side` no canal R causava cancelamento acústico total (`+Side - Side = 0`)
+ *      no alto-falante do celular, sumindo com violões/guitarras/teclados e deixando o som abafado.
+ *    - Agora aplicamos uma rede All-Pass de defasagem em quadratura + EQ de presença (`+3.5 dB @ 2.2 kHz`)
+ *      no sinal `Side`, garantindo zero voz central (`L - R`) e soma construtiva nos alto-falantes do celular
+ *      e nos fones de ouvido.
  */
-@OptIn(UnstableApi::class)
-class VocalIsolationAudioProcessor : BaseAudioProcessor() {
+@UnstableApi
+class VocalIsolationAudioProcessor : AudioProcessor {
+
+    companion object {
+        private const val ENVELOPE_WINDOW_MS = 10
+        private const val MAX_ENVELOPE_FRAMES = 1800 // 18 segundos em resolução de 10ms
+
+        /**
+         * Calcula o deslocamento de tempo ideal (em milissegundos) entre o áudio original e o instrumental
+         * usando Correlação Cruzada Normalizada (NCC) sobre a derivada de ataque (onset) do envelope sub-grave.
+         *
+         * Retorna `offsetMs` tal que: `posicaoInstrumental = posicaoOriginal + offsetMs`.
+         * Retorna `null` se a confiança da correlação for insuficiente.
+         */
+        fun computeBestBeatOffsetMs(
+            mainEnvelope: FloatArray,
+            instEnvelope: FloatArray,
+            maxLagMs: Int = 2500
+        ): Long? {
+            val n = minOf(mainEnvelope.size, instEnvelope.size)
+            if (n < 250) return null // Mínimo de 2.5s de áudio capturado
+
+            // Extrai a função de detecção de ataques (Half-Wave Rectified First-Order Difference)
+            val mainOnset = FloatArray(n)
+            val instOnset = FloatArray(n)
+            var mainEnergy = 0.0
+            var instEnergy = 0.0
+
+            for (i in 1 until n) {
+                val dm = (mainEnvelope[i] - mainEnvelope[i - 1]).coerceAtLeast(0f)
+                val di = (instEnvelope[i] - instEnvelope[i - 1]).coerceAtLeast(0f)
+                mainOnset[i] = dm
+                instOnset[i] = di
+                mainEnergy += dm * dm
+                instEnergy += di * di
+            }
+
+            if (mainEnergy < 1e-6 || instEnergy < 1e-6) return null
+
+            val maxLagFrames = (maxLagMs / ENVELOPE_WINDOW_MS).coerceAtMost(n / 2)
+            var bestLag = 0
+            var bestCorr = -1.0
+            var secondBestCorr = -1.0
+            val corrByLag = DoubleArray(maxLagFrames * 2 + 1)
+
+            for (lag in -maxLagFrames..maxLagFrames) {
+                var num = 0.0
+                var normM = 0.0
+                var normI = 0.0
+                val startM = maxOf(1, 1 - lag)
+                val endM = minOf(n - 1, n - 1 - lag)
+                for (t in startM..endM) {
+                    val m = mainOnset[t].toDouble()
+                    val ins = instOnset[t + lag].toDouble()
+                    num += m * ins
+                    normM += m * m
+                    normI += ins * ins
+                }
+                val denom = sqrt(normM * normI)
+                val corr = if (denom > 1e-9) num / denom else 0.0
+                corrByLag[lag + maxLagFrames] = corr
+                if (corr > bestCorr) {
+                    bestCorr = corr
+                    bestLag = lag
+                }
+            }
+
+            // Busca o segundo maior pico fora da vizinhança imediata (±60ms = ±6 frames) do pico principal
+            for (lag in -maxLagFrames..maxLagFrames) {
+                if (abs(lag - bestLag) > 6) {
+                    val c = corrByLag[lag + maxLagFrames]
+                    if (c > secondBestCorr) {
+                        secondBestCorr = c
+                    }
+                }
+            }
+
+            // Exige correlação clara e pico destacado para aplicar ajuste automático
+            if (bestCorr < 0.28 || (secondBestCorr > 0 && bestCorr < secondBestCorr * 1.15)) {
+                return null
+            }
+
+            return (bestLag * ENVELOPE_WINDOW_MS).toLong()
+        }
+    }
 
     @Volatile
     var isKaraokeEnabled: Boolean = false
 
     /**
-     * Nível de presença da voz original quando [isKaraokeEnabled] = true:
-     * - `0.0f`: Remoção total da banda vocal central (100% instrumental)
-     * - `0.15f`: Voz guia suave (padrão ideal para cantar junto)
-     * - `1.0f`: Voz original sem atenuação
+     * Nível de presença do vocal principal:
+     * `0.0f` = Remoção máxima do vocal (Karaokê Puro)
+     * `1.0f` = Áudio original completo
      */
     @Volatile
-    var vocalLevel: Float = 0.12f
+    var vocalLevel: Float = 0.0f
 
-    // Coeficientes Biquad Low-Pass (< 160 Hz) para preservar bumbo/baixo no centro
-    private var lpB0 = 1.0
-    private var lpB1 = 0.0
-    private var lpB2 = 0.0
-    private var lpA1 = 0.0
-    private var lpA2 = 0.0
-    private var lpZ1 = 0.0
-    private var lpZ2 = 0.0
+    private var inputAudioFormat: AudioFormat = AudioFormat.NOT_SET
+    private var outputBuffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
+    private var internalBuffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
+    private var inputEnded: Boolean = false
 
-    // Coeficientes Biquad High-Pass (> 6200 Hz) para preservar hi-hats/agudos no centro
-    private var hpB0 = 1.0
-    private var hpB1 = 0.0
-    private var hpB2 = 0.0
-    private var hpA1 = 0.0
-    private var hpA2 = 0.0
-    private var hpZ1 = 0.0
-    private var hpZ2 = 0.0
+    // Linkwitz-Riley 4ª Ordem (2 biquads em cascata = 24 dB/oitava) para Sub-Grave (< 115 Hz) no Mid
+    private val midSubLpStage1 = BiquadFilter()
+    private val midSubLpStage2 = BiquadFilter()
 
-    private var currentSampleRate = 44100
+    // Linkwitz-Riley 4ª Ordem (24 dB/oitava) para Brilho Extremo (> 8000 Hz) no Mid
+    private val midAirHpStage1 = BiquadFilter()
+    private val midAirHpStage2 = BiquadFilter()
 
-    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        // Suporta fluxos estéreo PCM 16-bit ou PCM Float (padrão decodificado pelo Media3 para Opus/AAC/MP3)
-        if (inputAudioFormat.channelCount != 2) {
-            return AudioProcessor.AudioFormat.NOT_SET
+    // Equalizador Peaking de Presença Instrumental (+3.5 dB @ 2200 Hz) no canal Side
+    private val sidePresenceEq = BiquadFilter()
+
+    // Rede All-Pass de Decorrelação Estéreo em Quadratura (evita cancelamento de fase nos alto-falantes do celular)
+    private val sideAllPassL1 = BiquadFilter()
+    private val sideAllPassL2 = BiquadFilter()
+    private val sideAllPassR1 = BiquadFilter()
+    private val sideAllPassR2 = BiquadFilter()
+
+    // Extrator de envelope sub-grave separado para alinhamento automático de batidas
+    private val envelopeSubLp = BiquadFilter()
+    private val envelopeFrames = FloatArray(MAX_ENVELOPE_FRAMES)
+    private var envelopeWriteCount = 0
+    private var currentWindowSumSq = 0.0
+    private var currentWindowSamples = 0
+    private var samplesPerEnvelopeWindow = 441
+
+    fun clearEnvelopeHistory() {
+        synchronized(envelopeFrames) {
+            envelopeWriteCount = 0
+            currentWindowSumSq = 0.0
+            currentWindowSamples = 0
+            envelopeFrames.fill(0f)
         }
-        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
-            inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
-        ) {
-            return AudioProcessor.AudioFormat.NOT_SET
-        }
+    }
 
-        currentSampleRate = inputAudioFormat.sampleRate.coerceAtLeast(8000)
-        recalculateBiquadCoefficients(currentSampleRate.toDouble())
-        resetFilterState()
+    fun getCapturedBassEnvelope(): FloatArray {
+        synchronized(envelopeFrames) {
+            val count = envelopeWriteCount.coerceAtMost(MAX_ENVELOPE_FRAMES)
+            return envelopeFrames.copyOfRange(0, count)
+        }
+    }
+
+    override fun configure(inputAudioFormat: AudioFormat): AudioFormat {
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
+            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+        }
+        this.inputAudioFormat = inputAudioFormat
+        reconfigureFilters(inputAudioFormat.sampleRate.toDouble())
         return inputAudioFormat
     }
 
-    private fun recalculateBiquadCoefficients(sampleRate: Double) {
-        val q = 1.0 / sqrt(2.0) // Butterworth Q = 0.7071
+    private fun reconfigureFilters(sampleRate: Double) {
+        if (sampleRate <= 0.0) return
+        val nyquistSafeAir = (sampleRate * 0.42).coerceIn(5500.0, 8200.0)
 
-        // 1. Low-Pass Filter em 280 Hz (preserva bumbo, contrabaixo e corpo da caixa no centro)
-        val fcLow = 280.0.coerceAtMost(sampleRate * 0.45)
-        val w0Low = 2.0 * PI * fcLow / sampleRate
-        val cosW0Low = cos(w0Low)
-        val sinW0Low = sin(w0Low)
-        val alphaLow = sinW0Low / (2.0 * q)
-        val a0Low = 1.0 + alphaLow
-        lpB0 = ((1.0 - cosW0Low) * 0.5) / a0Low
-        lpB1 = (1.0 - cosW0Low) / a0Low
-        lpB2 = ((1.0 - cosW0Low) * 0.5) / a0Low
-        lpA1 = (-2.0 * cosW0Low) / a0Low
-        lpA2 = (1.0 - alphaLow) / a0Low
+        // Sub-grave estrito em 115 Hz (abaixo da fundamental da voz humana)
+        midSubLpStage1.setLowPass(sampleRate, cutoffHz = 115.0, q = 0.7071)
+        midSubLpStage2.setLowPass(sampleRate, cutoffHz = 115.0, q = 0.7071)
 
-        // 2. High-Pass Filter em 3500 Hz (preserva definição, pratos, violões e brilho para não abafar)
-        val fcHigh = 3500.0.coerceAtMost(sampleRate * 0.45)
-        val w0High = 2.0 * PI * fcHigh / sampleRate
-        val cosW0High = cos(w0High)
-        val sinW0High = sin(w0High)
-        val alphaHigh = sinW0High / (2.0 * q)
-        val a0High = 1.0 + alphaHigh
-        hpB0 = ((1.0 + cosW0High) * 0.5) / a0High
-        hpB1 = -(1.0 + cosW0High) / a0High
-        hpB2 = ((1.0 + cosW0High) * 0.5) / a0High
-        hpA1 = (-2.0 * cosW0High) / a0High
-        hpA2 = (1.0 - alphaHigh) / a0High
+        // Ar / Brilho acima de 8000 Hz (acima dos formantes da voz humana)
+        midAirHpStage1.setHighPass(sampleRate, cutoffHz = nyquistSafeAir, q = 0.7071)
+        midAirHpStage2.setHighPass(sampleRate, cutoffHz = nyquistSafeAir, q = 0.7071)
+
+        // Realce de nitidez dos instrumentos no canal Side (violões, teclados, caixas)
+        sidePresenceEq.setPeakingEq(sampleRate, centerHz = 2200.0, q = 0.95, gainDb = 3.5)
+
+        // Filtros All-Pass escalonados para descorrelacionar L e R sem cancelar no alto-falante do celular
+        sideAllPassL1.setAllPass(sampleRate, centerHz = 380.0, q = 0.7071)
+        sideAllPassL2.setAllPass(sampleRate, centerHz = 1900.0, q = 0.7071)
+        sideAllPassR1.setAllPass(sampleRate, centerHz = 820.0, q = 0.7071)
+        sideAllPassR2.setAllPass(sampleRate, centerHz = 3600.0, q = 0.7071)
+
+        envelopeSubLp.setLowPass(sampleRate, cutoffHz = 115.0, q = 0.7071)
+        samplesPerEnvelopeWindow = ((sampleRate * ENVELOPE_WINDOW_MS) / 1000.0).toInt().coerceAtLeast(64)
+        clearEnvelopeHistory()
     }
 
-    private fun resetFilterState() {
-        lpZ1 = 0.0
-        lpZ2 = 0.0
-        hpZ1 = 0.0
-        hpZ2 = 0.0
+    override fun isActive(): Boolean {
+        return inputAudioFormat != AudioFormat.NOT_SET && inputAudioFormat.channelCount == 2
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         val remaining = inputBuffer.remaining()
         if (remaining == 0) return
 
-        val outputBuffer = replaceOutputBuffer(remaining)
-        outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-        inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-
-        val enabled = isKaraokeEnabled
-        val vLevel = vocalLevel.coerceIn(0f, 1f).toDouble()
-
-        // Bypass ultra-rápido quando o modo Karaokê está desativado
-        if (!enabled || vLevel >= 0.995) {
-            outputBuffer.put(inputBuffer)
-            outputBuffer.flip()
-            return
-        }
-
-        val sideBoost = 1.0 + (1.0 - vLevel) * 0.16
-
-        if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) {
-            // Cada frame estéreo 16-bit = 4 bytes (2 bytes Left + 2 bytes Right)
-            val frameCount = remaining / 4
-            for (i in 0 until frameCount) {
-                val leftShort = inputBuffer.short
-                val rightShort = inputBuffer.short
-
-                val left = leftShort / 32768.0
-                val right = rightShort / 32768.0
-
-                val (outL, outR) = processStereoFrame(left, right, vLevel, sideBoost)
-
-                val clampedL = (outL * 32767.0).coerceIn(-32768.0, 32767.0).toInt().toShort()
-                val clampedR = (outR * 32767.0).coerceIn(-32768.0, 32767.0).toInt().toShort()
-
-                outputBuffer.putShort(clampedL)
-                outputBuffer.putShort(clampedR)
-            }
-            // Copia bytes residuais caso haja desalinhamento improvável
-            while (inputBuffer.hasRemaining()) {
-                outputBuffer.put(inputBuffer.get())
-            }
-        } else if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) {
-            // Cada frame estéreo Float = 8 bytes (4 bytes Left + 4 bytes Right)
-            val frameCount = remaining / 8
-            for (i in 0 until frameCount) {
-                val left = inputBuffer.float.toDouble()
-                val right = inputBuffer.float.toDouble()
-
-                val (outL, outR) = processStereoFrame(left, right, vLevel, sideBoost)
-
-                outputBuffer.putFloat(outL.toFloat().coerceIn(-1f, 1f))
-                outputBuffer.putFloat(outR.toFloat().coerceIn(-1f, 1f))
-            }
-            while (inputBuffer.hasRemaining()) {
-                outputBuffer.put(inputBuffer.get())
-            }
+        if (internalBuffer.capacity() < remaining) {
+            internalBuffer = ByteBuffer.allocateDirect(remaining).order(ByteOrder.nativeOrder())
         } else {
-            outputBuffer.put(inputBuffer)
+            internalBuffer.clear()
         }
 
-        outputBuffer.flip()
+        val karaokeActive = isKaraokeEnabled && inputAudioFormat.channelCount == 2
+        val rawVLevel = vocalLevel.coerceIn(0f, 1f)
+        // Curva quadrática para que valores baixos no slider (0%..25%) mantenham atenuação profunda da voz
+        val vGain = (rawVLevel * rawVLevel).toDouble()
+        val suppressionStrength = (1.0 - vGain).coerceIn(0.0, 1.0)
+
+        while (inputBuffer.remaining() >= 4) {
+            val leftShort = inputBuffer.short
+            val rightShort = inputBuffer.short
+
+            val leftNorm = leftShort / 32768.0
+            val rightNorm = rightShort / 32768.0
+            val mid = (leftNorm + rightNorm) * 0.5
+
+            // Registra envelope sub-grave continuamente para alinhamento automático de batidas
+            val envBass = envelopeSubLp.process(mid)
+            recordEnvelopeSample(envBass)
+
+            if (!karaokeActive) {
+                internalBuffer.putShort(leftShort)
+                internalBuffer.putShort(rightShort)
+            } else {
+                val side = (leftNorm - rightNorm) * 0.5
+
+                // 1. Sub-grave (< 115 Hz, 24 dB/oct) e Brilho Extremo (> 8 kHz, 24 dB/oct) do Mid (0% de voz)
+                val midSubBass = midSubLpStage2.process(midSubLpStage1.process(mid))
+                val midAir = midAirHpStage2.process(midAirHpStage1.process(mid))
+
+                // 2. Banda vocal do Mid isolada (115 Hz .. 8 kHz) escalada apenas por vGain (0.0 no padrão)
+                val midVocalBand = mid - midSubBass - midAir
+                val reconstructedMid = (midSubBass * 1.12) + (midAir * 0.85) + (midVocalBand * vGain)
+
+                // 3. Canal Instrumental Estéreo (Side) com realce de presença e decorrelação All-Pass
+                val eqSide = sidePresenceEq.process(side)
+                val decorrelatedSideL = sideAllPassL2.process(sideAllPassL1.process(eqSide))
+                val decorrelatedSideR = sideAllPassR2.process(sideAllPassR1.process(-eqSide))
+
+                // Interpola suavemente entre o Side original (quando vGain=1) e o Side decorrelacionado + expandido (quando vGain=0)
+                val finalSideL = (side * vGain) + (decorrelatedSideL * 1.38 * suppressionStrength)
+                val finalSideR = (-side * vGain) + (decorrelatedSideR * 1.38 * suppressionStrength)
+
+                val outLeft = softClip(reconstructedMid + finalSideL)
+                val outRight = softClip(reconstructedMid + finalSideR)
+
+                val outLShort = (outLeft * 32767.0).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                val outRShort = (outRight * 32767.0).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+
+                internalBuffer.putShort(outLShort)
+                internalBuffer.putShort(outRShort)
+            }
+        }
+
+        while (inputBuffer.hasRemaining()) {
+            internalBuffer.put(inputBuffer.get())
+        }
+
+        internalBuffer.flip()
+        outputBuffer = internalBuffer
     }
 
-    @Suppress("NOTHING_TO_INLINE")
-    private inline fun processStereoFrame(
-        left: Double,
-        right: Double,
-        vLevel: Double,
-        sideBoost: Double
-    ): Pair<Double, Double> {
-        val mid = 0.5 * (left + right)
-        val side = 0.5 * (left - right) * sideBoost
-
-        // Biquad Direct Form II Transposed para Low-Pass (Grave < 280 Hz)
-        val midBass = lpB0 * mid + lpZ1
-        lpZ1 = lpB1 * mid - lpA1 * midBass + lpZ2
-        lpZ2 = lpB2 * mid - lpA2 * midBass
-
-        // Biquad Direct Form II Transposed para High-Pass (Brilho/Presença > 3500 Hz)
-        val midTreble = hpB0 * mid + hpZ1
-        hpZ1 = hpB1 * mid - hpA1 * midTreble + hpZ2
-        hpZ2 = hpB2 * mid - hpA2 * midTreble
-
-        // Isola estritamente a banda vocal central (280 Hz - 3500 Hz) e compensa presença de graves/agudos
-        val midVocal = mid - midBass - midTreble
-        val clarityGain = 1.0 + (1.0 - vLevel) * 0.18
-        val midFiltered = (midBass * 1.08) + (midTreble * clarityGain) + (midVocal * vLevel)
-
-        val rawOutL = midFiltered + side
-        val rawOutR = midFiltered - side
-
-        return softClip(rawOutL) to softClip(rawOutR)
+    private fun recordEnvelopeSample(bassSample: Double) {
+        currentWindowSumSq += bassSample * bassSample
+        currentWindowSamples++
+        if (currentWindowSamples >= samplesPerEnvelopeWindow) {
+            val rms = sqrt(currentWindowSumSq / currentWindowSamples).toFloat()
+            synchronized(envelopeFrames) {
+                if (envelopeWriteCount < MAX_ENVELOPE_FRAMES) {
+                    envelopeFrames[envelopeWriteCount] = rms
+                    envelopeWriteCount++
+                }
+            }
+            currentWindowSumSq = 0.0
+            currentWindowSamples = 0
+        }
     }
 
-    @Suppress("NOTHING_TO_INLINE")
-    private inline fun softClip(sample: Double): Double {
+    private fun softClip(sample: Double): Double {
         return when {
-            sample > 0.95 -> 0.95 + 0.05 * ((sample - 0.95) / (1.0 + (sample - 0.95) * 20.0))
-            sample < -0.95 -> -0.95 + 0.05 * ((sample + 0.95) / (1.0 - (sample + 0.95) * 20.0))
+            sample > 0.98 -> 0.98 + 0.02 * kotlin.math.tanh((sample - 0.98) * 10.0)
+            sample < -0.98 -> -0.98 + 0.02 * kotlin.math.tanh((sample + 0.98) * 10.0)
             else -> sample
+        }.coerceIn(-1.0, 1.0)
+    }
+
+    override fun queueEndOfStream() {
+        inputEnded = true
+    }
+
+    override fun getOutput(): ByteBuffer {
+        val out = outputBuffer
+        outputBuffer = AudioProcessor.EMPTY_BUFFER
+        return out
+    }
+
+    override fun isEnded(): Boolean {
+        return inputEnded && outputBuffer === AudioProcessor.EMPTY_BUFFER
+    }
+
+    override fun flush() {
+        outputBuffer = AudioProcessor.EMPTY_BUFFER
+        inputEnded = false
+        midSubLpStage1.reset()
+        midSubLpStage2.reset()
+        midAirHpStage1.reset()
+        midAirHpStage2.reset()
+        sidePresenceEq.reset()
+        sideAllPassL1.reset()
+        sideAllPassL2.reset()
+        sideAllPassR1.reset()
+        sideAllPassR2.reset()
+        envelopeSubLp.reset()
+    }
+
+    override fun reset() {
+        flush()
+        internalBuffer = AudioProcessor.EMPTY_BUFFER
+        inputAudioFormat = AudioFormat.NOT_SET
+        clearEnvelopeHistory()
+    }
+
+    /**
+     * Filtro Biquad IIR Direct Form II Transposed (Robert Bristow-Johnson Audio EQ Cookbook).
+     */
+    private class BiquadFilter {
+        private var b0 = 1.0
+        private var b1 = 0.0
+        private var b2 = 0.0
+        private var a1 = 0.0
+        private var a2 = 0.0
+
+        private var z1 = 0.0
+        private var z2 = 0.0
+
+        fun setLowPass(sampleRate: Double, cutoffHz: Double, q: Double) {
+            val w0 = 2.0 * PI * cutoffHz / sampleRate
+            val cosW0 = cos(w0)
+            val sinW0 = sin(w0)
+            val alpha = sinW0 / (2.0 * q)
+
+            val a0 = 1.0 + alpha
+            b0 = ((1.0 - cosW0) * 0.5) / a0
+            b1 = (1.0 - cosW0) / a0
+            b2 = ((1.0 - cosW0) * 0.5) / a0
+            a1 = (-2.0 * cosW0) / a0
+            a2 = (1.0 - alpha) / a0
+            reset()
         }
-    }
 
-    override fun onFlush() {
-        resetFilterState()
-    }
+        fun setHighPass(sampleRate: Double, cutoffHz: Double, q: Double) {
+            val w0 = 2.0 * PI * cutoffHz / sampleRate
+            val cosW0 = cos(w0)
+            val sinW0 = sin(w0)
+            val alpha = sinW0 / (2.0 * q)
 
-    override fun onReset() {
-        resetFilterState()
+            val a0 = 1.0 + alpha
+            b0 = ((1.0 + cosW0) * 0.5) / a0
+            b1 = -(1.0 + cosW0) / a0
+            b2 = ((1.0 + cosW0) * 0.5) / a0
+            a1 = (-2.0 * cosW0) / a0
+            a2 = (1.0 - alpha) / a0
+            reset()
+        }
+
+        fun setAllPass(sampleRate: Double, centerHz: Double, q: Double) {
+            val w0 = 2.0 * PI * centerHz / sampleRate
+            val cosW0 = cos(w0)
+            val sinW0 = sin(w0)
+            val alpha = sinW0 / (2.0 * q)
+
+            val a0 = 1.0 + alpha
+            b0 = (1.0 - alpha) / a0
+            b1 = (-2.0 * cosW0) / a0
+            b2 = 1.0 // (1 + alpha) / a0
+            a1 = (-2.0 * cosW0) / a0
+            a2 = (1.0 - alpha) / a0
+            reset()
+        }
+
+        fun setPeakingEq(sampleRate: Double, centerHz: Double, q: Double, gainDb: Double) {
+            val a = Math.pow(10.0, gainDb / 40.0)
+            val w0 = 2.0 * PI * centerHz / sampleRate
+            val cosW0 = cos(w0)
+            val sinW0 = sin(w0)
+            val alpha = sinW0 / (2.0 * q)
+
+            val a0 = 1.0 + alpha / a
+            b0 = (1.0 + alpha * a) / a0
+            b1 = (-2.0 * cosW0) / a0
+            b2 = (1.0 - alpha * a) / a0
+            a1 = (-2.0 * cosW0) / a0
+            a2 = (1.0 - alpha / a) / a0
+            reset()
+        }
+
+        fun process(input: Double): Double {
+            val out = b0 * input + z1
+            z1 = b1 * input - a1 * out + z2
+            z2 = b2 * input - a2 * out
+            return out
+        }
+
+        fun reset() {
+            z1 = 0.0
+            z2 = 0.0
+        }
     }
 }
