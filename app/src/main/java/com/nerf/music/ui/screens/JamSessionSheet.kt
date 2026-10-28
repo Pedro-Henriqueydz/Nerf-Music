@@ -28,11 +28,17 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.filled.QrCode2
-import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.WifiTethering
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,6 +49,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -52,10 +59,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nerf.music.jam.JamConnectionStatus
 import com.nerf.music.jam.JamSessionState
+import com.nerf.music.ui.components.JamPersonWavesIcon
 import com.nerf.music.ui.theme.OrangePrimary
 import com.nerf.music.ui.theme.YouTubeSansFontFamily
 import com.nerf.music.ui.theme.YtmTextSecondary
 import com.nerf.music.ui.theme.YtmWhite
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +74,13 @@ fun JamSessionSheet(
     onJoinJamInput: (input: String) -> Unit,
     onLeaveJam: () -> Unit,
     onUpdateDisplayName: (String) -> Unit,
+    onToggleAllowGuestsToQueue: (Boolean) -> Unit = {},
+    onToggleAllowGuestsToControlPlayback: (Boolean) -> Unit = {},
+    onSelectRepeatMode: (String) -> Unit = {},
+    onChangeHostCrossfadeSeconds: (Int) -> Unit = {},
+    onToggleSyncKaraokeWithRoom: (Boolean) -> Unit = {},
+    onKickParticipant: (String) -> Unit = {},
+    onRequestAudioResync: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -138,13 +154,10 @@ fun JamSessionSheet(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = if (jamState.isInJam) Icons.Default.WifiTethering else Icons.Default.Podcasts,
-                            contentDescription = "JAM",
+                        JamPersonWavesIcon(
                             tint = if (jamState.isInJam) JamAccentGreen else OrangePrimary,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .then(if (jamState.isInJam) Modifier.scale(pulseScale) else Modifier)
+                            size = 24.dp,
+                            modifier = if (jamState.isInJam) Modifier.scale(pulseScale) else Modifier
                         )
                     }
 
@@ -345,10 +358,9 @@ fun JamSessionSheet(
                                 ),
                                 contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.WifiTethering,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
+                                JamPersonWavesIcon(
+                                    tint = Color.Black,
+                                    size = 18.dp
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
@@ -709,6 +721,287 @@ fun JamSessionSheet(
                     }
                 }
 
+                // Configurações da Sala e Sincronia de Áudio (Host e Convidados)
+                val roomSettings = jamState.roomSettings
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF202020),
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.10f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = JamAccentGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = if (jamState.isHost) {
+                                        "Configurações da Sala (Host)"
+                                    } else {
+                                        "Regras e Áudio da Sala"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = YtmWhite
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = JamAccentGreen.copy(alpha = 0.16f)
+                            ) {
+                                Text(
+                                    text = if (roomSettings.hostCrossfadeSeconds > 0) {
+                                        "Crossfade ${roomSettings.hostCrossfadeSeconds}s"
+                                    } else {
+                                        "Crossfade Off"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = JamAccentGreen,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        if (jamState.isHost) {
+                            // 1. Permissão de Fila
+                            JamSettingToggleRow(
+                                icon = Icons.Default.QueueMusic,
+                                title = "Todos podem colocar músicas",
+                                subtitle = "Convidados podem adicionar, remover e reordenar a fila",
+                                checked = roomSettings.allowGuestsToQueue,
+                                accentColor = JamAccentGreen,
+                                onCheckedChange = onToggleAllowGuestsToQueue
+                            )
+
+                            // 2. Permissão de Pular / Pausar / Seek
+                            JamSettingToggleRow(
+                                icon = Icons.Default.SkipNext,
+                                title = "Todos podem pular e pausar",
+                                subtitle = "Convidados podem avançar, voltar, pausar e escolher faixa",
+                                checked = roomSettings.allowGuestsToControlPlayback,
+                                accentColor = JamAccentGreen,
+                                onCheckedChange = onToggleAllowGuestsToControlPlayback
+                            )
+
+                            // 3. Looping Sincronizado da Sala
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(alpha = 0.04f))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (roomSettings.repeatModeName == "ONE") {
+                                            Icons.Default.RepeatOne
+                                        } else {
+                                            Icons.Default.Repeat
+                                        },
+                                        contentDescription = null,
+                                        tint = if (roomSettings.repeatModeName != "OFF") JamAccentGreen else YtmTextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Looping da Jam",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp,
+                                            color = YtmWhite
+                                        )
+                                        Text(
+                                            text = "Sincronizado para todos os participantes",
+                                            fontSize = 11.sp,
+                                            color = YtmTextSecondary
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val repeatOptions = listOf(
+                                        "OFF" to "Desativado",
+                                        "ALL" to "Repetir Fila",
+                                        "ONE" to "Repetir 1"
+                                    )
+                                    repeatOptions.forEach { (modeKey, modeLabel) ->
+                                        val isSelected = roomSettings.repeatModeName == modeKey
+                                        Surface(
+                                            onClick = { onSelectRepeatMode(modeKey) },
+                                            shape = RoundedCornerShape(50),
+                                            color = if (isSelected) JamAccentGreen else Color.White.copy(alpha = 0.08f),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = modeLabel,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) Color.Black else YtmWhite,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(vertical = 7.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 4. Crossfade do Host (Aplicado a Todos)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(alpha = 0.04f))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Crossfade da Jam (aplicado a todos)",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp,
+                                            color = YtmWhite
+                                        )
+                                        Text(
+                                            text = "Todos na sala usam o mesmo tempo de transição do Host",
+                                            fontSize = 11.sp,
+                                            color = YtmTextSecondary
+                                        )
+                                    }
+                                    Text(
+                                        text = if (roomSettings.hostCrossfadeSeconds == 0) {
+                                            "Off"
+                                        } else {
+                                            "${roomSettings.hostCrossfadeSeconds}s"
+                                        },
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 14.sp,
+                                        color = JamAccentGreen
+                                    )
+                                }
+
+                                Slider(
+                                    value = roomSettings.hostCrossfadeSeconds.toFloat(),
+                                    onValueChange = { value ->
+                                        onChangeHostCrossfadeSeconds(value.roundToInt().coerceIn(0, 12))
+                                    },
+                                    valueRange = 0f..12f,
+                                    steps = 11,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = JamAccentGreen,
+                                        activeTrackColor = JamAccentGreen,
+                                        inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            // 5. Sincronizar Karaokê com a Sala
+                            JamSettingToggleRow(
+                                icon = Icons.Default.Mic,
+                                title = "Sincronizar Karaokê com a sala",
+                                subtitle = "Ativa o instrumental e nível de voz em todos os aparelhos",
+                                checked = roomSettings.syncKaraokeWithRoom,
+                                accentColor = JamAccentGreen,
+                                onCheckedChange = onToggleSyncKaraokeWithRoom
+                            )
+                        } else {
+                            // Visão do Convidado (Guest)
+                            val repeatText = when (roomSettings.repeatModeName) {
+                                "ONE" -> "Repetindo 1 música"
+                                "ALL" -> "Repetindo toda a fila"
+                                else -> "Sem repetição"
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White.copy(alpha = 0.04f))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "• Fila colaborativa: ${if (roomSettings.allowGuestsToQueue) "Liberada para todos" else "Apenas o Host"}",
+                                    fontSize = 12.sp,
+                                    color = YtmWhite
+                                )
+                                Text(
+                                    text = "• Pular / Pausar músicas: ${if (roomSettings.allowGuestsToControlPlayback) "Liberado para todos" else "Apenas o Host"}",
+                                    fontSize = 12.sp,
+                                    color = YtmWhite
+                                )
+                                Text(
+                                    text = "• Looping da sala: $repeatText",
+                                    fontSize = 12.sp,
+                                    color = YtmWhite
+                                )
+                                Text(
+                                    text = "• Crossfade sincronizado do Host: ${if (roomSettings.hostCrossfadeSeconds > 0) "${roomSettings.hostCrossfadeSeconds}s ativo no seu player" else "Desativado (0s)"}",
+                                    fontSize = 12.sp,
+                                    color = JamAccentGreen,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (roomSettings.syncKaraokeWithRoom) {
+                                    Text(
+                                        text = "• Modo Karaokê sincronizado pelo Host",
+                                        fontSize = 12.sp,
+                                        color = OrangePrimary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            OutlinedButton(
+                                onClick = onRequestAudioResync,
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, JamAccentGreen.copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = JamAccentGreen),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Ressincronizar áudio",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Ressincronizar Áudio com o Host",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Lista de Participantes na Sessão
                 Surface(
                     shape = RoundedCornerShape(20.dp),
@@ -751,7 +1044,8 @@ fun JamSessionSheet(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Box(
                                         modifier = Modifier
@@ -803,13 +1097,31 @@ fun JamSessionSheet(
                                     }
                                 }
 
-                                if (participant.rttMs > 0L) {
-                                    Text(
-                                        text = "${participant.rttMs} ms",
-                                        fontSize = 11.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = JamAccentGreen
-                                    )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    if (participant.rttMs > 0L) {
+                                        Text(
+                                            text = "${participant.rttMs} ms",
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = JamAccentGreen
+                                        )
+                                    }
+                                    if (jamState.isHost && !participant.isHost && participant.peerId != jamState.localPeerId) {
+                                        IconButton(
+                                            onClick = { onKickParticipant(participant.peerId) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.PersonRemove,
+                                                contentDescription = "Remover participante",
+                                                tint = Color(0xFFFF6B6B),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -869,5 +1181,64 @@ private fun JamVisualMatrixBadge(seed: String) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun JamSettingToggleRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    accentColor: Color,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.04f))
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (checked) accentColor else YtmTextSecondary,
+                modifier = Modifier.size(18.dp)
+            )
+            Column {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = YtmWhite
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = YtmTextSecondary,
+                    lineHeight = 14.sp
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.Black,
+                checkedTrackColor = accentColor,
+                uncheckedThumbColor = YtmWhite,
+                uncheckedTrackColor = Color.White.copy(alpha = 0.16f)
+            )
+        )
     }
 }

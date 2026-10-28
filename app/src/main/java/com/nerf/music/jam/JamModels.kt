@@ -19,6 +19,22 @@ data class JamParticipant(
     val rttMs: Long = 0L
 )
 
+/**
+ * Configurações da sala JAM controladas pelo Host e espelhadas em todos os participantes.
+ */
+@Serializable
+data class JamRoomSettings(
+    val allowGuestsToQueue: Boolean = true,
+    val allowGuestsToControlPlayback: Boolean = true,
+    val repeatModeName: String = "OFF", // "OFF", "ALL", "ONE"
+    val hostCrossfadeSeconds: Int = 0, // 0..12s (aplicado a todos os participantes da Jam)
+    val hostAutomixEnabled: Boolean = true,
+    val hostGaplessEnabled: Boolean = true,
+    val syncKaraokeWithRoom: Boolean = false,
+    val isKaraokeActiveInRoom: Boolean = false,
+    val karaokeVocalLevelInRoom: Float = 0.0f
+)
+
 @Serializable
 enum class JamMessageType {
     JOIN,
@@ -42,7 +58,10 @@ enum class JamCommandType {
     ADD_TO_QUEUE,
     PLAY_NEXT_IN_QUEUE,
     REMOVE_QUEUE_ITEM,
-    MOVE_QUEUE_ITEM
+    MOVE_QUEUE_ITEM,
+    SET_REPEAT_MODE,
+    KICK_PARTICIPANT,
+    REQUEST_SYNC
 }
 
 @Serializable
@@ -61,6 +80,8 @@ data class JamWireMessage(
     val currentQueueIndex: Int = 0,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
+    val roomSettings: JamRoomSettings = JamRoomSettings(),
+    val actionAnnouncement: String? = null,
     // Campos para COMMAND
     val command: JamCommandType? = null,
     val targetPositionMs: Long? = null,
@@ -69,6 +90,8 @@ data class JamWireMessage(
     val toQueueIndex: Int? = null,
     val targetTrack: Track? = null,
     val targetTracks: List<Track> = emptyList(),
+    val targetRepeatModeName: String? = null,
+    val targetPeerId: String? = null,
     // Campos para PING / PONG
     val pingTimestampMs: Long? = null
 )
@@ -83,6 +106,7 @@ data class JamSessionState(
     val wsEndpointUrl: String = "",
     val inviteDeepLink: String = "",
     val participants: List<JamParticipant> = emptyList(),
+    val roomSettings: JamRoomSettings = JamRoomSettings(),
     val connectionStatus: JamConnectionStatus = JamConnectionStatus.DISCONNECTED,
     val rttMs: Long = 0L,
     val errorMessage: String? = null

@@ -367,16 +367,19 @@ class AudioPlayerService : MediaSessionService() {
         get() = if (::activePlayer.isInitialized && activePlayer === playerA) playerB else playerA
 
     private fun getCrossfadeSeconds(): Int {
+        jamOverrideCrossfadeSeconds?.let { return it.coerceIn(0, 12) }
         val prefs = applicationContext.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
         return prefs.getInt("key_crossfade_seconds", 0)
     }
 
     private fun isAutomixEnabled(): Boolean {
+        jamOverrideAutomixEnabled?.let { return it }
         val prefs = applicationContext.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
         return prefs.getBoolean("key_automix_enabled", true)
     }
 
     private fun isGaplessEnabled(): Boolean {
+        jamOverrideGaplessEnabled?.let { return it }
         val prefs = applicationContext.getSharedPreferences("nerf_user_settings_prefs", Context.MODE_PRIVATE)
         return prefs.getBoolean("key_gapless_enabled", true)
     }
@@ -626,6 +629,28 @@ class AudioPlayerService : MediaSessionService() {
 
         @Volatile
         var isUsingRealInstrumental: Boolean = false
+
+        @Volatile
+        var jamOverrideCrossfadeSeconds: Int? = null
+            private set
+
+        @Volatile
+        var jamOverrideAutomixEnabled: Boolean? = null
+            private set
+
+        @Volatile
+        var jamOverrideGaplessEnabled: Boolean? = null
+            private set
+
+        fun setJamAudioSettingsOverride(
+            crossfadeSeconds: Int?,
+            automixEnabled: Boolean?,
+            gaplessEnabled: Boolean?
+        ) {
+            jamOverrideCrossfadeSeconds = crossfadeSeconds?.coerceIn(0, 12)
+            jamOverrideAutomixEnabled = automixEnabled
+            jamOverrideGaplessEnabled = gaplessEnabled
+        }
 
         var onInstrumentalStatusChanged: ((enabled: Boolean, isRealInstrumental: Boolean) -> Unit)? = null
 

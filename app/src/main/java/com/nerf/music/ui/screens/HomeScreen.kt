@@ -50,7 +50,9 @@ import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.HomeSectionStyle
 import com.nerf.music.data.model.Track
+import com.nerf.music.jam.JamSessionState
 import com.nerf.music.ui.components.AnimatedEqualizerBars
+import com.nerf.music.ui.components.JamPersonWavesIcon
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
 import com.nerf.music.util.ConnectivityObserver
@@ -71,6 +73,7 @@ fun HomeScreen(
     val homeError by viewModel.homeError.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val connectivityStatus by viewModel.connectivityStatus.collectAsState()
+    val jamSessionState by viewModel.jamSessionState.collectAsState()
 
     val isOffline = connectivityStatus == ConnectivityObserver.Status.Unavailable ||
             connectivityStatus == ConnectivityObserver.Status.Lost
@@ -98,8 +101,12 @@ fun HomeScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top Navbar oficial estilo YouTube Music
-            YtmTopBar(onOpenSettings = onOpenSettings)
+            // Top Navbar oficial estilo YouTube Music + Botão rápido da Jam
+            YtmTopBar(
+                onOpenSettings = onOpenSettings,
+                onOpenJam = { viewModel.openJamSheet() },
+                jamSessionState = jamSessionState
+            )
 
             when {
                 isLoading && homeSections.isEmpty() && !isOffline -> {
@@ -364,8 +371,13 @@ fun HomeScreen(
 @Composable
 fun YtmTopBar(
     onOpenSettings: (() -> Unit)? = null,
+    onOpenJam: (() -> Unit)? = null,
+    jamSessionState: JamSessionState? = null,
     modifier: Modifier = Modifier
 ) {
+    val isInJam = jamSessionState?.isInJam == true
+    val jamGreen = Color(0xFF1ED760)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -396,14 +408,57 @@ fun YtmTopBar(
             )
         }
 
-        if (onOpenSettings != null) {
-            IconButton(onClick = onOpenSettings) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Configurações",
-                    tint = YtmWhite,
-                    modifier = Modifier.size(24.dp)
-                )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (onOpenJam != null) {
+                if (isInJam) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = jamGreen.copy(alpha = 0.22f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .border(1.dp, jamGreen.copy(alpha = 0.65f), RoundedCornerShape(50))
+                            .clickable(onClick = onOpenJam)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            JamPersonWavesIcon(
+                                tint = jamGreen,
+                                size = 18.dp
+                            )
+                            Text(
+                                text = "JAM • ${jamSessionState?.participants?.size ?: 1}",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = jamGreen
+                            )
+                        }
+                    }
+                } else {
+                    IconButton(onClick = onOpenJam) {
+                        JamPersonWavesIcon(
+                            tint = YtmWhite,
+                            size = 24.dp
+                        )
+                    }
+                }
+            }
+
+            if (onOpenSettings != null) {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Configurações",
+                        tint = YtmWhite,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
     }

@@ -259,8 +259,8 @@ class KaraokeAndJamTest {
         val instEnv = FloatArray(600)
 
         val expectedShiftFrames = 35 // +350ms
-        for (beat in 0 until 9) {
-            val mainIdx = 50 + beat * 50
+        val transientPositions = intArrayOf(40, 95, 130, 195, 240, 310, 355, 420, 490)
+        for (mainIdx in transientPositions) {
             val instIdx = mainIdx + expectedShiftFrames
             for (w in 0..4) {
                 val amp = 1.0f - (w * 0.18f)
@@ -279,6 +279,44 @@ class KaraokeAndJamTest {
             "Detected offset ($detectedOffsetMs ms) should be within 20ms of 350ms",
             kotlin.math.abs(350L - detectedOffsetMs!!) <= 20L
         )
+    }
+
+    @Test
+    fun `JamRoomSettings serializes and AudioPlayerService applies host crossfade override`() {
+        val settings = com.nerf.music.jam.JamRoomSettings(
+            allowGuestsToQueue = false,
+            allowGuestsToControlPlayback = false,
+            repeatModeName = "ALL",
+            hostCrossfadeSeconds = 8,
+            hostAutomixEnabled = true,
+            hostGaplessEnabled = true,
+            syncKaraokeWithRoom = true
+        )
+        val msg = com.nerf.music.jam.JamWireMessage(
+            type = com.nerf.music.jam.JamMessageType.STATE_SNAPSHOT,
+            sessionId = "NERF-4821",
+            senderId = "host_1",
+            senderName = "Host",
+            roomSettings = settings
+        )
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val encoded = json.encodeToString(com.nerf.music.jam.JamWireMessage.serializer(), msg)
+        val decoded = json.decodeFromString(com.nerf.music.jam.JamWireMessage.serializer(), encoded)
+
+        assertEquals(false, decoded.roomSettings?.allowGuestsToQueue)
+        assertEquals(false, decoded.roomSettings?.allowGuestsToControlPlayback)
+        assertEquals("ALL", decoded.roomSettings?.repeatModeName)
+        assertEquals(8, decoded.roomSettings?.hostCrossfadeSeconds)
+        assertEquals(true, decoded.roomSettings?.syncKaraokeWithRoom)
+
+        com.nerf.music.player.AudioPlayerService.setJamAudioSettingsOverride(
+            crossfadeSeconds = 8,
+            automixEnabled = true,
+            gaplessEnabled = true
+        )
+        assertEquals(8, com.nerf.music.player.AudioPlayerService.jamOverrideCrossfadeSeconds)
+        com.nerf.music.player.AudioPlayerService.setJamAudioSettingsOverride(null, null, null)
+        assertNull(com.nerf.music.player.AudioPlayerService.jamOverrideCrossfadeSeconds)
     }
 
     @Test

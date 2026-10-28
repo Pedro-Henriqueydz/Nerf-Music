@@ -14,6 +14,7 @@ import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.MediaItem
+import com.nerf.music.ui.components.JamPersonWavesIcon
 import com.nerf.music.ui.theme.OrangePrimary
 import com.nerf.music.ui.theme.YouTubeSansFontFamily
 import kotlin.math.roundToInt
@@ -1012,11 +1013,9 @@ fun FullPlayerSheet(
 
                         IconButton(onClick = onOpenJamSheet) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Cast,
-                                    contentDescription = "JAM / Transmitir",
+                                JamPersonWavesIcon(
                                     tint = if (jamSessionState.isInJam) Color(0xFF1DB954) else Color.White,
-                                    modifier = Modifier.size(24.dp)
+                                    size = 23.dp
                                 )
                                 if (jamSessionState.isInJam) {
                                     Box(
@@ -2299,6 +2298,12 @@ fun PlayerActionRow(
 
         RoundedActionPillButton(
             icon = Icons.Default.Group,
+            customIconContent = {
+                JamPersonWavesIcon(
+                    tint = if (isJamActive) MaterialTheme.colorScheme.primary else Color.White,
+                    size = 18.dp
+                )
+            },
             label = if (isJamActive) "JAM (${jamParticipantCount.coerceAtLeast(1)})" else "JAM",
             isActive = isJamActive,
             onClick = onOpenJam
@@ -2312,6 +2317,7 @@ private fun RoundedActionPillButton(
     label: String,
     isActive: Boolean,
     progress: Float? = null,
+    customIconContent: (@Composable () -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -2358,6 +2364,8 @@ private fun RoundedActionPillButton(
                         modifier = Modifier.size(10.dp)
                     )
                 }
+            } else if (customIconContent != null) {
+                customIconContent()
             } else {
                 Icon(
                     imageVector = icon,
@@ -4072,11 +4080,9 @@ private fun AppleMusicLyricsView(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Group,
-                        contentDescription = "JAM",
+                    JamPersonWavesIcon(
                         tint = if (jamSessionState.isInJam) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.85f),
-                        modifier = Modifier.size(20.dp)
+                        size = 20.dp
                     )
                     Text(
                         text = if (jamSessionState.isInJam) {

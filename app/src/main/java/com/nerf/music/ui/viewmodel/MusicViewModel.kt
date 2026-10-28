@@ -273,12 +273,23 @@ class MusicViewModel(
             val st = _playbackState.value
             val pos = mediaController?.currentPosition?.coerceAtLeast(0L) ?: st.currentPositionMs
             val playing = mediaController?.isPlaying ?: st.isPlaying
+            val repeatStr = when (mediaController?.repeatMode ?: st.repeatMode) {
+                Player.REPEAT_MODE_ALL -> "ALL"
+                Player.REPEAT_MODE_ONE -> "ONE"
+                else -> "OFF"
+            }
             JamPlaybackSnapshot(
                 currentTrack = st.currentTrack,
                 queue = st.queue,
                 currentQueueIndex = st.currentQueueIndex.coerceAtLeast(0),
                 isPlaying = playing,
-                positionMs = pos
+                positionMs = pos,
+                repeatModeName = repeatStr,
+                hostCrossfadeSeconds = _crossfadeSeconds.value,
+                hostAutomixEnabled = _isAutomixEnabled.value,
+                hostGaplessEnabled = _isGaplessEnabled.value,
+                isKaraokeActive = _isKaraokeVocalIsolationEnabled.value,
+                karaokeVocalLevel = _karaokeVocalLevel.value
             )
         },
         onApplyRemoteSnapshot = { snapshot, compensatedPosMs ->
@@ -1203,6 +1214,9 @@ class MusicViewModel(
      * dinâmica no `MediaController` via `addMediaItems`, além de carregar os chips de filtro.
      */
     fun playTrack(track: Track) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.PLAY_TRACK)) {
+            return
+        }
         _selectedTrack.value = track
         val controller = mediaController ?: return
 
@@ -1433,6 +1447,9 @@ class MusicViewModel(
     }
 
     fun playQueueItemAt(index: Int) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SELECT_QUEUE_INDEX)) {
+            return
+        }
         val controller = mediaController ?: return
         if (index !in 0 until controller.mediaItemCount) return
 
@@ -1471,6 +1488,9 @@ class MusicViewModel(
      * Reordena um item na fila do ExoPlayer disparando `moveMediaItem(fromIndex, toIndex)`.
      */
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.MOVE_QUEUE_ITEM)) {
+            return
+        }
         val currentQueue = _playbackState.value.queue
         if (fromIndex !in currentQueue.indices || toIndex !in currentQueue.indices || fromIndex == toIndex) {
             return
@@ -1508,6 +1528,9 @@ class MusicViewModel(
      * Remove um item da fila do ExoPlayer disparando `removeMediaItem(index)`.
      */
     fun removeQueueItem(index: Int) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.REMOVE_QUEUE_ITEM)) {
+            return
+        }
         val controller = mediaController ?: return
         val currentQueue = _playbackState.value.queue
         if (index !in currentQueue.indices) return
@@ -1531,6 +1554,9 @@ class MusicViewModel(
     }
 
     fun toggleRepeat() {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SET_REPEAT_MODE)) {
+            return
+        }
         val controller = mediaController ?: return
         val nextMode = when (controller.repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
@@ -1539,9 +1565,44 @@ class MusicViewModel(
         }
         controller.repeatMode = nextMode
         _playbackState.value = _playbackState.value.copy(repeatMode = nextMode)
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            val modeName = when (nextMode) {
+                Player.REPEAT_MODE_ALL -> "ALL"
+                Player.REPEAT_MODE_ONE -> "ONE"
+                else -> "OFF"
+            }
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.SET_REPEAT_MODE,
+                targetRepeatModeName = modeName
+            )
+        }
+    }
+
+    fun setRepeatModeExplicit(mode: Int) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SET_REPEAT_MODE)) {
+            return
+        }
+        val controller = mediaController
+        controller?.repeatMode = mode
+        _playbackState.value = _playbackState.value.copy(repeatMode = mode)
+        if (!isApplyingRemoteJamEvent && jamSessionState.value.isInJam) {
+            val modeName = when (mode) {
+                Player.REPEAT_MODE_ALL -> "ALL"
+                Player.REPEAT_MODE_ONE -> "ONE"
+                else -> "OFF"
+            }
+            jamSessionManager.dispatchOrBroadcastPlayerAction(
+                command = JamCommandType.SET_REPEAT_MODE,
+                targetRepeatModeName = modeName
+            )
+        }
     }
 
     fun togglePlayPause() {
+        val targetCmd = if (mediaController?.isPlaying == true) JamCommandType.PAUSE else JamCommandType.PLAY
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(targetCmd)) {
+            return
+        }
         val controller = mediaController ?: return
         if (controller.mediaItemCount == 0) return
 
@@ -1562,6 +1623,9 @@ class MusicViewModel(
     }
 
     fun skipNext() {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SKIP_NEXT)) {
+            return
+        }
         val controller = mediaController ?: return
         val count = controller.mediaItemCount
         if (count <= 0) return
@@ -1610,6 +1674,9 @@ class MusicViewModel(
     }
 
     fun skipPrevious() {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SKIP_PREV)) {
+            return
+        }
         val controller = mediaController ?: return
         val count = controller.mediaItemCount
         if (count <= 0) return
@@ -1667,6 +1734,9 @@ class MusicViewModel(
      * sem reiniciar a música atual mesmo se ela estiver após 3 segundos.
      */
     fun forceSkipPrevious() {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SKIP_PREV)) {
+            return
+        }
         val controller = mediaController ?: return
         val count = controller.mediaItemCount
         if (count <= 0) return
@@ -1715,6 +1785,9 @@ class MusicViewModel(
     }
 
     fun seekTo(positionMs: Long) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.SEEK)) {
+            return
+        }
         val targetPos = positionMs.coerceAtLeast(0L)
         _playbackState.value = _playbackState.value.copy(currentPositionMs = targetPos)
         mediaController?.seekTo(targetPos)
@@ -2011,6 +2084,9 @@ class MusicViewModel(
     }
 
     fun addTracksToQueue(tracks: List<Track>) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.ADD_TO_QUEUE)) {
+            return
+        }
         val controller = mediaController ?: return
         if (tracks.isEmpty()) return
         val mediaItems = tracks.map { trackToMediaItem(it) }
@@ -2025,6 +2101,9 @@ class MusicViewModel(
     }
 
     fun addTracksToPlayNext(tracks: List<Track>) {
+        if (!isApplyingRemoteJamEvent && !jamSessionManager.checkPermissionOrNotify(JamCommandType.PLAY_NEXT_IN_QUEUE)) {
+            return
+        }
         val controller = mediaController ?: return
         if (tracks.isEmpty()) return
         val nextIndex = (controller.currentMediaItemIndex + 1).coerceAtLeast(0)
@@ -2363,17 +2442,26 @@ class MusicViewModel(
     fun setGaplessEnabled(enabled: Boolean) {
         _isGaplessEnabled.value = enabled
         userSettingsRepository?.setGaplessEnabled(enabled)
+        if (jamSessionState.value.isInJam && jamSessionState.value.isHost) {
+            jamSessionManager.broadcastHostStateSnapshot()
+        }
     }
 
     fun setAutomixEnabled(enabled: Boolean) {
         _isAutomixEnabled.value = enabled
         userSettingsRepository?.setAutomixEnabled(enabled)
+        if (jamSessionState.value.isInJam && jamSessionState.value.isHost) {
+            jamSessionManager.broadcastHostStateSnapshot()
+        }
     }
 
     fun setCrossfadeSeconds(seconds: Int) {
         val clamped = seconds.coerceIn(0, 12)
         _crossfadeSeconds.value = clamped
         userSettingsRepository?.setCrossfadeSeconds(clamped)
+        if (jamSessionState.value.isInJam && jamSessionState.value.isHost) {
+            jamSessionManager.broadcastHostStateSnapshot()
+        }
     }
 
     fun setDataSaverMode(mode: DataSaverMode) {
@@ -3034,6 +3122,9 @@ class MusicViewModel(
             next -> "Modo Karaokê ativado"
             else -> "Modo Karaokê desativado (voz original restaurada)"
         }
+        if (jamSessionState.value.isInJam && jamSessionState.value.isHost && jamSessionState.value.roomSettings.syncKaraokeWithRoom) {
+            jamSessionManager.broadcastHostStateSnapshot()
+        }
     }
 
     fun setKaraokeVocalLevel(level: Float) {
@@ -3043,6 +3134,9 @@ class MusicViewModel(
             _isKaraokeVocalIsolationEnabled.value = true
         }
         AudioPlayerService.setKaraokeMode(_isKaraokeVocalIsolationEnabled.value, clamped)
+        if (jamSessionState.value.isInJam && jamSessionState.value.isHost && jamSessionState.value.roomSettings.syncKaraokeWithRoom) {
+            jamSessionManager.broadcastHostStateSnapshot()
+        }
     }
 
     fun adjustLyricsOffset(deltaMs: Long) {
@@ -3163,6 +3257,32 @@ class MusicViewModel(
         jamSessionManager.updateDisplayName(name)
     }
 
+    fun setJamAllowGuestsToQueue(allowed: Boolean) {
+        jamSessionManager.updateHostRoomSettings { it.copy(allowGuestsToQueue = allowed) }
+    }
+
+    fun setJamAllowGuestsToControlPlayback(allowed: Boolean) {
+        jamSessionManager.updateHostRoomSettings { it.copy(allowGuestsToControlPlayback = allowed) }
+    }
+
+    fun setJamSyncKaraokeWithRoom(sync: Boolean) {
+        jamSessionManager.updateHostRoomSettings {
+            it.copy(
+                syncKaraokeWithRoom = sync,
+                isKaraokeActiveInRoom = _isKaraokeVocalIsolationEnabled.value,
+                karaokeVocalLevelInRoom = _karaokeVocalLevel.value
+            )
+        }
+    }
+
+    fun kickJamParticipant(peerId: String) {
+        jamSessionManager.kickParticipant(peerId)
+    }
+
+    fun requestJamAudioResync() {
+        jamSessionManager.requestImmediateSyncFromHost()
+    }
+
     fun handleDeepLink(uri: Uri) {
         val scheme = uri.scheme?.lowercase() ?: ""
         val host = uri.host?.lowercase() ?: ""
@@ -3184,6 +3304,36 @@ class MusicViewModel(
         if (isApplyingRemoteJamEvent) return
         isApplyingRemoteJamEvent = true
         try {
+            val rs = snapshot.roomSettings
+            // 0. Aplica configurações de áudio do Host (Crossfade, Automix, Gapless, RepeatMode e Karaokê compartilhado)
+            AudioPlayerService.setJamAudioSettingsOverride(
+                crossfadeSeconds = rs.hostCrossfadeSeconds,
+                automixEnabled = rs.hostAutomixEnabled,
+                gaplessEnabled = rs.hostGaplessEnabled
+            )
+
+            val targetRepeatMode = when (rs.repeatModeName.uppercase()) {
+                "ALL" -> Player.REPEAT_MODE_ALL
+                "ONE" -> Player.REPEAT_MODE_ONE
+                else -> Player.REPEAT_MODE_OFF
+            }
+            if (mediaController?.repeatMode != targetRepeatMode) {
+                mediaController?.repeatMode = targetRepeatMode
+            }
+            if (_playbackState.value.repeatMode != targetRepeatMode) {
+                _playbackState.value = _playbackState.value.copy(repeatMode = targetRepeatMode)
+            }
+
+            if (rs.syncKaraokeWithRoom) {
+                if (_isKaraokeVocalIsolationEnabled.value != rs.isKaraokeActiveInRoom ||
+                    kotlin.math.abs(_karaokeVocalLevel.value - rs.karaokeVocalLevelInRoom) > 0.02f
+                ) {
+                    _isKaraokeVocalIsolationEnabled.value = rs.isKaraokeActiveInRoom
+                    _karaokeVocalLevel.value = rs.karaokeVocalLevelInRoom
+                    AudioPlayerService.setKaraokeMode(rs.isKaraokeActiveInRoom, rs.karaokeVocalLevelInRoom)
+                }
+            }
+
             val remoteQueue = snapshot.queue
             val remoteIdx = snapshot.currentQueueIndex.coerceAtLeast(0)
             val remoteTrack = snapshot.currentTrack ?: remoteQueue.getOrNull(remoteIdx)
@@ -3209,6 +3359,13 @@ class MusicViewModel(
                         } else if (!remotePlaying && mediaController?.isPlaying == true) {
                             mediaController?.pause()
                         }
+                        if (remoteQueue.isNotEmpty()) {
+                            _playbackState.value = _playbackState.value.copy(
+                                queue = remoteQueue,
+                                currentQueueIndex = remoteIdx.coerceIn(0, (remoteQueue.size - 1).coerceAtLeast(0)),
+                                repeatMode = targetRepeatMode
+                            )
+                        }
                     } finally {
                         isApplyingRemoteJamEvent = false
                     }
@@ -3216,12 +3373,27 @@ class MusicViewModel(
                 return
             }
 
-            // 2. Sincroniza fila se apenas os próximos itens mudaram
+            // 2. Sincroniza fila se apenas os próximos itens mudaram (e mantém timeline do ExoPlayer pronta para o Crossfade do Host)
             if (remoteQueue.isNotEmpty() && remoteQueueIds != localQueueIds) {
+                remoteQueue.forEach { trackMetadataMap[it.id] = it }
+                val safeIdx = remoteIdx.coerceIn(0, (remoteQueue.size - 1).coerceAtLeast(0))
                 _playbackState.value = _playbackState.value.copy(
                     queue = remoteQueue,
-                    currentQueueIndex = remoteIdx.coerceIn(0, (remoteQueue.size - 1).coerceAtLeast(0))
+                    currentQueueIndex = safeIdx,
+                    hasNext = safeIdx < remoteQueue.size - 1,
+                    hasPrevious = safeIdx > 0
                 )
+                val controller = mediaController
+                if (controller != null && controller.mediaItemCount > 0) {
+                    val curMediaIdx = controller.currentMediaItemIndex.coerceAtLeast(0)
+                    val upcomingRemote = remoteQueue.drop(safeIdx + 1)
+                    if (upcomingRemote.isNotEmpty()) {
+                        if (controller.mediaItemCount > curMediaIdx + 1) {
+                            controller.removeMediaItems(curMediaIdx + 1, controller.mediaItemCount)
+                        }
+                        controller.addMediaItems(upcomingRemote.map { trackToMediaItem(it) })
+                    }
+                }
             }
 
             // 3. Sincroniza estado Play / Pause
@@ -3305,6 +3477,17 @@ class MusicViewModel(
                 val to = cmdMsg.toQueueIndex ?: return
                 moveQueueItem(from, to)
             }
+            JamCommandType.SET_REPEAT_MODE -> {
+                val modeName = cmdMsg.targetRepeatModeName?.uppercase() ?: return
+                val mode = when (modeName) {
+                    "ALL" -> Player.REPEAT_MODE_ALL
+                    "ONE" -> Player.REPEAT_MODE_ONE
+                    else -> Player.REPEAT_MODE_OFF
+                }
+                setRepeatModeExplicit(mode)
+            }
+            JamCommandType.KICK_PARTICIPANT,
+            JamCommandType.REQUEST_SYNC -> {}
         }
     }
 
