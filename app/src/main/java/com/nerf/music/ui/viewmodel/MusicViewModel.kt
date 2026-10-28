@@ -809,21 +809,20 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            ✨ NERF Music v1.4.2 — NOVO ONBOARDING & DESIGN REFINADO! 🚀
-            
-            ✨ Onboarding & Personalização de Primeiro Acesso:
-            • Boas-vindas Elegantes: fluxo imersivo estilo Apple com introdução interativa dos recursos.
-            • Seleção de Artistas Favoritos: escolha dinâmica de gostos musicais para moldar e personalizar instantaneamente o feed da Home e as afinidades.
-            • Fluidez 120Hz (LTPO): ativação e travamento em alta taxa de atualização para dispositivos compatíveis como Samsung Galaxy S24+.
-            
-            🎧 Painel JAM & Player com Design Apple/Glassmorphism:
-            • Interface Redesenhada: visual translúcido adaptativo com tipografia SF Pro e feedback tátil Apple físico (sem ripple genérico).
-            • Navegação e Rolagem Aprimoradas: janela da JAM com proporção otimizada (85%), rolagem independente e controles de sala fluidos.
-            • Botão Rápido 'Start Jam': layout balanceado para opções avançadas/LAN e início instantâneo.
-            
-            🎵 Menu de Opções de Faixa Oficial (3 Pontinhos):
-            • Ações Rápidas: Tocar a seguir, Iniciar rádio, Adicionar à playlist, Curtir e Download integrados na Pesquisa, Home, Álbum e Artista.
-            • Fila da JAM Estável: correções contra crashes e exceções de índice ao reordenar e manipular a fila colaborativa.
+            ✨ O que há de novo no NERF Music v1.4.2! 🚀
+
+            👋 Boas-vindas e Seu Gosto Musical:
+            • Ao abrir o app pela primeira vez, você é recebido com uma experiência novinha e pode escolher seus artistas favoritos para deixar a tela inicial com a sua cara logo de cara!
+            • Navegação super fluida e suave a 120Hz para celulares compatíveis (como a linha Galaxy S24).
+
+            🎧 Ouvir em Grupo (JAM) Ficou Ainda Melhor:
+            • A tela da JAM agora tem um visual translúcido e moderno, combinando com o resto do app.
+            • Ficou muito mais fácil rolar e mexer nas opções da sala sem fechar a janela sem querer.
+            • Novo botão direto 'Start Jam' para começar sua sessão com amigos rapidinho!
+
+            🎵 Mais Praticidade nas Músicas (3 Pontinhos):
+            • Agora você pode tocar nos 3 pontinhos de qualquer música para tocar a seguir, começar uma rádio, salvar na playlist, baixar ou curtir com apenas um toque!
+            • Fila compartilhada da JAM mais estável para todo mundo adicionar e organizar as músicas juntos sem travamentos.
         """.trimIndent()
     }
 
