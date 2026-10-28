@@ -15,6 +15,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.MediaItem
 import com.nerf.music.ui.components.JamPersonWavesIcon
+import com.nerf.music.ui.components.applePressFeedback
 import com.nerf.music.ui.theme.OrangePrimary
 import com.nerf.music.ui.theme.YouTubeSansFontFamily
 import kotlin.math.roundToInt
@@ -1257,7 +1258,7 @@ fun FullPlayerSheet(
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // Cabeçalho Superior estilo YouTube Music perfeitamente centralizado
+                            // Cabeçalho Superior Glass estilo Apple / Fila de Reprodução perfeitamente alinhado
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1265,44 +1266,50 @@ fun FullPlayerSheet(
                                     .padding(top = 2.dp)
                                     .alpha(headerAlpha)
                             ) {
-                                IconButton(
-                                    onClick = {
-                                        coroutineScope.launch {
-                                            playerDismissOffsetY.animateTo(
-                                                targetValue = dismissDistancePx,
-                                                animationSpec = tween(180, easing = FastOutLinearInEasing)
-                                            )
-                                            onDismiss()
-                                            playerDismissOffsetY.snapTo(0f)
-                                        }
-                                    },
+                                Box(
                                     modifier = Modifier
                                         .align(Alignment.CenterStart)
-                                        .size(44.dp)
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                        .border(0.75.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                                        .applePressFeedback(
+                                            onClick = {
+                                                coroutineScope.launch {
+                                                    playerDismissOffsetY.animateTo(
+                                                        targetValue = dismissDistancePx,
+                                                        animationSpec = tween(180, easing = FastOutLinearInEasing)
+                                                    )
+                                                    onDismiss()
+                                                    playerDismissOffsetY.snapTo(0f)
+                                                }
+                                            }
+                                        ),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.KeyboardArrowDown,
                                         contentDescription = stringResource(id = R.string.collapse_player),
                                         tint = Color.White,
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 }
 
-                                // Segmented Pill: [ Música | Canva ] matematicamente centralizado
+                                // Segmented Pill: [ Música | Canva ] estilo glass da fila
                                 Surface(
                                     shape = RoundedCornerShape(50),
-                                    color = Color(0xFF262626),
-                                    border = BorderStroke(0.5.dp, Color(0xFF383838)),
+                                    color = Color.White.copy(alpha = 0.08f),
+                                    border = BorderStroke(0.75.dp, Color.White.copy(alpha = 0.14f)),
                                     modifier = Modifier.align(Alignment.Center)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(2.dp),
+                                        modifier = Modifier.padding(3.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Surface(
                                             shape = RoundedCornerShape(50),
-                                            color = if (!isCanvasActive) Color(0xFF3E3E3E) else Color.Transparent,
-                                            modifier = Modifier.clickable { isCanvaSelected = false }
+                                            color = if (!isCanvasActive) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+                                            modifier = Modifier.applePressFeedback { isCanvaSelected = false }
                                         ) {
                                             Row(
                                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -1318,15 +1325,15 @@ fun FullPlayerSheet(
                                                 Text(
                                                     text = "Música",
                                                     fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Medium,
+                                                    fontWeight = if (!isCanvasActive) FontWeight.Bold else FontWeight.Medium,
                                                     color = if (!isCanvasActive) Color.White else Color.White.copy(alpha = 0.55f)
                                                 )
                                             }
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(50),
-                                            color = if (isCanvasActive) Color(0xFF3E3E3E) else Color.Transparent,
-                                            modifier = Modifier.clickable(enabled = hasCanva) {
+                                            color = if (isCanvasActive) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+                                            modifier = Modifier.applePressFeedback(enabled = hasCanva) {
                                                 if (hasCanva) isCanvaSelected = true
                                             }
                                         ) {
@@ -1344,7 +1351,7 @@ fun FullPlayerSheet(
                                                 Text(
                                                     text = "Canva",
                                                     fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Medium,
+                                                    fontWeight = if (isCanvasActive) FontWeight.Bold else FontWeight.Medium,
                                                     color = if (isCanvasActive) Color.White else Color.White.copy(alpha = if (hasCanva) 0.55f else 0.25f)
                                                 )
                                             }
@@ -1352,43 +1359,23 @@ fun FullPlayerSheet(
                                     }
                                 }
 
-                                Row(
-                                    modifier = Modifier.align(Alignment.CenterEnd),
-                                    verticalAlignment = Alignment.CenterVertically
+                                // Menu Mais Opções Glass Circle
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                        .border(0.75.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                                        .applePressFeedback(onClick = { showRelatedSheet = true }),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    IconButton(
-                                        onClick = onOpenJamSheet,
-                                        modifier = Modifier.size(40.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.Default.Cast,
-                                                contentDescription = "JAM / Transmitir",
-                                                tint = if (jamSessionState.isInJam) Color(0xFF1DB954) else Color.White.copy(alpha = 0.90f),
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                            if (jamSessionState.isInJam) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .align(Alignment.TopEnd)
-                                                        .clip(CircleShape)
-                                                        .background(Color(0xFF1DB954))
-                                                )
-                                            }
-                                        }
-                                    }
-                                    IconButton(
-                                        onClick = { showRelatedSheet = true },
-                                        modifier = Modifier.size(40.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = "Mais opções",
-                                            tint = Color.White.copy(alpha = 0.90f),
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Mais opções",
+                                        tint = Color.White.copy(alpha = 0.90f),
+                                        modifier = Modifier.size(19.dp)
+                                    )
                                 }
                             }
 
@@ -1399,58 +1386,72 @@ fun FullPlayerSheet(
                             } else {
                                 Box(
                                     modifier = Modifier
-                                        .graphicsLayer {
-                                            translationX = artworkOffsetX.value + artworkDismissTranslateXPx
-                                            rotationZ = if (dismissProgress > 0f) 0f else (artworkOffsetX.value / screenWidthPx) * 7f
-                                            alpha = if (dismissProgress > 0f) 1f else (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
-                                        }
-                                        .size(currentArtworkSizeDp)
-                                        .shadow(
-                                            elevation = ((18f * (1f - halfExpansionFraction * 0.5f)) * (1f - dismissProgress)).dp,
-                                            shape = RoundedCornerShape(artworkCornerRadiusDp),
-                                            clip = false
-                                        )
-                                        .clip(RoundedCornerShape(artworkCornerRadiusDp))
-                                        .background(Color(0xFF262626)),
+                                        .weight(1f)
+                                        .fillMaxWidth(),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (!artworkUrl.isNullOrEmpty()) {
-                                        AsyncImage(
-                                            model = artworkUrl,
-                                            contentDescription = track.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.MusicNote,
-                                            contentDescription = null,
-                                            tint = Color.Gray,
-                                            modifier = Modifier.size(56.dp)
-                                        )
+                                    Box(
+                                        modifier = Modifier
+                                            .graphicsLayer {
+                                                translationX = artworkOffsetX.value + artworkDismissTranslateXPx
+                                                rotationZ = if (dismissProgress > 0f) 0f else (artworkOffsetX.value / screenWidthPx) * 7f
+                                                alpha = if (dismissProgress > 0f) 1f else (1f - (abs(artworkOffsetX.value) / screenWidthPx) * 0.40f).coerceIn(0.55f, 1f)
+                                            }
+                                            .size(currentArtworkSizeDp)
+                                            .shadow(
+                                                elevation = ((18f * (1f - halfExpansionFraction * 0.5f)) * (1f - dismissProgress)).dp,
+                                                shape = RoundedCornerShape(artworkCornerRadiusDp),
+                                                clip = false
+                                            )
+                                            .clip(RoundedCornerShape(artworkCornerRadiusDp))
+                                            .background(Color(0xFF262626)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (!artworkUrl.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = artworkUrl,
+                                                contentDescription = track.title,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.MusicNote,
+                                                contentDescription = null,
+                                                tint = Color.Gray,
+                                                modifier = Modifier.size(56.dp)
+                                            )
+                                        }
                                     }
                                 }
-
-                                Spacer(modifier = Modifier.height((16f * (1f - halfExpansionFraction * 0.65f)).dp))
                             }
 
-                            AnimatedVisibility(
-                                visible = !lyricsLine.isNullOrBlank() && !lyricsLine.equals("null", ignoreCase = true) && halfExpansionFraction < 0.35f,
-                                enter = fadeIn(animationSpec = tween(300)),
-                                exit = fadeOut(animationSpec = tween(200)),
+                            // Linha de Letra Sincronizada com altura fixa para evitar empurrão dos botões
+                            val hasInlineLyric = !lyricsLine.isNullOrBlank() && !lyricsLine.equals("null", ignoreCase = true) && halfExpansionFraction < 0.35f
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .alpha(controlsAlpha)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { isFullscreenLyricsActive = true }
-                                    .padding(bottom = 8.dp)
+                                    .height(30.dp)
+                                    .padding(bottom = 6.dp),
+                                contentAlignment = Alignment.CenterStart
                             ) {
-                                InlineSyncedLyrics(
-                                    lyricText = lyricsLine.orEmpty(),
-                                    lyrics = lyrics,
-                                    positionMs = state.currentPositionMs,
-                                    durationMs = effectiveDurationMs
-                                )
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = hasInlineLyric,
+                                    enter = fadeIn(animationSpec = tween(300)),
+                                    exit = fadeOut(animationSpec = tween(200)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .alpha(controlsAlpha)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { isFullscreenLyricsActive = true }
+                                ) {
+                                    InlineSyncedLyrics(
+                                        lyricText = lyricsLine.orEmpty(),
+                                        lyrics = lyrics,
+                                        positionMs = state.currentPositionMs,
+                                        durationMs = effectiveDurationMs
+                                    )
+                                }
                             }
 
                             Row(
@@ -1703,139 +1704,101 @@ fun FullPlayerSheet(
 
                             Spacer(modifier = Modifier.height((16f * (1f - halfExpansionFraction * 0.5f)).dp))
 
-                            // Controles de Mídia: Aleatório, Anterior, Play/Pause (maior), Próxima, Repetição
-                            // 100% visíveis no Estado 0 e Estado 1!
+                            // Controles de Mídia Glass Apple (Play/Pause, Skip, Shuffle, Repeat)
                             val mainPlayButtonSize = (68f - (16f * halfExpansionFraction)).dp
                             val sideButtonSize = (48f - (8f * halfExpansionFraction)).dp
                             val modeButtonSize = (40f - (6f * halfExpansionFraction)).dp
 
-                            val playInteractionSource = remember { MutableInteractionSource() }
-                            val isPlayPressed by playInteractionSource.collectIsPressedAsState()
-                            val playScale by animateFloatAsState(
-                                targetValue = if (isPlayPressed) 0.88f else 1.0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = 500f
-                                ),
-                                label = "PlayButtonScale"
-                            )
-
-                            val prevInteractionSource = remember { MutableInteractionSource() }
-                            val isPrevPressed by prevInteractionSource.collectIsPressedAsState()
-                            val prevScale by animateFloatAsState(
-                                targetValue = if (isPrevPressed) 0.88f else 1.0f,
-                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
-                                label = "PrevButtonScale"
-                            )
-
-                            val nextInteractionSource = remember { MutableInteractionSource() }
-                            val isNextPressed by nextInteractionSource.collectIsPressedAsState()
-                            val nextScale by animateFloatAsState(
-                                targetValue = if (isNextPressed) 0.88f else 1.0f,
-                                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
-                                label = "NextButtonScale"
-                            )
-
                             Row(
-                                modifier = Modifier.fillMaxWidth().alpha(controlsAlpha),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .alpha(controlsAlpha),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 // 1. Aleatório (Shuffle)
-                                IconButton(
-                                    onClick = onToggleShuffle,
-                                    modifier = Modifier.size(modeButtonSize)
+                                Box(
+                                    modifier = Modifier
+                                        .size(modeButtonSize)
+                                        .clip(CircleShape)
+                                        .background(if (state.shuffleModeEnabled) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+                                        .applePressFeedback(onClick = onToggleShuffle),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Shuffle,
                                         contentDescription = "Aleatório",
                                         tint = if (state.shuffleModeEnabled) {
-                                            MaterialTheme.colorScheme.primary
+                                            Color.White
                                         } else {
-                                            Color.White.copy(alpha = 0.70f)
+                                            Color.White.copy(alpha = 0.65f)
                                         },
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
 
                                 // 2. Anterior (SkipPrevious)
-                                FilledTonalIconButton(
-                                    onClick = onSkipPrevious,
+                                Box(
                                     modifier = Modifier
                                         .size(sideButtonSize)
-                                        .graphicsLayer {
-                                            scaleX = prevScale
-                                            scaleY = prevScale
-                                        },
-                                    interactionSource = prevInteractionSource,
-                                    shape = CircleShape,
-                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                        containerColor = Color(0xFF262626),
-                                        contentColor = Color.White
-                                    )
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.10f))
+                                        .border(0.75.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                                        .applePressFeedback(onClick = onSkipPrevious),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.SkipPrevious,
                                         contentDescription = stringResource(id = R.string.previous_track),
+                                        tint = Color.White,
                                         modifier = Modifier.size(26.dp)
                                     )
                                 }
 
-                                // 3. Play/Pause (maior)
-                                Surface(
-                                    onClick = onTogglePlay,
+                                // 3. Play/Pause Glass Disc com brilho acetinado
+                                Box(
                                     modifier = Modifier
                                         .size(mainPlayButtonSize)
-                                        .graphicsLayer {
-                                            scaleX = playScale
-                                            scaleY = playScale
-                                        },
-                                    interactionSource = playInteractionSource,
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shadowElevation = 8.dp
+                                        .clip(CircleShape)
+                                        .background(Color.White)
+                                        .border(1.dp, Color.White.copy(alpha = 0.40f), CircleShape)
+                                        .applePressFeedback(onClick = onTogglePlay),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        if (state.isBuffering) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(28.dp),
-                                                strokeWidth = 3.dp,
-                                                color = MaterialTheme.colorScheme.onPrimary
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                                contentDescription = if (state.isPlaying) {
-                                                    stringResource(id = R.string.pause)
-                                                } else {
-                                                    stringResource(id = R.string.play)
-                                                },
-                                                tint = MaterialTheme.colorScheme.onPrimary,
-                                                modifier = Modifier.size((34f - 4f * halfExpansionFraction).dp)
-                                            )
-                                        }
+                                    if (state.isBuffering) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            strokeWidth = 3.dp,
+                                            color = Color.Black
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                            contentDescription = if (state.isPlaying) {
+                                                stringResource(id = R.string.pause)
+                                            } else {
+                                                stringResource(id = R.string.play)
+                                            },
+                                            tint = Color.Black,
+                                            modifier = Modifier.size((34f - 4f * halfExpansionFraction).dp)
+                                        )
                                     }
                                 }
 
                                 // 4. Próxima (SkipNext)
-                                FilledTonalIconButton(
-                                    onClick = onSkipNext,
+                                Box(
                                     modifier = Modifier
                                         .size(sideButtonSize)
-                                        .graphicsLayer {
-                                            scaleX = nextScale
-                                            scaleY = nextScale
-                                        },
-                                    interactionSource = nextInteractionSource,
-                                    shape = CircleShape,
-                                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                        containerColor = Color(0xFF262626),
-                                        contentColor = Color.White
-                                    )
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.10f))
+                                        .border(0.75.dp, Color.White.copy(alpha = 0.14f), CircleShape)
+                                        .applePressFeedback(onClick = onSkipNext),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.SkipNext,
                                         contentDescription = stringResource(id = R.string.next_track),
+                                        tint = Color.White,
                                         modifier = Modifier.size(26.dp)
                                     )
                                 }
@@ -1847,19 +1810,23 @@ fun FullPlayerSheet(
                                 } else {
                                     Icons.Default.Repeat
                                 }
-                                IconButton(
-                                    onClick = onToggleRepeat,
-                                    modifier = Modifier.size(modeButtonSize)
+                                Box(
+                                    modifier = Modifier
+                                        .size(modeButtonSize)
+                                        .clip(CircleShape)
+                                        .background(if (isRepeatActive) Color.White.copy(alpha = 0.22f) else Color.Transparent)
+                                        .applePressFeedback(onClick = onToggleRepeat),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = repeatIcon,
                                         contentDescription = "Repetição",
                                         tint = if (isRepeatActive) {
-                                            MaterialTheme.colorScheme.primary
+                                            Color.White
                                         } else {
-                                            Color.White.copy(alpha = 0.70f)
+                                            Color.White.copy(alpha = 0.65f)
                                         },
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }
@@ -2252,9 +2219,33 @@ fun PlayerActionRow(
         modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(scrollState),
-        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.Start),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 1. Letras Glass Pill
+        RoundedActionPillButton(
+            icon = Icons.AutoMirrored.Filled.Chat,
+            label = "Letra",
+            isActive = isLyricsActive,
+            onClick = onToggleLyrics
+        )
+
+        // 2. JAM Glass Pill
+        RoundedActionPillButton(
+            icon = Icons.Default.Group,
+            customIconContent = {
+                JamPersonWavesIcon(
+                    tint = if (isJamActive) Color(0xFF4ADE80) else Color.White,
+                    size = 17.dp
+                )
+            },
+            label = if (isJamActive) "JAM (${jamParticipantCount.coerceAtLeast(1)})" else "JAM",
+            isActive = isJamActive,
+            activeColor = Color(0xFF1DB954),
+            onClick = onOpenJam
+        )
+
+        // 3. Favoritar
         RoundedActionPillButton(
             icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             label = if (isFavorite) {
@@ -2263,9 +2254,11 @@ fun PlayerActionRow(
                 stringResource(id = R.string.action_favorite)
             },
             isActive = isFavorite,
+            activeColor = Color(0xFFFF2D55),
             onClick = onToggleFavorite
         )
 
+        // 4. Salvar Playlist
         RoundedActionPillButton(
             icon = if (isSaved) Icons.AutoMirrored.Filled.PlaylistAddCheck else Icons.AutoMirrored.Filled.PlaylistAdd,
             label = if (isSaved) {
@@ -2277,6 +2270,7 @@ fun PlayerActionRow(
             onClick = onToggleSave
         )
 
+        // 5. Download
         RoundedActionPillButton(
             icon = if (isDownloaded) Icons.Default.DownloadDone else Icons.Default.Download,
             label = when {
@@ -2288,26 +2282,6 @@ fun PlayerActionRow(
             progress = downloadProgress,
             onClick = onToggleDownload
         )
-
-        RoundedActionPillButton(
-            icon = Icons.Default.Subtitles,
-            label = "Letra",
-            isActive = isLyricsActive,
-            onClick = onToggleLyrics
-        )
-
-        RoundedActionPillButton(
-            icon = Icons.Default.Group,
-            customIconContent = {
-                JamPersonWavesIcon(
-                    tint = if (isJamActive) MaterialTheme.colorScheme.primary else Color.White,
-                    size = 18.dp
-                )
-            },
-            label = if (isJamActive) "JAM (${jamParticipantCount.coerceAtLeast(1)})" else "JAM",
-            isActive = isJamActive,
-            onClick = onOpenJam
-        )
     }
 }
 
@@ -2317,50 +2291,51 @@ private fun RoundedActionPillButton(
     label: String,
     isActive: Boolean,
     progress: Float? = null,
+    activeColor: Color = Color.White,
     customIconContent: (@Composable () -> Unit)? = null,
     onClick: () -> Unit
 ) {
     Surface(
-        onClick = onClick,
         shape = RoundedCornerShape(50),
         color = if (isActive) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+            activeColor.copy(alpha = 0.22f)
         } else {
-            Color(0xFF282828)
+            Color.White.copy(alpha = 0.08f)
         },
-        border = if (isActive) {
-            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
-        } else {
-            null
-        }
+        border = BorderStroke(
+            0.75.dp,
+            if (isActive) activeColor.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.14f)
+        ),
+        modifier = Modifier
+            .defaultMinSize(minHeight = 34.dp)
+            .applePressFeedback(onClick = onClick)
     ) {
         Row(
             modifier = Modifier
-                .defaultMinSize(minHeight = 36.dp)
-                .padding(horizontal = 14.dp, vertical = 7.dp),
+                .padding(horizontal = 13.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (progress != null) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(18.dp)) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(16.dp)) {
                     if (progress > 0f) {
                         CircularProgressIndicator(
                             progress = { progress },
-                            color = MaterialTheme.colorScheme.primary,
+                            color = activeColor,
                             trackColor = Color.White.copy(alpha = 0.2f),
                             strokeWidth = 2.dp,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     } else {
                         CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
+                            color = activeColor,
                             strokeWidth = 2.dp,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                     Icon(
                         imageVector = Icons.Default.Download,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = activeColor,
                         modifier = Modifier.size(10.dp)
                     )
                 }
@@ -2370,16 +2345,17 @@ private fun RoundedActionPillButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = if (isActive) MaterialTheme.colorScheme.primary else Color.White,
-                    modifier = Modifier.size(18.dp)
+                    tint = if (isActive) activeColor else Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(16.dp)
                 )
             }
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
+                fontFamily = SfProFontFamily,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (isActive) MaterialTheme.colorScheme.primary else Color.White
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                color = if (isActive) activeColor else Color.White.copy(alpha = 0.90f)
             )
         }
     }

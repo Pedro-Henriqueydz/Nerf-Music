@@ -26,6 +26,7 @@ interface UserAffinityRepository {
     fun getArtistAffinity(artistName: String): Int
     fun isTrackPenalized(trackId: String): Boolean
     fun getTopAffinitiveArtists(limit: Int = 10): List<String>
+    fun recordInitialArtistPreferences(artists: List<String>)
 }
 
 class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
@@ -160,6 +161,19 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
 
     override fun isTrackPenalized(trackId: String): Boolean {
         return (trackAffinityMap[trackId] ?: 0) <= PENALTY_THRESHOLD
+    }
+
+    override fun recordInitialArtistPreferences(artists: List<String>) {
+        if (artists.isEmpty()) return
+        artists.forEachIndexed { index, artistName ->
+            val clean = artistName.trim()
+            if (clean.isNotBlank()) {
+                val score = (25 - index * 2).coerceAtLeast(15)
+                artistAffinityMap[clean] = score
+            }
+        }
+        persistData()
+        Log.d(TAG, "Preferências iniciais de artistas registradas: $artists")
     }
 
     override fun getTopAffinitiveArtists(limit: Int): List<String> {

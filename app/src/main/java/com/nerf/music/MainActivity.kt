@@ -1,6 +1,7 @@
 package com.nerf.music
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,6 +21,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Garante a taxa de atualização máxima de 120Hz (LTPO) em telas como Samsung Galaxy S24+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val modes = display?.supportedModes.orEmpty()
+            val maxMode = modes.maxByOrNull { it.refreshRate }
+            if (maxMode != null && maxMode.refreshRate >= 119f) {
+                val params = window.attributes
+                params.preferredDisplayModeId = maxMode.modeId
+                window.attributes = params
+            }
+        }
 
         // Inicializa canal de notificação e agenda verificação em segundo plano via WorkManager
         UpdateNotificationHelper.createNotificationChannel(this)

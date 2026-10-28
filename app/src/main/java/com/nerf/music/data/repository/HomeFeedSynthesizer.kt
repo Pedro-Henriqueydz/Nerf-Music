@@ -41,7 +41,7 @@ class HomeFeedSynthesizer(
         val userLiked = libraryRepo?.likedTracksFlow?.value.orEmpty()
         val userPlaylists = libraryRepo?.playlistsFlow?.value.orEmpty()
         val downloadedTracks = libraryRepo?.downloadedTracksFlow?.value.orEmpty()
-        val topArtists = historyRepo?.getTopArtists(5).orEmpty()
+        val topArtists = (historyRepo?.getTopArtists(5).orEmpty() + affinityRepo?.getTopAffinitiveArtists(5).orEmpty()).distinct().take(5)
         val favoriteSeedId = historyRepo?.getFavoriteSeedVideoId()
             ?: userLiked.firstOrNull()?.id
             ?: userRecent.firstOrNull()?.id
@@ -51,7 +51,8 @@ class HomeFeedSynthesizer(
         // -----------------------------------------------------------------------------------------
         // 1. SPEED DIAL (Grade 3x3 Paginada - 9 itens por página, até 27 itens)
         // -----------------------------------------------------------------------------------------
-        if (selectedChip == null) {
+        val hasUserListeningActivity = userRecent.isNotEmpty() || userLiked.isNotEmpty() || userPlaylists.isNotEmpty()
+        if (selectedChip == null && hasUserListeningActivity) {
             val speedDialItems = mutableListOf<Track>()
             val seenDialIds = mutableSetOf<String>()
 
@@ -91,15 +92,6 @@ class HomeFeedSynthesizer(
             userRecent.forEach { track ->
                 if (speedDialItems.size < 27 && track.id.isNotBlank() && seenDialIds.add(track.id)) {
                     if (affinityRepo?.isTrackPenalized(track.id) != true) {
-                        speedDialItems.add(track)
-                    }
-                }
-            }
-
-            // D. Fallback: Se o usuário for novo, preenche até 9 com faixas do catálogo
-            if (speedDialItems.size < 9) {
-                baseFeedData.sections.firstOrNull { it.items.isNotEmpty() }?.items?.forEach { track ->
-                    if (speedDialItems.size < 9 && seenDialIds.add(track.id)) {
                         speedDialItems.add(track)
                     }
                 }
@@ -161,7 +153,7 @@ class HomeFeedSynthesizer(
         // 3. PRATELEIRAS DEDICADAS POR ARTISTA ("Porque você ouve [Artista]")
         // -----------------------------------------------------------------------------------------
         if (selectedChip == null && topArtists.isNotEmpty()) {
-            for (artist in topArtists.take(2)) {
+            for (artist in topArtists.take(3)) {
                 try {
                     val artistTracksResult = catalogClient.search(artist, SearchFilter.SONGS).getOrNull()
                     val artistSongs = artistTracksResult?.songs?.filter { track ->

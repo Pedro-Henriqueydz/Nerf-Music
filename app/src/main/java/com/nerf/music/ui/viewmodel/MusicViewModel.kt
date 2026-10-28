@@ -19,6 +19,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.nerf.music.data.model.AlbumDetail
+import com.nerf.music.data.model.Artist
 import com.nerf.music.data.model.ArtistDetail
 import com.nerf.music.data.model.HomeChip
 import com.nerf.music.data.model.HomeSection
@@ -168,6 +169,9 @@ class MusicViewModel(
 
     private val _isDownloadLyricsEnabled = MutableStateFlow(true)
     val isDownloadLyricsEnabled: StateFlow<Boolean> = _isDownloadLyricsEnabled.asStateFlow()
+
+    private val _isOnboardingCompleted = MutableStateFlow(false)
+    val isOnboardingCompleted: StateFlow<Boolean> = _isOnboardingCompleted.asStateFlow()
 
     private var connectivityObserver: ConnectivityObserver? = null
     private val _connectivityStatus = MutableStateFlow(ConnectivityObserver.Status.Available)
@@ -452,6 +456,7 @@ class MusicViewModel(
             _isSmartDownloadsEnabled.value = settingsRepo.isSmartDownloadsEnabled.value
             _smartDownloadsLimit.value = settingsRepo.smartDownloadsLimit.value
             _isSmartDownloadsWifiOnly.value = settingsRepo.isSmartDownloadsWifiOnly.value
+            _isOnboardingCompleted.value = settingsRepo.isOnboardingCompleted.value
         }
         if (userHistoryRepository == null) {
             val historyRepo = UserHistoryRepositoryImpl(context.applicationContext)
@@ -585,6 +590,29 @@ class MusicViewModel(
                 Log.e("MusicViewModel", "Erro ao obter MediaController conectado", e)
             }
         }, MoreExecutors.directExecutor())
+    }
+
+    fun completeOnboarding(selectedArtists: List<Artist>) {
+        val names = selectedArtists.map { it.name.trim() }.filter { it.isNotBlank() }
+        userAffinityRepository?.recordInitialArtistPreferences(names)
+        userHistoryRepository?.recordInitialArtists(names)
+        userSettingsRepository?.setOnboardingCompleted(true)
+        _isOnboardingCompleted.value = true
+        loadHomeFeed(force = true)
+    }
+
+    suspend fun searchArtistsForOnboarding(query: String): List<Artist> {
+        val q = query.trim()
+        if (q.isBlank()) return emptyList()
+        return try {
+            val result = repository.search(q, SearchFilter.ALL).getOrNull()
+            val list = mutableListOf<Artist>()
+            result?.topArtist?.let { list.add(it) }
+            result?.artists?.let { list.addAll(it) }
+            list.filter { it.name.isNotBlank() }.distinctBy { it.name.trim().lowercase() }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     fun loadHomeFeed(params: String? = _selectedHomeChip.value?.params, force: Boolean = false) {
@@ -781,20 +809,21 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🔥 NERF Music v1.4.1 — CORREÇÕES E NOVOS RECURSOS! 🚀
+            ✨ NERF Music v1.4.2 — NOVO ONBOARDING & DESIGN REFINADO! 🚀
             
-            🎤 Karaokê de Alta Precisão & DSP Anti-Abafamento:
-            • Casamento Estrito de Instrumentais: algoritmo aprimorado que elimina instrumentais errados e rejeita faixas com duração divergente.
-            • Alinhamento Automático de Beat: sincronia perfeita de introdução e tempo em faixas como Cristiano Araújo via correlação cruzada de transientes.
-            • DSP Anti-Abafamento: processamento Mid-Side com banda vocal seletiva preservando subgraves, bateria e estéreo, com controle gradual no slider de voz.
+            ✨ Onboarding & Personalização de Primeiro Acesso:
+            • Boas-vindas Elegantes: fluxo imersivo estilo Apple com introdução interativa dos recursos.
+            • Seleção de Artistas Favoritos: escolha dinâmica de gostos musicais para moldar e personalizar instantaneamente o feed da Home e as afinidades.
+            • Fluidez 120Hz (LTPO): ativação e travamento em alta taxa de atualização para dispositivos compatíveis como Samsung Galaxy S24+.
             
-            🎧 NERF JAM Global & Governança da Sala:
-            • Conexão Global via Internet: ouça sincronizado em 4G, 5G ou Wi-Fi com amigos em qualquer lugar do mundo via código de sala e DeepLink!
-            • Novo Ícone Visual da JAM: silhueta com ondas acústicas estilo Spotify em todo o app.
-            • Acesso Rápido na Home: botão dedicado ao lado das configurações para entrar ou criar salas sem precisar tocar uma música antes.
-            • Permissões do Host: controle total para o Host definir se convidados podem adicionar à fila ou controlar reprodução.
-            • Looping & Crossfade Sincronizados: tempo de Crossfade (0s-12s) e modo de repetição herdados automaticamente por todos os convidados.
-            • Karaokê em Sala: sincronização de modo karaokê e volume vocal em grupo.
+            🎧 Painel JAM & Player com Design Apple/Glassmorphism:
+            • Interface Redesenhada: visual translúcido adaptativo com tipografia SF Pro e feedback tátil Apple físico (sem ripple genérico).
+            • Navegação e Rolagem Aprimoradas: janela da JAM com proporção otimizada (85%), rolagem independente e controles de sala fluidos.
+            • Botão Rápido 'Start Jam': layout balanceado para opções avançadas/LAN e início instantâneo.
+            
+            🎵 Menu de Opções de Faixa Oficial (3 Pontinhos):
+            • Ações Rápidas: Tocar a seguir, Iniciar rádio, Adicionar à playlist, Curtir e Download integrados na Pesquisa, Home, Álbum e Artista.
+            • Fila da JAM Estável: correções contra crashes e exceções de índice ao reordenar e manipular a fila colaborativa.
         """.trimIndent()
     }
 

@@ -16,6 +16,7 @@ interface UserHistoryRepository {
     fun getRecentlyPlayed(): List<Track>
     fun recordTrackPlayed(track: Track)
     fun getTopArtists(limit: Int = 5): List<String>
+    fun recordInitialArtists(artists: List<String>)
     fun getFavoriteSeedVideoId(): String?
     fun getCachedHomeFeed(): List<HomeSection>
     fun saveCachedHomeFeed(sections: List<HomeSection>)
@@ -123,6 +124,21 @@ class UserHistoryRepositoryImpl(
             .sortedByDescending { it.value }
             .take(limit)
             .map { it.key }
+    }
+
+    override fun recordInitialArtists(artists: List<String>) {
+        if (artists.isEmpty()) return
+        if (artistCounts.isEmpty()) {
+            loadArtistCounts()
+        }
+        artists.forEachIndexed { index, name ->
+            val clean = name.trim()
+            if (clean.isNotBlank()) {
+                val baseCount = (10 - index).coerceAtLeast(3)
+                artistCounts[clean] = (artistCounts[clean] ?: 0) + baseCount
+            }
+        }
+        saveArtistCounts()
     }
 
     override fun getFavoriteSeedVideoId(): String? {

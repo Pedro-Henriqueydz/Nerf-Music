@@ -66,6 +66,9 @@ interface UserSettingsRepository {
     val smartDownloadsLimit: StateFlow<Int>
     val isSmartDownloadsWifiOnly: StateFlow<Boolean>
 
+    // Primeiro Acesso e Onboarding do Usuário
+    val isOnboardingCompleted: StateFlow<Boolean>
+
     fun setCanvasEnabled(enabled: Boolean)
     fun setCanvasWifiOnly(wifiOnly: Boolean)
     fun setLyricsAboveTitleEnabled(enabled: Boolean)
@@ -87,6 +90,8 @@ interface UserSettingsRepository {
     fun setSmartDownloadsEnabled(enabled: Boolean)
     fun setSmartDownloadsLimit(limit: Int)
     fun setSmartDownloadsWifiOnly(wifiOnly: Boolean)
+
+    fun setOnboardingCompleted(completed: Boolean)
 }
 
 class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
@@ -144,6 +149,9 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
     private val _isSmartDownloadsWifiOnly = MutableStateFlow(prefs.getBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, true))
     override val isSmartDownloadsWifiOnly: StateFlow<Boolean> = _isSmartDownloadsWifiOnly.asStateFlow()
 
+    private val _isOnboardingCompleted = MutableStateFlow(prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false))
+    override val isOnboardingCompleted: StateFlow<Boolean> = _isOnboardingCompleted.asStateFlow()
+
     private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             KEY_CANVAS_ENABLED -> _isCanvasEnabled.value = prefs.getBoolean(KEY_CANVAS_ENABLED, true)
@@ -163,6 +171,7 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
             KEY_SMART_DOWNLOADS_ENABLED -> _isSmartDownloadsEnabled.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_ENABLED, false)
             KEY_SMART_DOWNLOADS_LIMIT -> _smartDownloadsLimit.value = prefs.getInt(KEY_SMART_DOWNLOADS_LIMIT, 100)
             KEY_SMART_DOWNLOADS_WIFI_ONLY -> _isSmartDownloadsWifiOnly.value = prefs.getBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, true)
+            KEY_ONBOARDING_COMPLETED -> _isOnboardingCompleted.value = prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
         }
     }
 
@@ -293,8 +302,14 @@ class UserSettingsRepositoryImpl(context: Context) : UserSettingsRepository {
         prefs.edit().putBoolean(KEY_SMART_DOWNLOADS_WIFI_ONLY, wifiOnly).apply()
     }
 
+    override fun setOnboardingCompleted(completed: Boolean) {
+        _isOnboardingCompleted.value = completed
+        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "nerf_user_settings_prefs"
+        private const val KEY_ONBOARDING_COMPLETED = "key_onboarding_completed"
         private const val KEY_CANVAS_ENABLED = "key_canvas_video_enabled"
         private const val KEY_CANVAS_WIFI_ONLY = "key_canvas_wifi_only"
         private const val KEY_LYRICS_ABOVE_TITLE = "key_lyrics_above_title"

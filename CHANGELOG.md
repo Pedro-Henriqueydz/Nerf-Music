@@ -5,24 +5,34 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ---
 
 ## [Unreleased]
-> **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.1.
+> **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.2.
 
-### Corrigido
-- **Crash ao Reordenar Fila na JAM como Participante (`MusicViewModel` / `PlayerScreen`):**
-  - **Eliminação de `IndexOutOfBoundsException`:** Corrigida a falha crítica que derrubava o aplicativo ao arrastar e reordenar músicas na fila da JAM como participante. O participante agora aplica reordenação otimista imediata na UI e despacha o comando `JamCommandType.MOVE_QUEUE_ITEM` ao Host sem tentar invocar `mediaController.moveMediaItem` na timeline local do ExoPlayer (que contém apenas a faixa atual sincronizada).
-  - **Validação Defensiva de Timeline no Host:** Adicionada validação de limites (`fromIndex in 0 until controller.mediaItemCount && toIndex in 0 until controller.mediaItemCount`) e proteção contra exceções na reordenação da timeline mestre.
-  - **Remoção e Seleção de Itens da Fila na JAM:**
-    - Em `removeQueueItem`, o participante atualiza otimisticamente sua fila visual e delega a exclusão ao Host via `JamCommandType.REMOVE_QUEUE_ITEM`, evitando chamadas de remoção fora dos limites locais do player.
-    - Em `playQueueItemAt`, convidados agora conseguem selecionar qualquer faixa da fila para tocar para todos na sala (via `JamCommandType.SELECT_QUEUE_INDEX`), removendo a trava que impedia a seleção de índices maiores que 0 no participante.
-  - **Isolamento de Rádio Dinâmica na JAM:** Convidados não disparam mais `radioFetchJob` em background ao receber faixas remotas da sessão, impedindo que rádios do YouTube Music sobrescrevam a fila colaborativa da sala.
-  - **Prevenção de Colisão de Chaves no Compose (`PlayerScreen`):** A fila agora utiliza chaves compostas seguras (`key = { index, track -> "${track.id}_$index" }`), prevenindo crashes caso faixas duplicadas sejam inseridas na fila colaborativa da sala.
+---
+
+## [1.4.2] - 2026-10-28 [RELEASED]
 
 ### Adicionado
-- **Menu de Opções de Faixa Oficial (3 Pontinhos) Estilo YouTube Music (`TrackOptionsBottomSheet`):**
-  - **Novo BottomSheet Nativo:** Implementado painel oficial com capa em alta resolução, título, artista, duração e botão de fechar.
-  - **Cards Rápidos Lado a Lado:** Acesso com 1 toque para *"Tocar a seguir"* e *"Iniciar rádio"*.
-  - **Menu de Ações Completo:** Opções para *"Adicionar à fila"*, *"Salvar na playlist"* (conectado ao modal de playlists com suporte a qualquer faixa), *"Salvar/Remover de Músicas Curtidas"*, *"Fazer/Remover download"*, *"Compartilhar"* (link nativo do YouTube Music), *"Ver artista"* e *"Ver álbum"*.
-  - **Integração Global dos 3 Pontinhos:** Conectados todos os botões de 3 pontinhos que estavam inativos na **Pesquisa** (`SearchScreen`), na **Home** (`HomeScreen`), no **Álbum** (`AlbumScreen`) e no **Artista** (`ArtistScreen`).
+- **Fluxo de Boas-Vindas e Onboarding de Primeiro Acesso (`OnboardingScreen`):**
+  - **Experiência Imersiva Apple-like:** Tela de apresentação elegante com tipografia SF Pro, animações suaves de transição e introdução aos diferenciais do NERF Music.
+  - **Seleção Dinâmica de Artistas:** Tela seletora de artistas favoritos com busca em tempo real e catálogo com fotos em alta definição, permitindo ao usuário escolher seus artistas preferidos para inicializar as recomendações da Home e afinidades (`UserAffinityRepository`).
+  - **Persistência de Conclusão:** Repositório `UserSettingsRepository` atualizado para gerenciar o estado de primeiro acesso e inicializar o feed da Home sob medida sem speed dial prematuro.
+  - **Forçamento de Taxa de 120Hz (LTPO):** Configurado `preferredDisplayModeId` na `MainActivity` para garantir a taxa máxima de 120Hz em telas compatíveis (como Samsung Galaxy S24+).
+  - **Feedback Tátil Físico (`applePressFeedback`):** Modificador de pressão sem ripple Material com mola física na GPU (`AppleSpringSpec`) aplicado aos botões, chips e controles do app.
+- **Menu Oficial de Opções de Faixa (3 Pontinhos) (`TrackOptionsBottomSheet`):**
+  - Painel oficial com capa em alta definição, botões rápidos de *Tocar a seguir* e *Iniciar rádio*, além de *Adicionar à fila*, *Salvar na playlist*, *Curtir*, *Download*, *Ver artista* e *Ver álbum*.
+  - Integrado globalmente na Busca, Home, Álbum e Artista.
+
+### Aprimorado & Corrigido
+- **Redesign e Ergonomia do Painel JAM (`JamSessionSheet`):**
+  - **Estilo Glassmorphism / Apple:** Cartões translúcidos com borda sutil, cantos arredondados de 22.dp, tipografia SF Pro e interruptores no estilo iOS (`JamSettingToggleRow`) com animação fluida.
+  - **Proporção e Rolagem Independente:** A janela agora abre com altura proporcional (85% da tela), permitindo rolagem vertical suave com `scrollState` sem fechar com movimentos leves do dedo.
+  - **Botão Start Jam & Opções Avançadas:** Layout otimizado do botão 'Start Jam' e do seletor 'Avançado / LAN' sem sobreposições.
+  - **Remoção de Poluição Visual:** Retirada a badge redundante 'NO-ACCOUNT', o drag handle superior e simplificado o botão de cópia na caixa de código da sala para um botão circular minimalista.
+  - **Pulsação Suave do Ícone da JAM:** Frequência de respiração do ícone de ondas ajustada para ciclo natural de 2.2 segundos (escala entre `0.96f` e `1.05f`).
+- **Estabilidade da Fila Colaborativa na JAM:**
+  - Corrigido `IndexOutOfBoundsException` ao reordenar faixas como participante na JAM.
+  - Delegação remota para o Host das ações de exclusão e seleção de faixas da fila.
+  - Chaves compostas únicas para os itens da fila no Compose para prevenir colisões de chave.
 
 ---
 

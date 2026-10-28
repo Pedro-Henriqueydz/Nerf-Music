@@ -14,8 +14,8 @@ android {
         applicationId = "com.nerf.music"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.4.1"
+        versionCode = 21
+        versionName = "1.4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -34,7 +34,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName(
+                if (file(System.getenv("RELEASE_KEYSTORE_PATH") ?: "nerf-release.jks").exists()) "release" else "debug"
+            )
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

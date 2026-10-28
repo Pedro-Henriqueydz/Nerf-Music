@@ -1,36 +1,40 @@
-# 🎵 NERF Music v1.4.1 — Correções, Precisão de Karaokê & JAM Global! 🚀
+# 🎵 NERF Music v1.4.2 — Onboarding Elegante, Menu de Opções & JAM Refinada! 🚀
 
-A versão **v1.4.1** aprimora a experiência introduzida na v1.4.0 com correções fundamentais de precisão no casamento de faixas instrumentais, alinhamento automático de introduções musicais via correlação de transientes, refinamento acústico do isolamento vocal DSP anti-abafamento, conectividade Global pela internet para a NERF JAM via WebSocket/MQTT e governança completa da sala pelo Host.
+A versão **v1.4.2** traz uma reformulação visual completa focada em fluidez e elegância: nova experiência de boas-vindas com personalização de artistas no estilo Apple a 120Hz, menu oficial de opções da faixa com os 3 pontinhos em todas as telas, e aprimoramento ergonômico no painel da NERF JAM com Glassmorphism refinado e correções na fila colaborativa.
 
 ---
 
-### 🔥 Destaques Principais da Versão 1.4.1
+### 🔥 Destaques Principais da Versão 1.4.2
 
-#### 1. 🎤 Karaokê de Alta Precisão & DSP Anti-Abafamento
-- **Casamento Estrito de Instrumentais Oficiais (`selectBestInstrumentalCandidate`):**
-  - Eliminação de correspondências errôneas e remixes desconexos (ex.: *"Reason - Altare"* buscando faixas incorretas). Validação estrita de tolerância de duração ($\le 12\text{s}$) e pontuação ponderada de títulos e artistas oficiais.
-- **Alinhamento Automático de Beat e Sincronia de Entrada (`computeBestBeatOffsetMs`):**
-  - Correção de atrasos de introdução em músicas como *"É Com Ela Que Eu Estou - Cristiano Araújo"*. O motor analisa os envelopes de transientes do áudio principal e do instrumental para compensar o atraso inicial no playback em tempo real.
-- **Isolamento Vocal DSP Aprimorado (Filtro Mid-Side Anti-Abafamento):**
-  - Reformulação do processador de áudio local: preservação total de subgraves, bateria e estéreo através de filtragem Mid-Side centrada estritamente na banda formante da voz ($280\text{ Hz} - 3500\text{ Hz}$) com ganho de presença, proporcionando uma transição linear e natural no slider de volume vocal.
+#### 1. ✨ Onboarding Elegante & Personalização de Primeiro Acesso
+- **Experiência Imersiva Apple-like (`OnboardingScreen`):**
+  - Apresentação visual limpa com tipografia SF Pro, animações suaves e introdução dos principais recursos (Sem anúncios, Karaokê DSP, NERF Jam e Alta Fidelidade).
+- **Seleção Dinâmica de Artistas Favoritos:**
+  - Grade interativa de seleção de artistas com busca em tempo real e catálogo visual atualizado, configurando instantaneamente as afinidades e prateleiras personalizadas da Home.
+- **Micro-interações com Física Real (`applePressFeedback`):**
+  - Modificador de toque com amortecimento e desaceleração física Apple, sem efeito ripple cinza genérico do Material Design.
+- **Suporte Nativo a Telas 120Hz (LTPO):**
+  - Configuração do modo de exibição preferencial na inicialização da `MainActivity` para garantir a taxa máxima de 120Hz em telas dinâmicas (ex.: Samsung Galaxy S24+).
 
-#### 2. 🎧 NERF JAM Global & Governança da Sala pelo Host
-- **Conectividade Global via Internet (4G / 5G / Wi-Fi):**
-  - A JAM conecta ouvintes em qualquer lugar do mundo por meio de transporte MQTT sobre WebSockets com TLS (`wss://broker.emqx.io:8084/mqtt` ou relay dedicado), com códigos de sala curtos (ex.: `NERF-4821` ou `4821`) e DeepLinks universais.
-- **Governança Completa da Sala para o Host (`JamRoomSettings`):**
-  - **Permissão de Fila Colaborativa:** Controle se convidados podem adicionar, remover ou reordenar itens na fila.
-  - **Permissão de Controle de Reprodução:** Controle se convidados podem pular faixas, pausar, dar play ou selecionar músicas da fila.
-  - **Looping Sincronizado da Sala:** Modo de repetição unificado (`Desativado`, `Repetir Fila`, `Repetir 1`) sincronizado entre todos os participantes.
-  - **Crossfade Sincronizado do Host (0s a 12s):** O tempo de Crossfade e Automix configurado pelo Host é aplicado automaticamente a todos os convidados durante a sessão, sem sobrescrever suas configurações pessoais locais.
-  - **Karaokê em Grupo & Kick:** Sincronização do modo karaokê na sala e opção de remover participantes indesejados.
-- **Nova Identidade Visual e Acesso Rápido na Home:**
-  - Novo ícone customizado da JAM (`JamPersonWavesIcon`) com silhueta humana e ondas sonoras estilo Spotify.
-  - Botão de acesso rápido à JAM na barra superior da Home (`YtmTopBar`) ao lado das configurações.
+#### 2. 🎵 Menu Oficial de Opções da Faixa (3 Pontinhos)
+- **Painel Completo de Ações (`TrackOptionsBottomSheet`):**
+  - BottomSheet oficial no padrão YouTube Music integrado globalmente na Pesquisa, Home, Álbum e Artista.
+  - Acesso direto com 1 toque a *"Tocar a seguir"*, *"Iniciar rádio"*, *"Adicionar à fila"*, *"Salvar na playlist"*, *"Curtir/Desfavoritar"*, *"Download granular"*, *"Compartilhar"* e navegação para artista e álbum.
+
+#### 3. 🎧 Painel NERF JAM com Design Glassmorphic & Ergonomia
+- **Linguagem Visual Glassmorphism:**
+  - Cartões translúcidos com bordas sutis e cantos arredondados de 22.dp, botões em cápsula e novos interruptores com física contínua estilo iOS.
+- **Ergonomia e Rolagem Aprimorada:**
+  - Janela com altura proporcional de 85%, permitindo rolagem vertical suave sem fechar acidentalmente com gestos leves.
+  - Botão *"Start Jam"* e seletor *"Avançado / LAN"* com espaçamento balanceado.
+  - Remoção de elementos visuais redundantes e suavização da pulsação do ícone de ondas para um ciclo natural de 2.2 segundos.
+- **Estabilidade da Fila Colaborativa na JAM:**
+  - Correção de exceções `IndexOutOfBoundsException` ao reordenar, remover e selecionar faixas como convidado, com delegação segura e em tempo real para o Host.
 
 ---
 
 ### 📦 Informações Técnicas da Compilação
-- **Versão:** `1.4.1` (VersionCode: `20`)
+- **Versão:** `1.4.2` (VersionCode: `21`)
 - **Target SDK:** Android 14 (API 34)
 - **Min SDK:** Android 8.0 (API 26)
 - **Assinatura:** Assinado com a chave oficial de Release (`release.jks`) via pipeline seguro do GitHub Actions.

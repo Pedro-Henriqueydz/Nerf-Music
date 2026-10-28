@@ -3,6 +3,7 @@ package com.nerf.music.ui.screens
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 
 import android.widget.Toast
@@ -133,6 +134,7 @@ fun MainScreen(
     val isUsingRealInstrumental by viewModel.isUsingRealInstrumental.collectAsState()
     val jamSessionState by viewModel.jamSessionState.collectAsState()
     val isJamSheetVisible by viewModel.isJamSheetVisible.collectAsState()
+    val isOnboardingCompleted by viewModel.isOnboardingCompleted.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     val userPlaylists by viewModel.userPlaylists.collectAsState()
@@ -590,6 +592,22 @@ fun MainScreen(
                 onToggleHideOriginalLyrics = { viewModel.toggleHideOriginalLyrics() },
                 onSelectTranslationTargetLanguage = { lang -> viewModel.selectTranslationTargetLanguage(lang) },
                 onOpenJamSheet = { viewModel.openJamSheet() }
+            )
+        }
+
+        // Onboarding Screen de Primeiro Acesso com Apple-like Motion
+        AnimatedVisibility(
+            visible = !isOnboardingCompleted,
+            enter = fadeIn(tween(250)),
+            exit = fadeOut(tween(320))
+        ) {
+            OnboardingScreen(
+                onComplete = { selectedArtists ->
+                    viewModel.completeOnboarding(selectedArtists)
+                },
+                onSearchArtists = { query ->
+                    viewModel.searchArtistsForOnboarding(query)
+                }
             )
         }
     }
