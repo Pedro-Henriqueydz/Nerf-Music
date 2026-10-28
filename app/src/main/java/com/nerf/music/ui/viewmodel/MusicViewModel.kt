@@ -781,29 +781,20 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            🔥 NERF Music v1.4.0 — ATUALIZAÇÃO INSANA! 🚀
+            🔥 NERF Music v1.4.1 — CORREÇÕES E NOVOS RECURSOS! 🚀
             
-            🎤 Modo Karaokê & Troca Instrumental Instantânea:
-            • Troca Instantânea por Instrumental Oficial: ao tocar no microfone na tela de letras, o app busca e alterna na hora para a versão instrumental oficial sem delay, perfeitamente sincronizada no milissegundo exato!
-            • Controle de Voz Flexível: ajuste o volume da voz do cantor ou remova por completo para instrumental puro.
-            • Isolamento Vocal DSP Aprimorado: filtro local inteligente sem deixar o áudio abafado para músicas sem versão instrumental.
-            • Letras Palavra por Palavra: destaque sincronizado dinâmico ativado exclusivamente no modo Karaokê.
+            🎤 Karaokê de Alta Precisão & DSP Anti-Abafamento:
+            • Casamento Estrito de Instrumentais: algoritmo aprimorado que elimina instrumentais errados e rejeita faixas com duração divergente.
+            • Alinhamento Automático de Beat: sincronia perfeita de introdução e tempo em faixas como Cristiano Araújo via correlação cruzada de transientes.
+            • DSP Anti-Abafamento: processamento Mid-Side com banda vocal seletiva preservando subgraves, bateria e estéreo, com controle gradual no slider de voz.
             
-            🌍 Tradução & Pronúncia Apple Music Glass:
-            • Tradução em Tempo Real: letras traduzidas linha a linha com seletor de idiomas (Auto, PT, EN, ES, FR, JA, KO, DE, IT).
-            • Pronúncia Fonética/Romanizada: cante músicas em japonês, coreano ou inglês com guia de pronúncia nativo.
-            • Suporte a Letras de Fallback: tradução e pronúncia funcionam até em letras estáticas do YouTube Music!
-            • Apple Glass Popover: novo painel translúcido moderno com gestos fluidos e opção de ocultar o verso original.
-            
-            🎧 NERF JAM (Escuta Sincronizada em Grupo):
-            • Ouça junto com seus amigos em tempo real estilo Spotify Jam!
-            • 100% No-Account: conecte por QR Code, Link Direto ou IP local via WebSockets em tempo real.
-            • Sincronia perfeita de Play, Pause, Fila e Posição entre todos os dispositivos.
-            
-            ⚡ Performance, Player & Downloads:
-            • Swipe sem Delay: troca instantânea de música e capa no player sem engasgos ou atrasos.
-            • Downloads Granulares: escolha salvar áudio, letras e vídeos Canvas individualmente.
-            • Modo Offline Completo: reconexão automática e atalho rápido para suas músicas salvas.
+            🎧 NERF JAM Global & Governança da Sala:
+            • Conexão Global via Internet: ouça sincronizado em 4G, 5G ou Wi-Fi com amigos em qualquer lugar do mundo via código de sala e DeepLink!
+            • Novo Ícone Visual da JAM: silhueta com ondas acústicas estilo Spotify em todo o app.
+            • Acesso Rápido na Home: botão dedicado ao lado das configurações para entrar ou criar salas sem precisar tocar uma música antes.
+            • Permissões do Host: controle total para o Host definir se convidados podem adicionar à fila ou controlar reprodução.
+            • Looping & Crossfade Sincronizados: tempo de Crossfade (0s-12s) e modo de repetição herdados automaticamente por todos os convidados.
+            • Karaokê em Sala: sincronização de modo karaokê e volume vocal em grupo.
         """.trimIndent()
     }
 

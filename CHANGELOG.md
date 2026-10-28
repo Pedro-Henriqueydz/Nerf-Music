@@ -5,7 +5,36 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ---
 
 ## [Unreleased]
-> **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.0.
+> **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.1.
+
+---
+
+## [1.4.1] - 2026-10-27 [RELEASED]
+
+### Corrigido
+- **Precisão e Casamento Estrito de Faixas Instrumentais / Karaokê (`KaraokeLyricsEngine`):**
+  - **Eliminação de Instrumentais Incorretos:** Implementado novo algoritmo seletivo de correspondência heurística (`selectBestInstrumentalCandidate`). Músicas como *"Reason - Altare"* não vinculam mais versões aleatórias ou remixes irrelevantes.
+  - **Validação Estrita de Tolerância Temporal:** Instrumentais com diferença de duração superior a 12 segundos em relação à música original são terminantemente descartados, priorizando faixas oficiais que contenham palavras-chave como `official instrumental`, `karaoke`, `playback` ou `instrumental`.
+  - **Alinhamento de Beat e Sincronia de Entrada (`computeBestBeatOffsetMs`):** Resolvida a dessincronia de tempo em faixas como *"É Com Ela Que Eu Estou - Cristiano Araújo"*. O motor analisa e correlaciona os envelopes de transientes do áudio principal e do instrumental para calcular e compensar o deslocamento da introdução em tempo real com rampa suave de volume.
+- **Processamento de Isolamento Vocal DSP Anti-Abafamento (`VocalIsolationAudioProcessor`):**
+  - **Preservação de Graves, Bateria e Agudos:** Reformulação completa da filtragem DSP local. O antigo corte que abafava a música foi substituído por um processador estéreo *Mid-Side* com filtro passa-faixa centrado estritamente na região de formantes vocais (`280 Hz – 3500 Hz`) e ganho de presença (`clarityGain`).
+  - **Linearidade do Slider de Voz:** A atenuação da voz agora responde de forma gradual e natural, permitindo desde o instrumental 100% puro até a intensidade vocal original sem perdas de dinâmica nas frequências graves ou estéreo.
+  - **Estabilidade na Inicialização do Player:** Inicialização segura do processador de áudio (`instrumentalEnvelopeProcessor`), prevenindo falhas de inicialização tardia (`UninitializedPropertyAccessException`) no ciclo de vida do `AudioPlayerService`.
+
+### Adicionado
+- **NERF JAM Global via Internet (4G / 5G / Wi-Fi) (`JamGlobalRelayClient`):**
+  - **Conexão Sem Limites de Rede Local:** A JAM agora conecta amigos em qualquer lugar do mundo por meio de transporte MQTT sobre WebSocket seguro (`wss://broker.emqx.io:8084/mqtt` ou relay dedicado), mantendo compatibilidade com conexões LAN diretas.
+  - **Códigos de Sala Amigáveis e DeepLinks Globais:** Geração e parsing automático de códigos curtos (ex.: `NERF-4821` ou apenas `4821`), além de links `nerfmusic://jam/join?...` e QR Code interativo.
+- **Painel de Configurações da Sala e Governança do Host (`JamSessionSheet` e `JamRoomSettings`):**
+  - **Permissão de Fila Colaborativa:** Toggle para o Host decidir se os convidados podem adicionar, remover e reordenar músicas na fila.
+  - **Permissão de Controle de Reprodução:** Toggle para o Host autorizar ou bloquear comandos de pular (`skipNext`/`skipPrevious`), pausar, dar play, avançar na barra de progresso ou trocar de faixa por convidados.
+  - **Looping da Sala Sincronizado:** Modos de repetição (`Desativado`, `Repetir Fila`, `Repetir 1 Música`) controlados pelo Host e propagados instantaneamente para toda a sala.
+  - **Crossfade Sincronizado Herdado do Host (0s a 12s):** Todos os convidados herdam dinamicamente a duração exata de Crossfade, Automix e Gapless definida pelo Host durante a sessão, sem alterar permanentemente suas preferências locais. Ajustável pelo Host via slider em tempo real no painel da JAM.
+  - **Modo Karaokê em Grupo:** Sincronização do modo Karaokê e do nível de atenuação vocal do Host com todos os ouvintes da sala.
+  - **Gerenciamento de Sala:** Opção para o Host remover participantes da sessão (Kick) e botão para convidados forçarem a ressincronização imediata de áudio com a posição da faixa do Host.
+- **Novo Ícone da JAM e Acesso Rápido na Home:**
+  - **Identidade Visual da JAM (`JamPersonWavesIcon`):** Substituição dos ícones genéricos por um ícone customizado com silhueta humana em primeiro plano e ondas sonoras acústicas no estilo Spotify ao fundo, presente no MiniPlayer, tela cheia, letras e painel da JAM.
+  - **Botão Rápido na Home:** Adicionado botão de atalho para a JAM na barra superior da tela inicial (`YtmTopBar`) ao lado da engrenagem de configurações, permitindo criar ou entrar em salas logo ao abrir o aplicativo sem precisar iniciar uma reprodução prévia.
 
 ---
 
