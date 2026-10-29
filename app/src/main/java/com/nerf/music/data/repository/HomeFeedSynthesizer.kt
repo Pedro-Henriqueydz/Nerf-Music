@@ -41,7 +41,7 @@ class HomeFeedSynthesizer(
         val userLiked = libraryRepo?.likedTracksFlow?.value.orEmpty()
         val userPlaylists = libraryRepo?.playlistsFlow?.value.orEmpty()
         val downloadedTracks = libraryRepo?.downloadedTracksFlow?.value.orEmpty()
-        val topArtists = (historyRepo?.getTopArtists(5).orEmpty() + affinityRepo?.getTopAffinitiveArtists(5).orEmpty()).distinct().take(5)
+        val topArtists = (affinityRepo?.getTopAffinitiveArtists(5).orEmpty() + historyRepo?.getTopArtists(5).orEmpty()).distinct().filter { affinityRepo?.isArtistPenalized(it) != true }.take(5)
         val favoriteSeedId = historyRepo?.getFavoriteSeedVideoId()
             ?: userLiked.firstOrNull()?.id
             ?: userRecent.firstOrNull()?.id
@@ -128,7 +128,7 @@ class HomeFeedSynthesizer(
                 val radioResult = catalogClient.getUpNextRadio(favoriteSeedId).getOrNull()
                 radioResult?.tracks?.forEach { rec ->
                     if (supermixItems.size < 16 && supermixSeenIds.add(rec.id)) {
-                        if (affinityRepo?.isTrackPenalized(rec.id) != true) {
+                        if (affinityRepo?.isTrackPenalized(rec.id) != true && affinityRepo?.isArtistPenalized(rec.artist) != true) {
                             supermixItems.add(rec)
                         }
                     }
@@ -206,7 +206,7 @@ class HomeFeedSynthesizer(
                 hourOfDay in 18..23 -> Triple(
                     "Para desacelerar",
                     "VIBE NOTURNA E RELAX",
-                    if (!primaryArtist.isNullOrBlank()) "$primaryArtist chill wave slowed" else "chill relax r&b phonk wave lofi"
+                    if (!primaryArtist.isNullOrBlank()) "$primaryArtist chill wave slowed" else "chill relax instrumental"
                 )
                 else -> Triple(
                     "Madrugada calma",
@@ -284,7 +284,7 @@ class HomeFeedSynthesizer(
             val remixQuery = if (!topArtistForRemix.isNullOrBlank()) {
                 "$topArtistForRemix slowed remix vip cover"
             } else {
-                "phonk slowed reverb remix"
+                "popular remix cover"
             }
 
             val coversSearchResult = catalogClient.search(remixQuery, SearchFilter.SONGS).getOrNull()

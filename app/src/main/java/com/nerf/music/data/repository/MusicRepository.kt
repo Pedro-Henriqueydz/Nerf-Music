@@ -27,6 +27,18 @@ interface MusicRepository {
      */
     suspend fun getHomeFeed(): Result<List<HomeSection>>
 
+    suspend fun getExploreFeed(): Result<List<HomeSection>> = getHomeFeed()
+    suspend fun getNewReleases(): Result<List<com.nerf.music.data.model.Track>> = Result.success(emptyList())
+    suspend fun discoverPersonalizedRecentReleases(
+        preferredArtists: List<String>,
+        seedVideoIds: List<String>,
+        penalizedArtists: Set<String> = emptySet()
+    ): List<com.nerf.music.data.model.Track> = emptyList()
+    suspend fun verifyReleaseDates(candidates: List<com.nerf.music.data.model.Track>, preferredArtists: List<String>): List<com.nerf.music.data.model.Track> = emptyList()
+    suspend fun getChartsFeed(): Result<List<HomeSection>> = Result.success(emptyList())
+    suspend fun getMoodCategories(): Result<List<Pair<String, String>>> = Result.success(emptyList())
+    suspend fun getMoodFeed(browseId: String): Result<List<HomeSection>> = Result.success(emptyList())
+
     /**
      * Obtém os dados completos da Home do YouTube Music (chips de humor + carrosséis),
      * permitindo filtragem opcional via [params] de chip.

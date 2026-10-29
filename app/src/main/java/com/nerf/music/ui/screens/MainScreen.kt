@@ -367,7 +367,18 @@ fun MainScreen(
                             currentRoute = currentRoute,
                             onTabSelected = { screen ->
                                 if (currentRoute != screen.route) {
-                                    navController.navigate(screen.route) {
+                                    if (screen == Screen.Home) {
+                                        val popped = navController.popBackStack(Screen.Home.route, false)
+                                        if (!popped) {
+                                            navController.navigate(Screen.Home.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
+                                        }
+                                    } else navController.navigate(screen.route) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
                                         }
@@ -419,7 +430,9 @@ fun MainScreen(
                 }
                 composable(Screen.Explore.route) {
                     ExploreScreen(
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        onOpenAlbum = { id -> navController.navigate("album/$id") { launchSingleTop = true } }
+                        onOpenArtist = { id -> navController.navigate("artist/$id") { launchSingleTop = true } }
                     )
                 }
                 composable(Screen.Search.route) {
@@ -536,6 +549,7 @@ fun MainScreen(
                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
                 onToggleSave = { _ -> showSaveToPlaylistSheet = true },
                 onToggleDownload = { trackId -> viewModel.toggleDownload(trackId) },
+                onOpenTrackOptions = { trackForOptions = it },
                 downloadProgress = playbackState.currentTrack?.let { downloadProgressMap[it.id] },
                 onSelectQueueChip = { chip -> viewModel.selectQueueFilterChip(chip) },
                 onPlayQueueItem = { index -> viewModel.playQueueItemAt(index) },
@@ -670,12 +684,14 @@ fun MainScreen(
             },
             onOpenArtist = { artistId ->
                 trackForOptions = null
+                viewModel.closeFullPlayer()
                 navController.navigate("artist/$artistId") {
                     launchSingleTop = true
                 }
             },
             onOpenAlbum = { albumId ->
                 trackForOptions = null
+                viewModel.closeFullPlayer()
                 navController.navigate("album/$albumId") {
                     launchSingleTop = true
                 }

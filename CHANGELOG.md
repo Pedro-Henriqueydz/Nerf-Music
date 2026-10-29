@@ -7,6 +7,12 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ## [Unreleased]
 
 ### Aprimorado & Corrigido
+- Afinidade musical: artistas escolhidos no onboarding recebem o mesmo peso inicial, enquanto escutas e prefer?ncias posteriores continuam atualizando o perfil.
+- Home, r?dio e downloads inteligentes usam afinidades positivas e evitam recomendar artistas com rejei??o consistente; perfis sem hist?rico n?o recebem artistas fixos como prefer?ncia padr?o.
+- Explorar seleciona lan?amentos com data completa verificada, compatibilidade com artistas e g?neros do perfil, limite por artista e tratamento de colabora??es penalizadas.
+- G?neros, paradas, menu de op??es do player e retorno ? Home receberam ajustes de navega??o e apresenta??o.
+
+### Aprimorado & Corrigido
 - Player de notificação do sistema agora oferece Favoritar/Desfavoritar e Looping (desligado, fila ou faixa), com os estados sincronizados imediatamente com o player interno.
 - Widgets mantêm a última capa disponível mesmo quando o app é fechado e retomam a reprodução em segundo plano pelo botão de play.
 - Reprodução iniciada pelo widget agora monta uma fila de mix dinâmica, incluindo faixas recomendadas além do histórico recente.

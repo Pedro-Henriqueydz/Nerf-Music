@@ -26,6 +26,13 @@ interface UserAffinityRepository {
     fun getArtistAffinity(artistName: String): Int
     fun isTrackPenalized(trackId: String): Boolean
     fun getTopAffinitiveArtists(limit: Int = 10): List<String>
+    fun getPenalizedArtists(): Set<String>
+    fun isArtistPenalized(artistName: String): Boolean {
+        val blocked = getPenalizedArtists().map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
+        val name = artistName.trim().lowercase(java.util.Locale.ROOT)
+        return name in blocked || com.nerf.music.data.model.ReleaseRecommendations.extractContributors(artistName)
+            .any { it.lowercase(java.util.Locale.ROOT) in blocked }
+    }
     fun recordInitialArtistPreferences(artists: List<String>)
 }
 
@@ -165,11 +172,12 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
 
     override fun recordInitialArtistPreferences(artists: List<String>) {
         if (artists.isEmpty()) return
-        artists.forEachIndexed { index, artistName ->
+        artists.forEach { artistName ->
             val clean = artistName.trim()
             if (clean.isNotBlank()) {
-                val score = (25 - index * 2).coerceAtLeast(15)
-                artistAffinityMap[clean] = score
+                if (artistAffinityMap.keys.none { it.equals(clean, ignoreCase = true) }) {
+                    artistAffinityMap.putIfAbsent(clean, 100)
+                }
             }
         }
         persistData()
@@ -182,5 +190,12 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
             .sortedByDescending { it.value }
             .take(limit)
             .map { it.key }
+    }
+
+    override fun getPenalizedArtists(): Set<String> {
+        return artistAffinityMap.entries
+            .filter { it.value <= -3 }
+            .map { it.key }
+            .toSet()
     }
 }

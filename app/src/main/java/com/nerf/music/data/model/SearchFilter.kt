@@ -5,5 +5,7 @@ package com.nerf.music.data.model
  */
 enum class SearchFilter(val displayName: String, val paramValue: String?) {
     ALL("Geral", null),
-    SONGS("Músicas", "EgWKAQIIAWoSEAUQCRAKEAMQBBAQEBUQERAO")
+    SONGS("Músicas", "EgWKAQIIAWoSEAUQCRAKEAMQBBAQEBUQERAO"),
+    ALBUMS("Álbuns", "EgWKAQIYAWoSEAUQCRAEEAMQChAQEBUQDhAR"),
+    ARTISTS("Artistas", "EgWKAQIgAWoSEAUQCRAEEAMQChAQEBUQDhAR")
 }
