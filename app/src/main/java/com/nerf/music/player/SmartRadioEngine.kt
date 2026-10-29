@@ -57,7 +57,7 @@ object SmartRadioEngine {
 
         // 3. Filtra candidatos brutos da rádio, descartando Skip Penalties e duplicatas
         val validClusterCandidates = rawCandidates.filter { candidate ->
-            !seenTrackIds.contains(candidate.id) && !affinityRepo.isTrackPenalized(candidate.id)
+            !seenTrackIds.contains(candidate.id) && !affinityRepo.isTrackPenalized(candidate.id) && !affinityRepo.isArtistPenalized(candidate.artist)
         }
 
         // 4. Seleciona faixas familiares ESTRITAMENTE do mesmo universo acústico (mesmo artista ou artistas do cluster)
@@ -66,6 +66,7 @@ object SmartRadioEngine {
                 candidate.id.isNotBlank() &&
                 !seenTrackIds.contains(candidate.id) &&
                 !affinityRepo.isTrackPenalized(candidate.id) &&
+                !affinityRepo.isArtistPenalized(candidate.artist) &&
                 (candidate.artist.trim().lowercase() == seedArtist || clusterArtists.contains(candidate.artist.trim().lowercase()))
             }
             .distinctBy { it.id }

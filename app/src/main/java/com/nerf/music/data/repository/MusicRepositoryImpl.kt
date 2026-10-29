@@ -37,6 +37,22 @@ class MusicRepositoryImpl(
         return catalogClient.getHomeFeed()
     }
 
+    override suspend fun getExploreFeed(): Result<List<HomeSection>> = catalogClient.getExploreFeed()
+    override suspend fun getNewReleases() = catalogClient.getNewReleases()
+    override suspend fun discoverPersonalizedRecentReleases(
+        preferredArtists: List<String>,
+        seedVideoIds: List<String>,
+        penalizedArtists: Set<String>
+    ): List<Track> = catalogClient.discoverPersonalizedRecentReleases(
+        preferredArtists = preferredArtists,
+        seedVideoIds = seedVideoIds,
+        penalizedArtists = penalizedArtists
+    )
+    override suspend fun verifyReleaseDates(candidates: List<Track>, preferredArtists: List<String>) = catalogClient.verifyReleaseDates(candidates, preferredArtists)
+    override suspend fun getChartsFeed() = catalogClient.getChartsFeed()
+    override suspend fun getMoodCategories() = catalogClient.getMoodCategories()
+    override suspend fun getMoodFeed(browseId: String) = catalogClient.getMoodFeed(browseId)
+
     override suspend fun getHomeFeedData(params: String?): Result<HomeFeedData> {
         return catalogClient.getHomeFeedData(params)
     }

@@ -283,13 +283,6 @@ class SmartDownloadManager(
         // consulta a API de rádio e recomendações (Up Next) usando as faixas favoritas como sementes
         if (candidates.size < limit) {
             var seeds = (liked + recent).filter { it.id.isNotBlank() }.distinctBy { it.id }
-            if (seeds.isEmpty()) {
-                seeds = listOf(
-                    Track(id = "kJQP7kiw5Fk", title = "Despacito", artist = "Luis Fonsi"),
-                    Track(id = "JGwWNGJdvx8", title = "Shape of You", artist = "Ed Sheeran")
-                )
-            }
-
             Log.i(TAG, "Candidatos locais (${candidates.size}) abaixo da cota ($limit). Expandindo via catálogo com ${seeds.size} sementes...")
 
             for (seed in seeds) {
@@ -297,6 +290,8 @@ class SmartDownloadManager(
                 try {
                     val radioResult = catalogClient.getUpNextRadio(seed.id).getOrNull()
                     val recommendations = radioResult?.tracks.orEmpty()
+                        .filterNot { userAffinityRepository.isArtistPenalized(it.artist) }
+                        .sortedByDescending { userAffinityRepository.getTrackAffinity(it.id) + userAffinityRepository.getArtistAffinity(it.artist) }
                     for (rec in recommendations) {
                         if (candidates.size >= limit) break
                         addTrack(rec)

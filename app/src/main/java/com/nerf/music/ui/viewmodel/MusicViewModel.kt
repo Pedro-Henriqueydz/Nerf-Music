@@ -369,6 +369,124 @@ class MusicViewModel(
 
     private val _homeSections = MutableStateFlow<List<HomeSection>>(emptyList())
     val homeSections: StateFlow<List<HomeSection>> = _homeSections.asStateFlow()
+    private val _exploreSections = MutableStateFlow<List<HomeSection>>(emptyList())
+    val exploreSections: StateFlow<List<HomeSection>> = _exploreSections.asStateFlow()
+    private val _exploreLoading = MutableStateFlow(false)
+    val exploreLoading: StateFlow<Boolean> = _exploreLoading.asStateFlow()
+    private val _moodCategories = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val moodCategories = _moodCategories.asStateFlow()
+    private val _moodError = MutableStateFlow<String?>(null)
+    val moodError = _moodError.asStateFlow()
+    private val _moodSections = MutableStateFlow<List<HomeSection>>(emptyList())
+    val moodSections = _moodSections.asStateFlow()
+    private val _moodLoading = MutableStateFlow(false)
+    val moodLoading = _moodLoading.asStateFlow()
+    private val _chartsSections = MutableStateFlow<List<HomeSection>>(emptyList())
+    val chartsSections = _chartsSections.asStateFlow()
+    fun loadCharts() {
+        if (_chartsSections.value.isNotEmpty()) return
+        viewModelScope.launch { repository.getChartsFeed().onSuccess { _chartsSections.value = it } }
+    }
+
+    fun loadMoodCategories() {
+        if (_moodLoading.value) return
+        viewModelScope.launch {
+            _moodLoading.value = true
+            _moodError.value = null
+            repository.getMoodCategories()
+                .onSuccess { _moodCategories.value = it; if (it.isEmpty()) _moodError.value = "Nenhum gênero foi retornado pelo catálogo." }
+                .onFailure { _moodError.value = "Falha ao carregar gêneros. Toque para tentar novamente." }
+            _moodLoading.value = false
+        }
+    }
+
+    fun loadMoodFeed(id: String) {
+        viewModelScope.launch {
+            _moodSections.value = emptyList()
+            _moodLoading.value = true
+            repository.getMoodFeed(id).onSuccess { _moodSections.value = it }
+            _moodLoading.value = false
+        }
+    }
+
+    fun loadExplore(force: Boolean = false) {
+        if (_exploreLoading.value || (!force && _exploreSections.value.isNotEmpty())) return
+        viewModelScope.launch {
+            _exploreLoading.value = true
+            try {
+                val penalizedArtists = userAffinityRepository?.getPenalizedArtists().orEmpty()
+                val rawArtists = (userAffinityRepository?.getTopAffinitiveArtists(15).orEmpty() +
+                    userHistoryRepository?.getTopArtists(15).orEmpty()).distinct()
+                val artists = com.nerf.music.data.model.ReleaseRecommendations.cleanPreferredArtists(
+                    rawArtists,
+                    penalizedArtists
+                )
+                val likedIds = _likedTracks.value.map { it.id }.toSet()
+                val seedIds = buildList {
+                    userHistoryRepository?.getFavoriteSeedVideoId()?.let { add(it) }
+                    _likedTracks.value.firstOrNull { !it.isAlbumOrPlaylist && it.id.isNotBlank() }?.id?.let { add(it) }
+                    userHistoryRepository?.getRecentlyPlayed()
+                        ?.firstOrNull { !it.isAlbumOrPlaylist && it.id.isNotBlank() && userAffinityRepository?.isTrackPenalized(it.id) != true }
+                        ?.id?.let { add(it) }
+                }.distinct()
+
+                val newReleases = repository.getNewReleases().getOrNull().orEmpty()
+                val personalizedReleases = if (artists.isNotEmpty() || seedIds.isNotEmpty()) {
+                    repository.discoverPersonalizedRecentReleases(
+                        preferredArtists = artists,
+                        seedVideoIds = seedIds,
+                        penalizedArtists = penalizedArtists
+                    )
+                } else {
+                    emptyList()
+                }
+                val radioArtists = seedIds.firstOrNull()?.let { repository.getUpNextRadio(it).getOrNull() }
+                    ?.tracks.orEmpty().map { it.artist }.filter { it.isNotBlank() }
+                val discoveredClusterArtists = personalizedReleases
+                    .filter { it.sourceIdentifier == "INNERTUBE_CLUSTER_RELEASE" }
+                    .flatMap { com.nerf.music.data.model.ReleaseRecommendations.extractContributors(it.artist) }
+                val relatedArtists = com.nerf.music.data.model.ReleaseRecommendations.cleanPreferredArtists(
+                    (radioArtists + discoveredClusterArtists).distinct(),
+                    penalizedArtists
+                )
+
+                repository.getExploreFeed().onSuccess { sections ->
+                    val musicSections = sections.filterNot { section ->
+                        section.title.contains("vídeo", ignoreCase = true) || section.title.contains("video", ignoreCase = true)
+                    }
+                    val tailored = musicSections.map { section ->
+                        if (section.title.contains("lançamento", true) || section.title.contains("álbu", true)) {
+                            val candidates = (personalizedReleases + newReleases + section.items).distinctBy { it.browseId ?: it.id }
+                            val selected = com.nerf.music.data.model.ReleaseRecommendations.rank(
+                                releases = repository.verifyReleaseDates(candidates, artists),
+                                preferredArtists = artists,
+                                relatedArtists = relatedArtists,
+                                penalizedArtists = penalizedArtists
+                            )
+                            Log.d(
+                                "ExploreReleases",
+                                "candidates=${candidates.size}, personalized=${personalizedReleases.size}, preferredArtists=${artists.size}, relatedArtists=${relatedArtists.size}, selected=${selected.size}, items=${selected.take(8).joinToString(" | ") { "${it.title} (${it.artist})" }}"
+                            )
+                            section.copy(
+                                items = selected,
+                                strapline = if (selected.isEmpty()) "Nenhum lançamento recente compatível encontrado agora." else if (artists.isEmpty() && seedIds.isEmpty()) "Lançamentos gerais" else "Lançamentos selecionados pelo que você ouve",
+                                style = HomeSectionStyle.TWO_ROW_CAROUSEL
+                            )
+                        } else section
+                    }
+                    val discoveryTracks = _homeSections.value.flatMap { it.items }
+                        .filter { !it.isAlbumOrPlaylist && it.id.isNotBlank() && it.id !in likedIds && it.sourceIdentifier != "SHORTCUT_LIKED" }
+                        .distinctBy { it.id }
+                        .take(16)
+                    _exploreSections.value = tailored + if (discoveryTracks.isNotEmpty()) listOf(
+                        HomeSection("Descobertas para você", discoveryTracks, style = HomeSectionStyle.QUICK_PICKS_GRID)
+                    ) else emptyList()
+                }
+            } finally {
+                _exploreLoading.value = false
+            }
+        }
+    }
 
     private val _isLoadingHome = MutableStateFlow(false)
     val isLoadingHome: StateFlow<Boolean> = _isLoadingHome.asStateFlow()

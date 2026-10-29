@@ -110,6 +110,29 @@ class OnboardingFlowTest {
     }
 
     @Test
+    fun initialAffinityIsEqualAndDoesNotResetAfterListeningOrReload() {
+        val context = createMockContext()
+        val repo = UserAffinityRepositoryImpl(context)
+        repo.recordInitialArtistPreferences(listOf("A", "B", "C"))
+        assertEquals(listOf(100, 100, 100), listOf("A", "B", "C").map { repo.getArtistAffinity(it) })
+        val track = com.nerf.music.data.model.Track(id = "song", title = "Song", artist = "A")
+        repo.recordTrackEnded(track, 1000, 180000, true)
+        repo.recordInitialArtistPreferences(listOf("A", "B", "C"))
+        assertEquals(99, repo.getArtistAffinity("A"))
+        assertEquals(99, UserAffinityRepositoryImpl(context).getArtistAffinity("A"))
+    }
+
+    @Test
+    fun singleSkipDoesNotBlockArtistButRepeatedSkipsDo() {
+        val repo = UserAffinityRepositoryImpl(createMockContext())
+        val track = com.nerf.music.data.model.Track(id = "song", title = "Song", artist = "A")
+        repo.recordTrackEnded(track, 1000, 180000, true)
+        assertFalse(repo.getPenalizedArtists().contains("A"))
+        repeat(2) { repo.recordTrackEnded(track, 1000, 180000, true) }
+        assertTrue(repo.getPenalizedArtists().contains("A"))
+    }
+
+    @Test
     fun testInitialArtistsSeedingInUserHistory() {
         val context = createMockContext()
         val historyRepo = UserHistoryRepositoryImpl(context)

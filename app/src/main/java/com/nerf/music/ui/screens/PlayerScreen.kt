@@ -394,6 +394,7 @@ fun FullPlayerSheet(
     onToggleFavorite: (String) -> Unit,
     onToggleSave: (String) -> Unit,
     onToggleDownload: (String) -> Unit,
+    onOpenTrackOptions: (Track) -> Unit,
     downloadProgress: Float? = null,
     onSelectQueueChip: (QueueFilterChip) -> Unit,
     onPlayQueueItem: (Int) -> Unit,
@@ -1088,7 +1089,7 @@ fun FullPlayerSheet(
                             onSeekTo = onSeekTo,
                             onToggleFavorite = onToggleFavorite,
                             onCloseLyrics = { isFullscreenLyricsActive = false },
-                            onOpenRelated = { showRelatedSheet = true },
+                            onOpenRelated = { onOpenTrackOptions(track) },
                             onOpenQueue = { queueState = QueueExpansionState.HALF_EXPANDED },
                             onToggleKaraokeVocalIsolation = onToggleKaraokeVocalIsolation,
                             onSetKaraokeVocalLevel = onSetKaraokeVocalLevel,
@@ -1370,7 +1371,7 @@ fun FullPlayerSheet(
                                         .clip(CircleShape)
                                         .background(Color.White.copy(alpha = 0.08f))
                                         .border(0.75.dp, Color.White.copy(alpha = 0.14f), CircleShape)
-                                        .applePressFeedback(onClick = { showRelatedSheet = true }),
+                                        .applePressFeedback(onClick = { onOpenTrackOptions(track) }),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(

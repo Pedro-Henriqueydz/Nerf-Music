@@ -543,6 +543,261 @@ class InnerTubeCatalogClient(
     suspend fun getHomeFeed(): Result<List<HomeSection>> =
         getHomeFeedData(params = null).map { it.sections }
 
+    suspend fun getExploreFeed(): Result<List<HomeSection>> = withContext(Dispatchers.IO) {
+        executeBrowseRequest("FEmusic_explore", null).map { parseHomeFeedResponse(it) }
+    }
+
+    suspend fun getNewReleases(): Result<List<Track>> = withContext(Dispatchers.IO) {
+        val bodies = coroutineScope {
+            listOf("BR", "US", "GB", "JP").map { region ->
+                async { executeBrowseRequest("FEmusic_new_releases_albums", null, region) }
+            }.map { it.await() }
+        }
+        val available = bodies.mapNotNull { it.getOrNull() }
+        if (available.isEmpty()) return@withContext Result.failure(bodies.first().exceptionOrNull() ?: IOException("Lançamentos indisponíveis"))
+        Result.success(available.flatMap { body ->
+            val releases = mutableListOf<Track>()
+            fun visit(value: Any?) {
+                when (value) {
+                    is JSONObject -> {
+                        value.optJSONObject("musicTwoRowItemRenderer")?.let { item ->
+                            parseTwoRowItem(item)?.takeIf { it.isAlbumOrPlaylist }?.let { releases.add(it) }
+                        }
+                        val keys = value.keys()
+                        while (keys.hasNext()) visit(value.opt(keys.next()))
+                    }
+                    is JSONArray -> for (i in 0 until value.length()) visit(value.opt(i))
+                }
+            }
+            visit(JSONObject(body))
+            releases
+        }.distinctBy { it.browseId ?: it.id })
+    }
+
+    /**
+     * Descobre álbuns, EPs e singles RECENTES para qualquer perfil de gosto do usuário:
+     * 1. Analisa os artistas favoritos + artistas descobertos pela rádio (`seedVideoIds`).
+     * 2. Resolve os perfis oficiais dos artistas favoritos e expande para `fansMightAlsoLike`
+     *    (artistas novos do mesmo cluster acústico/estilo, de qualquer gênero).
+     * 3. Coleta os `albums` e `singles` desses artistas marcando `INNERTUBE_ARTIST_RELEASE` e `durationText`
+     *    com o ano real do lançamento, permitindo que `ReleaseRecommendations` filtre estritamente por ano recente.
+     */
+    suspend fun discoverPersonalizedRecentReleases(
+        preferredArtists: List<String>,
+        seedVideoIds: List<String>,
+        penalizedArtists: Set<String> = emptySet()
+    ): List<Track> = withContext(Dispatchers.IO) {
+        val cleanPreferred = com.nerf.music.data.model.ReleaseRecommendations.cleanPreferredArtists(
+            preferredArtists,
+            penalizedArtists
+        )
+        val penalizedLower = penalizedArtists.map { it.trim().lowercase(Locale.ROOT) }.toSet()
+
+        coroutineScope {
+            // 1. Coleta faixas e canais de artistas da rádio das sementes favoritas (até 2 sementes em paralelo)
+            val radioResults = seedVideoIds.filter { it.isNotBlank() }.distinct().take(2).map { seed ->
+                async { getUpNextRadio(seed).getOrNull() }
+            }.mapNotNull { it.await() }
+
+            val radioTracks = radioResults.flatMap { it.tracks }
+            val radioArtistChannels = LinkedHashMap<String, String>() // artistName -> UC... browseId
+            for (t in radioTracks) {
+                val cleanName = t.artist.trim()
+                val bId = t.artistBrowseId
+                if (cleanName.isNotBlank() && !bId.isNullOrBlank() && bId.startsWith("UC")) {
+                    if (cleanName.lowercase(Locale.ROOT) !in penalizedLower && !radioArtistChannels.containsKey(cleanName)) {
+                        radioArtistChannels[cleanName] = bId
+                    }
+                }
+            }
+
+            // 2. Carrega perfis dos principais artistas preferidos (até 5) para obter lançamentos + artistas similares ("Os fãs também podem gostar")
+            val preferredDetails = cleanPreferred.take(5).map { artistName ->
+                async {
+                    val knownChannelId = radioArtistChannels.entries
+                        .firstOrNull { it.key.equals(artistName, ignoreCase = true) }?.value
+                    getArtist(knownChannelId ?: artistName).getOrNull()
+                }
+            }.mapNotNull { it.await() }
+
+            // 3. Descobre artistas novos do mesmo estilo/cluster via `fansMightAlsoLike` + canais da rádio
+            val similarChannelIds = LinkedHashSet<String>()
+            val primaryChannelIds = preferredDetails.map { it.browseId }.toSet()
+
+            for (detail in preferredDetails) {
+                for (fanArtist in detail.fansMightAlsoLike.take(3)) {
+                    val fId = fanArtist.id
+                    val fName = fanArtist.name.trim().lowercase(Locale.ROOT)
+                    if (fId.startsWith("UC") && fId !in primaryChannelIds && fName !in penalizedLower) {
+                        similarChannelIds.add(fId)
+                    }
+                }
+            }
+            for ((name, chId) in radioArtistChannels) {
+                if (chId !in primaryChannelIds && name.lowercase(Locale.ROOT) !in penalizedLower) {
+                    similarChannelIds.add(chId)
+                }
+            }
+
+            // 4. Carrega perfis de até 6 artistas similares/novos do cluster em paralelo
+            val similarDetails = similarChannelIds.take(6).map { channelId ->
+                async { getArtist(channelId).getOrNull() }
+            }.mapNotNull { it.await() }
+
+            val allArtistDetails = preferredDetails + similarDetails
+            val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+
+            // 5. Extrai apenas álbuns/singles/EPs com ano recente verificável
+            val discoveredReleases = mutableListOf<Track>()
+            for (detail in allArtistDetails) {
+                val isPreferredArtist = preferredDetails.any { it.browseId == detail.browseId }
+                val artistTag = if (isPreferredArtist) "INNERTUBE_ARTIST_RELEASE" else "INNERTUBE_CLUSTER_RELEASE"
+                val rawRecords = detail.singles + detail.albums
+                for (record in rawRecords) {
+                    val year = com.nerf.music.data.model.ReleaseRecommendations.extractReleaseYear(record)
+                    if (year != null && year >= currentYear - 1) {
+                        val typeLabel = when {
+                            record.durationText.contains("EP", ignoreCase = true) -> "EP"
+                            record.durationText.contains("Álbum", ignoreCase = true) ||
+                                record.durationText.contains("Album", ignoreCase = true) -> "Álbum"
+                            else -> "Single"
+                        }
+                        val contributors = com.nerf.music.data.model.ReleaseRecommendations.extractContributors(record.artist)
+                        val creditedArtists = contributors.takeIf { it.isNotEmpty() }?.joinToString(" & ") ?: detail.name
+                        val formattedSubtitle = "$typeLabel • $creditedArtists • $year"
+                        discoveredReleases.add(
+                            record.copy(
+                                artist = formattedSubtitle,
+                                durationText = formattedSubtitle,
+                                sourceIdentifier = artistTag,
+                                artistBrowseId = detail.browseId
+                            )
+                        )
+                    }
+                }
+            }
+
+            discoveredReleases.distinctBy { it.browseId ?: it.id }
+        }
+    }
+
+    /** Match title and artist with catalog metadata; styles are inferred only from preferred artists. */
+    suspend fun verifyReleaseDates(candidates: List<Track>, preferredArtists: List<String>): List<Track> = withContext(Dispatchers.IO) {
+        fun normalized(value: String): String = value.trim().lowercase(Locale.ROOT)
+            .replace(Regex("\\s*[-\u2013]\\s*(single|ep)$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+"), " ")
+        val grouped = candidates.filter { (it.browseId ?: it.id).startsWith("MPREb_") }
+            .groupBy { com.nerf.music.data.model.ReleaseRecommendations.extractContributors(it.artist).firstOrNull().orEmpty() }
+            .filterKeys { it.isNotBlank() }
+        val names = (preferredArtists.take(10) + grouped.keys).distinctBy { normalized(it) }.take(30)
+        val records = mutableMapOf<String, List<JSONObject>>()
+        for (batch in names.chunked(5)) {
+            coroutineScope {
+                batch.map { artist -> async {
+                    try {
+                        val url = okhttp3.HttpUrl.Builder().scheme("https").host("itunes.apple.com")
+                            .addPathSegment("search").addQueryParameter("term", artist)
+                            .addQueryParameter("entity", "album").addQueryParameter("limit", "200").build()
+                        val body = httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                            if (!response.isSuccessful) null else response.body?.string()
+                        } ?: return@async artist to emptyList<JSONObject>()
+                        val array = JSONObject(body).optJSONArray("results") ?: return@async artist to emptyList<JSONObject>()
+                        artist to (0 until array.length()).mapNotNull { array.optJSONObject(it) }
+                            .filter { normalized(it.optString("artistName")) == normalized(artist) }
+                    } catch (e: IOException) { artist to emptyList<JSONObject>() }
+                    catch (e: org.json.JSONException) { artist to emptyList<JSONObject>() }
+                } }.map { it.await() }
+            }.forEach { (name, items) -> records[normalized(name)] = items }
+        }
+        val profileGenres = preferredArtists.flatMap { artist ->
+            records[normalized(artist)].orEmpty().mapNotNull { it.optString("primaryGenreName").takeIf(String::isNotBlank) }
+                .groupingBy { it.lowercase(Locale.ROOT) }.eachCount().maxByOrNull { it.value }?.let { listOf(it.key) }.orEmpty()
+        }.toSet()
+        candidates.mapNotNull { track ->
+            val artist = com.nerf.music.data.model.ReleaseRecommendations.extractContributors(track.artist).firstOrNull() ?: return@mapNotNull null
+            val record = records[normalized(artist)].orEmpty().firstOrNull { normalized(it.optString("collectionName")) == normalized(track.title) } ?: return@mapNotNull null
+            val date = record.optString("releaseDate").take(10)
+            val genre = record.optString("primaryGenreName").takeIf { it.isNotBlank() }
+            val isPreferred = preferredArtists.any { normalized(it) == normalized(artist) }
+            if (date.isBlank() || (preferredArtists.isNotEmpty() && !isPreferred && !com.nerf.music.data.model.ReleaseRecommendations.matchesProfileGenre(genre, profileGenres))) null
+            else track.copy(verifiedReleaseDate = date, releaseGenre = genre,
+                sourceIdentifier = if (!isPreferred && preferredArtists.isNotEmpty()) "ITUNES_GENRE_MATCH" else track.sourceIdentifier)
+        }
+    }
+
+    suspend fun getChartsFeed(): Result<List<HomeSection>> = withContext(Dispatchers.IO) {
+        executeBrowseRequest("FEmusic_charts", null).map { body ->
+            val sections = parseHomeFeedResponse(body).toMutableList()
+            val contents = extractSectionListContents(JSONObject(body).optJSONObject("contents"))
+            val videoCharts = sections.firstOrNull {
+                it.title.contains("Paradas", ignoreCase = true) || it.title.contains("Charts", ignoreCase = true)
+            }
+            val topArtists = mutableListOf<Track>()
+            for (sIdx in 0 until contents.length()) {
+                val carousel = contents.optJSONObject(sIdx)?.optJSONObject("musicCarouselShelfRenderer") ?: continue
+                val cTitle = carousel.optJSONObject("header")
+                    ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                    ?.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text").orEmpty()
+                val artistItems = carousel.optJSONArray("contents") ?: continue
+                val looksLikeArtistShelf = cTitle.contains("artista", ignoreCase = true) ||
+                    cTitle.contains("artist", ignoreCase = true) ||
+                    (0 until artistItems.length()).any { idx ->
+                        artistItems.optJSONObject(idx)?.optJSONObject("musicResponsiveListItemRenderer")
+                            ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                            ?.optString("browseId")?.startsWith("UC") == true
+                    }
+                if (!looksLikeArtistShelf) continue
+                for (i in 0 until artistItems.length()) {
+                    val renderer = artistItems.optJSONObject(i)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                    val name = renderer.optJSONArray("flexColumns")?.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")?.optJSONObject("text")
+                        ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text").orEmpty()
+                    val id = renderer.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
+                    val thumb = getBestThumbnailUrl(
+                        renderer.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
+                            ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                    )
+                    if (name.isNotBlank() && id.isNotBlank() && topArtists.none { it.id == id }) {
+                        topArtists.add(Track(id = id, title = name, artist = name, thumbnailUrl = thumb, artistBrowseId = id))
+                    }
+                }
+            }
+            buildList {
+                if (videoCharts != null && videoCharts.items.isNotEmpty()) {
+                    add(HomeSection("Paradas em destaque", videoCharts.items))
+                }
+                if (topArtists.isNotEmpty()) add(HomeSection("Top artistas", topArtists))
+            }
+        }
+    }
+
+    suspend fun getMoodFeed(params: String): Result<List<HomeSection>> = withContext(Dispatchers.IO) {
+        executeBrowseRequest("FEmusic_moods_and_genres_category", params).map { parseHomeFeedResponse(it) }
+    }
+
+    suspend fun getMoodCategories(): Result<List<Pair<String, String>>> = withContext(Dispatchers.IO) {
+        executeBrowseRequest("FEmusic_moods_and_genres", null).map { body ->
+            val found = mutableListOf<Pair<String, String>>()
+            fun visit(value: Any?) {
+                when (value) {
+                    is JSONObject -> {
+                        val button = value.optJSONObject("musicNavigationButtonRenderer")
+                        if (button != null) {
+                            val title = button.optJSONObject("buttonText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text").orEmpty()
+                            val params = button.optJSONObject("clickCommand")?.optJSONObject("browseEndpoint")?.optString("params").orEmpty()
+                            if (title.isNotBlank() && params.isNotBlank()) found.add(title to params)
+                        }
+                        val keys = value.keys()
+                        while (keys.hasNext()) visit(value.opt(keys.next()))
+                    }
+                    is JSONArray -> for (i in 0 until value.length()) visit(value.opt(i))
+                }
+            }
+            visit(JSONObject(body))
+            found.distinctBy { it.second }
+        }
+    }
+
     /**
      * Obtém os dados completos da Home (Chips de Humor/Atividade + Seções de Carrosséis e Quick Picks),
      * mesclando `FEmusic_home` e `FEmusic_explore` quando nenhum filtro de chip está selecionado.
@@ -589,9 +844,10 @@ class InnerTubeCatalogClient(
         }
     }
 
-    private fun executeBrowseRequest(browseId: String, params: String? = null): Result<String> {
+    private fun executeBrowseRequest(browseId: String, params: String? = null, region: String? = null): Result<String> {
         return try {
             val payload = buildBrowsePayload(browseId, params)
+            if (region != null) payload.getJSONObject("context").getJSONObject("client").put("gl", region)
             val request = Request.Builder()
                 .url(BROWSE_URL)
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
@@ -2107,7 +2363,9 @@ class InnerTubeCatalogClient(
                 ?.takeIf { it.startsWith("RD") || it.startsWith("PL") || it.startsWith("OL") }
                 .orEmpty()
 
-        if (videoId.isEmpty() && playlistId.isEmpty()) return null
+        val itemBrowseId = itemNav?.optJSONObject("browseEndpoint")?.optString("browseId")
+            ?.takeIf { it.isNotBlank() }
+        if (videoId.isEmpty() && playlistId.isEmpty() && itemBrowseId == null) return null
 
         val subtitleRuns = item.optJSONObject("subtitle")?.optJSONArray("runs")
         val subtitleBuilder = StringBuilder()
@@ -2136,8 +2394,7 @@ class InnerTubeCatalogClient(
             ?.optJSONArray("thumbnails")
         val thumbnailUrl = getBestThumbnailUrl(thumbnails)
 
-        val browseId = itemNav?.optJSONObject("browseEndpoint")?.optString("browseId")
-            ?.takeIf { it.isNotEmpty() }
+        val browseId = itemBrowseId
             ?: overlayPlayNav?.optJSONObject("browseEndpoint")?.optString("browseId")
 
         val resolvedId = videoId.ifEmpty { browseId ?: "playlist_$playlistId" }
