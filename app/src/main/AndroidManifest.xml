@@ -89,6 +89,9 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".ui.SharePreviewActivity" android:exported="false"
+            android:theme="@style/Theme.NERFMusic" />
+
         <!-- Widgets de Tela Inicial (Compacto e Expandido) -->
         <receiver
             android:name=".widget.CompactPlayerWidgetProvider"
@@ -108,7 +111,7 @@
         <receiver
             android:name=".widget.ExpandedPlayerWidgetProvider"
             android:exported="true"
-            android:label="NERF Player Expandido">
+            android:label="NERF Player 4×1">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.nerf.music.widget.ACTION_PLAY_PAUSE" />
@@ -118,6 +121,20 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_expanded_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ThreeByOneWidgetProvider"
+            android:exported="true"
+            android:label="NERF Player 3×1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.nerf.music.widget.ACTION_PLAY_PAUSE" />
+                <action android:name="com.nerf.music.widget.ACTION_SKIP_NEXT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_three_info" />
         </receiver>
 
         <!-- Serviço de Reprodução Media3 com suporte a segundo plano -->

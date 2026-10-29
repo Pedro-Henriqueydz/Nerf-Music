@@ -76,5 +76,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Reconecta e sincroniza a UI com o estado real do serviço de áudio ao voltar para o app
         viewModel.syncWithPlayer()
+        // A tela inicial do launcher pode ter voltado ao initialLayout após uma atualização do APK.
+        com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
     }
 }

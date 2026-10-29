@@ -5,41 +5,26 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ---
 
 ## [Unreleased]
-> **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.2.
-
-### Adicionado
-- **Cards de Compartilhamento Social e Trechos de Letras (`SocialShareHelper`):**
-  - **Compartilhamento de Música em Formato Story (9:16):** Geração nativa de cards em alta resolução (`1080x1920`) combinando capa do álbum com cantos arredondados, título, artista e selo oficial do NERF Music.
-  - **Compartilhamento de Letras estilo Spotify:** Seleção interativa de até 4 linhas diretamente na tela de Letras/Karaokê, renderizando o trecho escolhido entre aspas (`"..."`) com tipografia dinâmica escalável conforme a quantidade de versos.
-  - **Matching de Cores Inteligente (`Palette API`):** Extração da cor dominante real da capa para o gradiente de fundo em múltiplos níveis de luminância e cor de acento translúcida (*frosted glass*) dedicada para o card flutuante.
-  - **Enquadramento Otimizado para Previews:** Posicionamento calculado na zona central para que a capa, letra, selo *"NERF MUSIC"* e a chamada *"Toque para ouvir a música"* fiquem 100% visíveis tanto na miniatura quadrada de conversas do WhatsApp quanto em tela cheia nos Stories.
-  - **Deep Links Inteligentes:** Anexação automática do link da faixa (`https://music.youtube.com/watch?v={id}` e `nerfmusic://track/{id}`) com interceptação direta na `MainActivity` para abrir o aplicativo já reproduzindo a música compartilhada e iniciando o rádio dinâmico.
-- **Widgets Nativos de Tela Inicial (`CompactPlayerWidgetProvider` & `ExpandedPlayerWidgetProvider`):**
-  - **Widget Compacto (4x1):** Mini player com capa arredondada da faixa atual, título, artista, controles rápidos (*Anterior*, *Play/Pause*, *Próxima*) e fundo adaptativo sincronizado com as cores da capa.
-  - **Widget Expandido (4x2):** Player completo com capa em destaque (`64dp`), barra de progresso espaçada e carrossel inferior de ponta a ponta com **5 capas quadradas** das músicas ouvidas recentemente/recomendadas (`UserHistoryRepository`). Ao tocar em qualquer capa recomendada, o app inicia imediatamente um Mix da faixa escolhida.
-  - **Compatibilidade OneUI / Android RemoteViews:** Previews vetoriais dedicados no seletor de widgets do sistema e renderização de cantos arredondados em densidade real do dispositivo.
-- **Normalização de Volume DSP em Tempo Real (Loudness Normalization - ITU-R BS.1770-4 / EBU R128):**
-  - **Processamento Streaming On-The-Fly:** Desenvolvido o `LoudnessNormalizationAudioProcessor` conectado diretamente na pipeline `AudioSink` do ExoPlayer. Processamento contínuo bloco a bloco de PCM 16-bit com zero descompressão prévia de arquivos inteiros na memória RAM.
-  - **Filtros K-Weighting Padrão Internacional:** Implementada filtragem de dois estágios IIR em Direct Form II Transposed (Pre-filter High-Shelving em 1.68 kHz + High-Pass RLB em 38 Hz) para cálculo perceptual preciso de energia RMS.
-  - **Suporte aos Padrões de Mercado:**
-    - `Spotify / Streaming (-14 LUFS)`: Equilíbrio padrão recomendado da indústria.
-    - `Apple Music / Podcasts (-16 LUFS)`: Alta fidelidade e dinâmica sonora preservada.
-    - `Padrão CD / Master Dinâmico (-11 LUFS)`: Intensidade sonora e impacto de estúdio clássico.
-    - `CD Moderno / Alta Potência (-9 LUFS)`: Máxima pressão sonora para fones e ambientes externos.
-    - `EBU R128 / Broadcast (-23 LUFS)`: Padrão broadcast europeu de grande alcance dinâmico.
-    - `Desativado`: Bypass nativo direto via memcpy bit-perfect sem custo de CPU.
-  - **Rampa Balística Amostra por Amostra:** Convergência suave e contínua do ganho sem cortes, sem ruídos de chaveamento (*zipper noise*) e sem efeito de bombeamento (*pumping*), com latência inicial zero no primeiro frame de reprodução.
-  - **Limitador True-Peak Soft-Knee (-0.5 dBFS):** Proteção dinâmica transparente contra saturação e *clipping* digital harmônico ao amplificar faixas gravadas em volumes baixos.
-  - **Interface com Bottom Sheet e Busca Global:** Adicionado seletor visual na tela de Configurações (aba Reprodução) e indexação no campo de busca rápida de configurações.
-
-### Otimizado & Corrigido
-- **Otimização Térmica e de CPU no Samsung Galaxy S24+ (e dispositivos topo de linha):**
-  - **Bypass no Isolamento Vocal (`VocalIsolationAudioProcessor`):** Eliminado o processamento redundante de 48.000 amostras/segundo de filtros Biquad e locks `synchronized` de envelope quando o modo Karaokê e a faixa instrumental estão inativos.
-  - **Redução de Desperdício na Thread de Interface:** Balanceado o intervalo do rastreador de progresso da faixa para 90ms no `MusicViewModel`, reduzindo em 50% as notificações desnecessárias no Compose sem afetar a sincronia das letras.
-  - **Eficiência e Fluidez:** Consumo de CPU mantido abaixo de 2% durante a reprodução com normalização em tempo real, preservando a taxa de 120Hz com a temperatura do processador (AP) e bateria do S24+ em torno de 34°C - 38°C.
 
 ---
 
+## [1.4.3] - 2026-10-29 [RELEASED]
+
+### Adicionado
+- **Prévia de compartilhamento social:** três estilos de card, prévia antes do envio, compartilhamento pelo WhatsApp, Stories do Instagram e salvamento da imagem na galeria.
+- **Trechos de letras:** seleção contínua de até quatro linhas para criar cards de citações.
+- **Widgets de música:** novos formatos 2x1 e 3x1 e player expandido 4x3 com recomendações, controles de reprodução, curtir e repetir.
+- **Normalização de volume em tempo real:** perfis de loudness configuráveis com processamento DSP durante a reprodução.
+- **Cobertura de qualidade:** testes para regras de seleção de letras, cores de capa, cards e cache de capas dos widgets.
+
+### Aprimorado & Corrigido
+- Widgets atualizam progresso e faixa durante a reprodução, adaptam o fundo à cor da capa e mantêm capas recomendadas disponíveis em cache.
+- Atualizações parciais dos controles evitam o piscar do widget ao pausar, retomar ou avançar a faixa.
+- Ajustes de espaçamento, tipografia e dimensões nos widgets 2x1, 3x1 e 4x3.
+- Otimização térmica e redução de trabalho de CPU no isolamento vocal e no rastreamento de progresso do player.
+- Remoção dos caches locais do Graphify do versionamento.
+
+---
 ## [1.4.2] - 2026-10-28 [RELEASED]
 
 ### Adicionado

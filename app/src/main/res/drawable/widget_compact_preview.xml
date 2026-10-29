@@ -1,55 +1,12 @@
-<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="200dp"
+    android:width="130dp"
     android:height="70dp"
-    android:viewportWidth="200"
+    android:viewportWidth="130"
     android:viewportHeight="70">
-
-    <!-- Fundo do Widget -->
-    <path
-        android:fillColor="#E61E1E24"
-        android:pathData="M20,0 h160 a20,20 0 0 1 20,20 v30 a20,20 0 0 1 -20,20 h-160 a20,20 0 0 1 -20,-20 v-30 a20,20 0 0 1 20,-20 z" />
-
-    <!-- Capa Miniatura com cantos arredondados -->
-    <path
-        android:fillColor="#FF381E17"
-        android:pathData="M22,12 h36 a10,10 0 0 1 10,10 v26 a10,10 0 0 1 -10,10 h-36 a10,10 0 0 1 -10,-10 v-26 a10,10 0 0 1 10,-10 z" />
-
-    <!-- Ícone de Nota Musical na Capa -->
-    <path
-        android:fillColor="#FFFF6600"
-        android:pathData="M40,24 v14 a4,4 0 1 1 -3,-3.8 v-7.2 h10 v7 a4,4 0 1 1 -3,-3.8 v-6.2 z" />
-
-    <!-- Barras de Texto (Título e Artista) -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M76,24 h50 a3,3 0 0 1 0,6 h-50 a3,3 0 0 1 0,-6 z" />
-    <path
-        android:fillColor="#80FFFFFF"
-        android:pathData="M76,38 h32 a3,3 0 0 1 0,6 h-32 a3,3 0 0 1 0,-6 z" />
-
-    <!-- Botões de Playback Circulares -->
-    <!-- Prev -->
-    <path
-        android:fillColor="#26FFFFFF"
-        android:pathData="M142,35 m-10,0 a10,10 0 1 1 20,0 a10,10 0 1 1 -20,0" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M139,32 h2 v6 h-2 z M142,35 l5,-3 v6 z" />
-
-    <!-- Play -->
-    <path
-        android:fillColor="#33FFFFFF"
-        android:pathData="M166,35 m-12,0 a12,12 0 1 1 24,0 a12,12 0 1 1 -24,0" />
-    <path
-        android:fillColor="#FFFF6600"
-        android:pathData="M163,30 l8,5 -8,5 z" />
-
-    <!-- Next -->
-    <path
-        android:fillColor="#26FFFFFF"
-        android:pathData="M190,35 m-10,0 a10,10 0 1 1 20,0 a10,10 0 1 1 -20,0" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M191,32 h2 v6 h-2 z M186,32 l5,3 -5,3 z" />
+    <path android:fillColor="#E61A1A1E" android:pathData="M20,0h90a20,20 0,0 1,20 20v30a20,20 0,0 1,-20 20H20A20,20 0,0 1,0 50V20A20,20 0,0 1,20 0z"/>
+    <path android:fillColor="#FF3A2820" android:pathData="M16,12h32a9,9 0,0 1,9 9v28a9,9 0,0 1,-9 9H16a9,9 0,0 1,-9 -9V21a9,9 0,0 1,9 -9z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,25h22a3,3 0,0 1,0 6H66a3,3 0,0 1,0 -6z"/>
+    <path android:fillColor="#80FFFFFF" android:pathData="M66,39h16a3,3 0,0 1,0 6H66a3,3 0,0 1,0 -6z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M108,35m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0"/>
+    <path android:fillColor="#FF17191F" android:pathData="M105,29l9,6l-9,6z"/>
 </vector>

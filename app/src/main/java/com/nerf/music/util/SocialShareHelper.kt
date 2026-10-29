@@ -16,15 +16,13 @@ import android.net.Uri
 import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.content.FileProvider
-import androidx.palette.graphics.Palette
-import coil.ImageLoader
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.nerf.music.data.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Utilitário responsável pela renderização em Bitmap e compartilhamento
@@ -36,6 +34,77 @@ import java.io.FileOutputStream
  * - No Card de Letras: aspas ("") no texto selecionado, miniatura e metadados.
  */
 object SocialShareHelper {
+
+    enum class Style(val label: String) { GLASS("Vidro"), MINIMAL("Minimalista"), FULL_COVER("Capa inteira") }
+
+    fun openPreview(context: Context, track: Track, lines: List<String> = emptyList()) {
+        context.startActivity(Intent(context, com.nerf.music.ui.SharePreviewActivity::class.java).apply {
+            putExtra("track", kotlinx.serialization.json.Json.encodeToString(Track.serializer(), track))
+            putStringArrayListExtra("lines", ArrayList(ShareRules.cleanLines(lines)))
+            if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    }
+
+    suspend fun renderCard(context: Context, track: Track, lines: List<String>, style: Style): Bitmap {
+        val clean = ShareRules.cleanLines(lines)
+        if (style == Style.GLASS) return if (clean.isEmpty()) renderMusicShareCard(context, track)
+            else renderLyricsShareCard(context, track, clean)
+        return withContext(Dispatchers.IO) {
+            val artwork = loadArtworkBitmap(context, track)
+            val colors = ArtworkColors.extract(artwork)
+            val bitmap = Bitmap.createBitmap(CARD_WIDTH, CARD_HEIGHT, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(if (style == Style.MINIMAL) Color.rgb(18, 18, 20) else colors.top)
+            if (artwork != null) {
+                if (style == Style.FULL_COVER) {
+                    val scale = maxOf(CARD_WIDTH.toFloat() / artwork.width, CARD_HEIGHT.toFloat() / artwork.height)
+                    val width = artwork.width * scale
+                    val height = artwork.height * scale
+                    canvas.drawBitmap(artwork, null, RectF((CARD_WIDTH - width) / 2, (CARD_HEIGHT - height) / 2,
+                        (CARD_WIDTH + width) / 2, (CARD_HEIGHT + height) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
+                    canvas.drawRect(0f, 0f, 1080f, 1920f, Paint().apply {
+                        shader = android.graphics.LinearGradient(0f, 0f, 0f, 1920f,
+                            intArrayOf(0x55000000, 0x99000000.toInt(), 0xF2000000.toInt()),
+                            null, android.graphics.Shader.TileMode.CLAMP)
+                    })
+                } else {
+                    val cover = getRoundedCornerBitmap(artwork, 24f, 760, 760)
+                    canvas.drawBitmap(cover, 160f, 170f, Paint(Paint.ANTI_ALIAS_FLAG))
+                }
+            }
+            val title = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE; textSize = 72f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            fun drawText(text: String, y: Float, paint: TextPaint, maxLines: Int): Int {
+                val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, 820)
+                    .setMaxLines(maxLines).setEllipsize(android.text.TextUtils.TruncateAt.END).build()
+                canvas.save(); canvas.translate(130f, y); layout.draw(canvas); canvas.restore()
+                return layout.height
+            }
+            val top = if (style == Style.MINIMAL) 1010f else if (clean.isEmpty()) 1260f else 360f
+            var y = top + drawText(track.title, top, title, 2) + 20f
+            val artist = TextPaint(title).apply { textSize = 40f; color = 0xCCFFFFFF.toInt(); typeface = Typeface.DEFAULT }
+            y += drawText(track.artist, y, artist, 2) + 52f
+            if (clean.isNotEmpty()) {
+                val text = "\u201c" + clean.joinToString("\n") + "\u201d"
+                val paint = TextPaint(title).apply { textSize = 68f }
+                val available = (1710f - y).toInt().coerceAtLeast(100)
+                var layout: StaticLayout
+                do {
+                    layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, 820)
+                        .setLineSpacing(12f, 1f).build()
+                    if (layout.height <= available || paint.textSize <= 24f) break
+                    paint.textSize -= 2f
+                } while (true)
+                canvas.save(); canvas.translate(130f, y)
+                canvas.clipRect(0f, 0f, 820f, available.toFloat())
+                layout.draw(canvas); canvas.restore()
+            }
+            drawText("NERF MUSIC", 1780f, TextPaint(title).apply { textSize = 30f }, 1)
+            bitmap
+        }
+    }
 
     private const val CARD_WIDTH = 1080
     private const val CARD_HEIGHT = 1920
@@ -289,7 +358,7 @@ object SocialShareHelper {
         canvas.drawLine(headerLeft, headerDividerY, cardRight - 50f, headerDividerY, headerDividerPaint)
 
         // 4. Linhas da Letra com Aspas ("...") e Tipografia Ampliada
-        val rawLines = selectedLines.take(4)
+        val rawLines = ShareRules.cleanLines(selectedLines)
         val contentWidth = (cardRight - 50f - headerLeft).toInt()
 
         val (lyricsTextSize, lyricsLineSpacing) = when (rawLines.size) {
@@ -307,30 +376,20 @@ object SocialShareHelper {
             setShadowLayer(16f, 0f, 8f, Color.parseColor("#55000000"))
         }
 
-        var currentLyricY = headerDividerY + 44f
-
-        for ((idx, rawLine) in rawLines.withIndex()) {
-            val textWithQuote = when {
-                rawLines.size == 1 -> "\"$rawLine\""
-                idx == 0 -> "\"$rawLine"
-                idx == rawLines.lastIndex -> "$rawLine\""
-                else -> rawLine
-            }
-
-            val lineLayout = StaticLayout.Builder.obtain(
-                textWithQuote, 0, textWithQuote.length, lyricsTextPaint, contentWidth
-            ).setLineSpacing(lyricsLineSpacing, 1f)
-             .setMaxLines(3)
-             .setEllipsize(android.text.TextUtils.TruncateAt.END)
-             .build()
-
-            canvas.save()
-            canvas.translate(headerLeft, currentLyricY)
-            lineLayout.draw(canvas)
-            canvas.restore()
-
-            currentLyricY += lineLayout.height + 36f
-        }
+        val lyricText = "\u201c" + rawLines.joinToString("\n") + "\u201d"
+        val availableHeight = (cardBottom - 140f - (headerDividerY + 44f)).toInt()
+        var fittedLayout: StaticLayout
+        do {
+            fittedLayout = StaticLayout.Builder.obtain(lyricText, 0, lyricText.length, lyricsTextPaint, contentWidth)
+                .setLineSpacing(lyricsLineSpacing, 1f).build()
+            if (fittedLayout.height <= availableHeight || lyricsTextPaint.textSize <= 24f) break
+            lyricsTextPaint.textSize -= 2f
+        } while (true)
+        canvas.save()
+        canvas.translate(headerLeft, headerDividerY + 44f)
+        canvas.clipRect(0f, 0f, contentWidth.toFloat(), availableHeight.toFloat())
+        fittedLayout.draw(canvas)
+        canvas.restore()
 
         // 5. Linha Divisória e Rodapé com Branding Oficial Enquadrado no Preview
         val footerDividerY = cardBottom - 95f
@@ -369,20 +428,7 @@ object SocialShareHelper {
         title: String,
         deepLinkUrl: String
     ) = withContext(Dispatchers.IO) {
-        val shareDir = File(context.cacheDir, "share_cards")
-        if (!shareDir.exists()) shareDir.mkdirs()
-
-        val shareFile = File(shareDir, "share_${System.currentTimeMillis()}.png")
-        FileOutputStream(shareFile).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            out.flush()
-        }
-
-        val uri: Uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            shareFile
-        )
+        val uri = writeShareImage(context, bitmap)
 
         withContext(Dispatchers.Main) {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -398,43 +444,23 @@ object SocialShareHelper {
         }
     }
 
+    suspend fun writeShareImage(context: Context, bitmap: Bitmap): Uri = withContext(Dispatchers.IO) {
+        val directory = File(context.cacheDir, "share_cards").apply { mkdirs() }
+        directory.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 24 * 60 * 60 * 1000L }
+            ?.forEach { it.delete() }
+        val file = File.createTempFile("card_", ".png", directory)
+        try {
+            file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        } catch (error: Exception) {
+            file.delete()
+            throw error
+        }
+    }
+
     private fun extractPaletteColors(bitmap: Bitmap?): PaletteColors {
-        if (bitmap == null) {
-            return PaletteColors(Color.parseColor("#261815"), Color.parseColor("#120B0A"), Color.argb(0x55, 255, 200, 170))
-        }
-        return try {
-            val palette = Palette.from(bitmap).generate()
-            val vibrant = palette.vibrantSwatch?.rgb
-            val darkVibrant = palette.darkVibrantSwatch?.rgb
-            val muted = palette.mutedSwatch?.rgb
-            val darkMuted = palette.darkMutedSwatch?.rgb
-            val dominant = palette.dominantSwatch?.rgb ?: Color.parseColor("#261815")
-
-            // Cor realmente dominante da capa (maior população de pixels), sem acentos pequenos
-            val chosen = palette.dominantSwatch?.rgb ?: vibrant ?: muted ?: dominant
-            val hsv = FloatArray(3)
-            Color.colorToHSV(chosen, hsv)
-            val hue = hsv[0]
-            val sat = hsv[1].coerceIn(0f, 0.85f)
-            val topValue = hsv[2].coerceIn(0.38f, 0.68f)
-
-            val top = Color.HSVToColor(floatArrayOf(hue, sat, topValue))
-            val bottom = Color.HSVToColor(floatArrayOf(hue, sat, (topValue * 0.3f).coerceIn(0.10f, 0.2f)))
-
-            // Cor do card translúcido: acento da própria capa (diferente do fundo), mais clara
-            val accent = palette.lightVibrantSwatch?.rgb ?: palette.vibrantSwatch?.rgb
-                ?: palette.lightMutedSwatch?.rgb ?: palette.mutedSwatch?.rgb ?: chosen
-            val ahsv = FloatArray(3)
-            Color.colorToHSV(accent, ahsv)
-            val cardTint = Color.HSVToColor(
-                0x66,
-                floatArrayOf(ahsv[0], ahsv[1].coerceIn(0.25f, 0.8f), ahsv[2].coerceIn(0.75f, 1f))
-            )
-
-            PaletteColors(top, bottom, cardTint)
-        } catch (_: Exception) {
-            PaletteColors(Color.parseColor("#261815"), Color.parseColor("#120B0A"), Color.argb(0x55, 255, 200, 170))
-        }
+        val colors = ArtworkColors.extract(bitmap)
+        return PaletteColors(colors.top, colors.bottom, colors.card)
     }
 
     private suspend fun loadArtworkBitmap(context: Context, track: Track): Bitmap? = withContext(Dispatchers.IO) {
@@ -447,7 +473,7 @@ object SocialShareHelper {
             }
             if (candidate.isNullOrBlank()) return@withContext null
 
-            val loader = ImageLoader(context)
+            val loader = context.imageLoader
             val request = ImageRequest.Builder(context)
                 .data(candidate)
                 .allowHardware(false)
@@ -456,13 +482,17 @@ object SocialShareHelper {
             if (result is SuccessResult) {
                 (result.drawable as? BitmapDrawable)?.bitmap
             } else null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             null
         }
     }
 
     private fun getRoundedCornerBitmap(bitmap: Bitmap, cornerRadius: Float, targetW: Int, targetH: Int): Bitmap {
-        val scaled = Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
+        val edge = minOf(bitmap.width, bitmap.height)
+        val source = Rect((bitmap.width - edge) / 2, (bitmap.height - edge) / 2,
+            (bitmap.width + edge) / 2, (bitmap.height + edge) / 2)
         val output = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
 
@@ -475,7 +505,7 @@ object SocialShareHelper {
 
         canvas.drawRoundRect(rectF, cornerRadius, cornerRadius, paint)
         paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-        canvas.drawBitmap(scaled, rect, rect, paint)
+        canvas.drawBitmap(bitmap, source, rect, paint)
 
         return output
     }
