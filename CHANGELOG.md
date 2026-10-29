@@ -4,21 +4,17 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
-## [Unreleased]
+## [1.4.6] - 2026-10-29
 
 ### Aprimorado & Corrigido
-- Afinidade musical: artistas escolhidos no onboarding recebem o mesmo peso inicial, enquanto escutas e prefer?ncias posteriores continuam atualizando o perfil.
-- Home, r?dio e downloads inteligentes usam afinidades positivas e evitam recomendar artistas com rejei??o consistente; perfis sem hist?rico n?o recebem artistas fixos como prefer?ncia padr?o.
-- Explorar seleciona lan?amentos com data completa verificada, compatibilidade com artistas e g?neros do perfil, limite por artista e tratamento de colabora??es penalizadas.
-- G?neros, paradas, menu de op??es do player e retorno ? Home receberam ajustes de navega??o e apresenta??o.
-
-### Aprimorado & Corrigido
-- Player de notificação do sistema agora oferece Favoritar/Desfavoritar e Looping (desligado, fila ou faixa), com os estados sincronizados imediatamente com o player interno.
-- Widgets mantêm a última capa disponível mesmo quando o app é fechado e retomam a reprodução em segundo plano pelo botão de play.
-- Reprodução iniciada pelo widget agora monta uma fila de mix dinâmica, incluindo faixas recomendadas além do histórico recente.
-- Atualizações dos widgets receberam transição suave de capa e paleta, revelação rápida de título e artista e feedback tátil com leve efeito de bounce nos controles.
-- Ajustes de estabilidade evitam flicker no widget 2x1 e preservam a atualização parcial dos demais formatos.
-- Cards de compartilhamento receberam alinhamento centralizado, estados selecionados consistentes, ícone moderno de salvar e ícones sociais refinados, incluindo o WhatsApp.
+- Afinidade musical: artistas escolhidos no onboarding recebem o mesmo peso inicial, enquanto escutas e preferências posteriores continuam atualizando o perfil.
+- Home, rádio e downloads inteligentes usam afinidades positivas e evitam recomendar artistas com rejeição consistente; perfis sem histórico não recebem artistas fixos como preferência padrão.
+- Explorar seleciona lançamentos com data completa verificada, compatibilidade com artistas e gêneros do perfil, limite por artista e tratamento de colaborações penalizadas.
+- Gêneros, paradas, menu de opções do player e retorno à Home receberam ajustes de navegação e apresentação.
+- Player de notificação do sistema oferece Favoritar/Desfavoritar e repetição desligada, da fila ou da faixa, com estados sincronizados ao player.
+- Widgets preservam a última capa, retomam a reprodução e montam uma fila dinâmica quando acionados.
+- Widgets receberam transições de capa e paleta, animação de título e artista e feedback tátil; ajustes estabilizam os formatos compactos.
+- Cards de compartilhamento receberam alinhamento e estados de seleção consistentes, opção moderna para salvar e ícones sociais atualizados.
 
 ---
 

@@ -14,8 +14,8 @@ android {
         applicationId = "com.nerf.music"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "1.4.5"
+        versionCode = 25
+        versionName = "1.4.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
