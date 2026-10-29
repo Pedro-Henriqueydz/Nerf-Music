@@ -4,23 +4,24 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
-## [1.4.5] - 2026-10-29
+## [1.4.6] - 2026-10-29
 
 ### Aprimorado & Corrigido
-- Afinidade musical: artistas escolhidos no onboarding recebem o mesmo peso inicial, enquanto escutas e preferências posteriores continuam atualizando o perfil.
-- Home, rádio e downloads inteligentes usam afinidades positivas e evitam recomendar artistas com rejeição consistente; perfis sem histórico não recebem artistas fixos como preferência padrão.
-- Explorar seleciona lançamentos com data completa verificada, compatibilidade com artistas e gêneros do perfil, limite por artista e tratamento de colaborações penalizadas.
-- Gêneros, paradas, menu de opções do player e retorno à Home receberam ajustes de navegação e apresentação.
-- Player de notificação do sistema oferece Favoritar/Desfavoritar e repetição desligada, da fila ou da faixa, com estados sincronizados ao player.
-- Widgets preservam a última capa, retomam a reprodução e montam uma fila dinâmica quando acionados.
-- Widgets receberam transições de capa e paleta, animação de título e artista e feedback tátil; ajustes estabilizam os formatos compactos.
-- Cards de compartilhamento receberam alinhamento e estados de seleção consistentes, opção moderna para salvar e ícones sociais atualizados.
+- Afinidade musical: artistas escolhidos no onboarding recebem o mesmo peso inicial; escutas e preferências posteriores continuam atualizando o perfil.
+- Home, rádio e downloads inteligentes usam afinidades positivas e evitam recomendar artistas com rejeição consistente. Perfis sem histórico não recebem artistas fixos como preferência padrão.
+- Explorar seleciona lançamentos recentes com datas verificadas, compatíveis com artistas e gêneros do perfil, e limita repetições por artista.
+- Gêneros, paradas, opções do player e retorno à Home receberam ajustes de navegação.
+- Notificações do player sincronizam Favoritar e repetição desligada, da fila ou da faixa.
+- Widgets preservam capas, retomam a reprodução e montam filas dinâmicas; também receberam melhorias visuais, táteis e de estabilidade.
+- Cards de compartilhamento receberam ajustes de alinhamento, seleção, salvamento e ícones sociais.
+
+---
+
+## [1.4.5] - 2026-10-29 [RELEASED]
 
 ### Corrigido
 - Widget expandido volta a exigir três linhas, mantendo o layout completo aprovado de controles e recomendações no One UI.
 - Mantida a adaptação do layout ao redimensionar o widget na tela inicial.
-
----
 
 ## [1.4.4] - 2026-10-29 [RELEASED]
 

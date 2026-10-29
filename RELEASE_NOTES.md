@@ -1,5 +1,18 @@
-# NERF Music 1.4.5 - recomendações mais pessoais
+# NERF Music v1.4.6 - Recomendações e melhorias no app
 
-As recomendações acompanham melhor os artistas que você escolhe e as músicas que ouve. O Explorar destaca lançamentos recentes relacionados ao seu perfil, com mais variedade. A Home, o rádio e os downloads inteligentes também ficaram mais atentos às suas preferências.
+A versão **1.4.6** aprimora as recomendações com base nos artistas escolhidos e nas músicas ouvidas. Também reúne melhorias no Explorar, na Home, no rádio, nos downloads inteligentes, no player, nos widgets e no compartilhamento.
 
-O player, os widgets e o compartilhamento receberam melhorias. A navegação entre gêneros, paradas, opções da música e a Home também ficou mais simples.
+### Destaques
+
+- **Afinidade musical:** artistas selecionados no onboarding começam com o mesmo peso; o perfil continua se adaptando às escutas e preferências posteriores.
+- **Recomendações:** Home, rádio e downloads inteligentes consideram afinidades positivas e rejeições consistentes, sem aplicar gostos fixos a perfis sem histórico.
+- **Explorar:** lançamentos com data verificada e compatibilidade com artistas e gêneros do perfil, com limite por artista para ampliar a variedade.
+- **Player e navegação:** ajustes em gêneros, paradas, menu de opções da faixa e retorno à Home; controles de favorito e repetição sincronizados na notificação.
+- **Widgets e compartilhamento:** retomada da reprodução e filas dinâmicas nos widgets, além de ajustes visuais e nos cards compartilhados.
+
+### Informações da compilação
+
+- Versão: `1.4.6` (versionCode `25`)
+- Target SDK: Android 14 (API 34)
+- Min SDK: Android 8.0 (API 26)
+- APK de release: assinado pelo pipeline do GitHub Actions.
