@@ -8,6 +8,16 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 > **Status:** Em desenvolvimento na branch principal após o lançamento da versão v1.4.2.
 
 ### Adicionado
+- **Cards de Compartilhamento Social e Trechos de Letras (`SocialShareHelper`):**
+  - **Compartilhamento de Música em Formato Story (9:16):** Geração nativa de cards em alta resolução (`1080x1920`) combinando capa do álbum com cantos arredondados, título, artista e selo oficial do NERF Music.
+  - **Compartilhamento de Letras estilo Spotify:** Seleção interativa de até 4 linhas diretamente na tela de Letras/Karaokê, renderizando o trecho escolhido entre aspas (`"..."`) com tipografia dinâmica escalável conforme a quantidade de versos.
+  - **Matching de Cores Inteligente (`Palette API`):** Extração da cor dominante real da capa para o gradiente de fundo em múltiplos níveis de luminância e cor de acento translúcida (*frosted glass*) dedicada para o card flutuante.
+  - **Enquadramento Otimizado para Previews:** Posicionamento calculado na zona central para que a capa, letra, selo *"NERF MUSIC"* e a chamada *"Toque para ouvir a música"* fiquem 100% visíveis tanto na miniatura quadrada de conversas do WhatsApp quanto em tela cheia nos Stories.
+  - **Deep Links Inteligentes:** Anexação automática do link da faixa (`https://music.youtube.com/watch?v={id}` e `nerfmusic://track/{id}`) com interceptação direta na `MainActivity` para abrir o aplicativo já reproduzindo a música compartilhada e iniciando o rádio dinâmico.
+- **Widgets Nativos de Tela Inicial (`CompactPlayerWidgetProvider` & `ExpandedPlayerWidgetProvider`):**
+  - **Widget Compacto (4x1):** Mini player com capa arredondada da faixa atual, título, artista, controles rápidos (*Anterior*, *Play/Pause*, *Próxima*) e fundo adaptativo sincronizado com as cores da capa.
+  - **Widget Expandido (4x2):** Player completo com capa em destaque (`64dp`), barra de progresso espaçada e carrossel inferior de ponta a ponta com **5 capas quadradas** das músicas ouvidas recentemente/recomendadas (`UserHistoryRepository`). Ao tocar em qualquer capa recomendada, o app inicia imediatamente um Mix da faixa escolhida.
+  - **Compatibilidade OneUI / Android RemoteViews:** Previews vetoriais dedicados no seletor de widgets do sistema e renderização de cantos arredondados em densidade real do dispositivo.
 - **Normalização de Volume DSP em Tempo Real (Loudness Normalization - ITU-R BS.1770-4 / EBU R128):**
   - **Processamento Streaming On-The-Fly:** Desenvolvido o `LoudnessNormalizationAudioProcessor` conectado diretamente na pipeline `AudioSink` do ExoPlayer. Processamento contínuo bloco a bloco de PCM 16-bit com zero descompressão prévia de arquivos inteiros na memória RAM.
   - **Filtros K-Weighting Padrão Internacional:** Implementada filtragem de dois estágios IIR em Direct Form II Transposed (Pre-filter High-Shelving em 1.68 kHz + High-Pass RLB em 38 Hz) para cálculo perceptual preciso de energia RMS.
