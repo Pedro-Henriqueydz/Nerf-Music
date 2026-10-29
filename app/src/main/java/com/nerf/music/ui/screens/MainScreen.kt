@@ -431,7 +431,7 @@ fun MainScreen(
                 composable(Screen.Explore.route) {
                     ExploreScreen(
                         viewModel = viewModel,
-                        onOpenAlbum = { id -> navController.navigate("album/$id") { launchSingleTop = true } }
+                        onOpenAlbum = { id -> navController.navigate("album/$id") { launchSingleTop = true } },
                         onOpenArtist = { id -> navController.navigate("artist/$id") { launchSingleTop = true } }
                     )
                 }
