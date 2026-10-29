@@ -814,20 +814,22 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            ✨ O que há de novo no NERF Music v1.4.2! 🚀
+            ✨ Novidades do NERF Music 1.4.3
 
-            👋 Boas-vindas e Seu Gosto Musical:
-            • Ao abrir o app pela primeira vez, você é recebido com uma experiência novinha e pode escolher seus artistas favoritos para deixar a tela inicial com a sua cara logo de cara!
-            • Navegação super fluida e suave a 120Hz para celulares compatíveis (como a linha Galaxy S24).
+            🎨 Compartilhe suas músicas do seu jeito:
+            • Escolha entre três estilos de cartão e veja como ele fica antes de compartilhar.
+            • Envie pelo WhatsApp, use nos Stories do Instagram ou salve a imagem no celular.
+            • Selecione até quatro linhas seguidas da letra para criar seu cartão.
 
-            🎧 Ouvir em Grupo (JAM) Ficou Ainda Melhor:
-            • A tela da JAM agora tem um visual translúcido e moderno, combinando com o resto do app.
-            • Ficou muito mais fácil rolar e mexer nas opções da sala sem fechar a janela sem querer.
-            • Novo botão direto 'Start Jam' para começar sua sessão com amigos rapidinho!
+            🎵 Mais opções nos widgets:
+            • Novos tamanhos 2x1 e 3x1, além do player expandido com recomendações.
+            • Acompanhe a música e controle a reprodução sem abrir o app.
+            • Capas, cores e progresso acompanham melhor a faixa atual.
 
-            🎵 Mais Praticidade nas Músicas (3 Pontinhos):
-            • Agora você pode tocar nos 3 pontinhos de qualquer música para tocar a seguir, começar uma rádio, salvar na playlist, baixar ou curtir com apenas um toque!
-            • Fila compartilhada da JAM mais estável para todo mundo adicionar e organizar as músicas juntos sem travamentos.
+            🔊 Volume mais equilibrado:
+            • Escolha como nivelar o volume entre músicas ou desligue o ajuste quando preferir.
+
+            ✨ Também refinamos a estabilidade e o visual dos controles nos widgets.
         """.trimIndent()
     }
 

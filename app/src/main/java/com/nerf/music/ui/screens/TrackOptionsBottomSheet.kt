@@ -268,14 +268,7 @@ fun TrackOptionsBottomSheet(
                     onDismiss()
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                         try {
-                            val bitmap = com.nerf.music.util.SocialShareHelper.renderMusicShareCard(context, track)
-                            val deepLink = "https://music.youtube.com/watch?v=${track.id}"
-                            com.nerf.music.util.SocialShareHelper.shareBitmap(
-                                context = context,
-                                bitmap = bitmap,
-                                title = "${track.title} • ${track.artist}",
-                                deepLinkUrl = deepLink
-                            )
+                            com.nerf.music.util.SocialShareHelper.openPreview(context, track)
                         } catch (e: Exception) {
                             android.widget.Toast.makeText(context, "Erro ao gerar card: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                         }

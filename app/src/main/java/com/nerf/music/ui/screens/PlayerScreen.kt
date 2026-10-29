@@ -37,6 +37,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -1592,13 +1593,7 @@ fun FullPlayerSheet(
                                     onShareTrack = {
                                         coroutineScope.launch {
                                             try {
-                                                val bmp = com.nerf.music.util.SocialShareHelper.renderMusicShareCard(context, track)
-                                                com.nerf.music.util.SocialShareHelper.shareBitmap(
-                                                    context = context,
-                                                    bitmap = bmp,
-                                                    title = "${track.title} • ${track.artist}",
-                                                    deepLinkUrl = "https://music.youtube.com/watch?v=${track.id}"
-                                                )
+                                                com.nerf.music.util.SocialShareHelper.openPreview(context, track)
                                             } catch (e: Exception) {
                                                 android.widget.Toast.makeText(context, "Erro ao gerar card: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                             }
@@ -3099,7 +3094,7 @@ private fun AppleMusicVolumeBar(
         label = "VolumeBarThickness"
     )
 
-    BoxWithConstraints(
+    Box(
         modifier = modifier
             .height(30.dp)
             .pointerInput(Unit) {
@@ -3208,9 +3203,48 @@ private fun AppleMusicLyricsView(
     var showVocalLevelPopup by remember { mutableStateOf(false) }
     var isSelectionMode by remember { mutableStateOf(false) }
     val selectedLyricIndices = remember { mutableStateListOf<Int>() }
+    val selectionScope = rememberCoroutineScope()
+    val lyricCount = if (lyrics?.isSynced == true) lyrics.syncedLines.size else
+        lyrics?.let { it.plainLines.ifEmpty { KaraokeLyricsEngine.buildPlainLinesWithPronunciation(it.plainLyrics) }.size } ?: 0
+    val selectionGesture = Modifier.pointerInput(track.id, lyrics) {
+        var anchor = -1
+        fun lineAt(y: Float): Int? = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { y >= it.offset && y < it.offset + it.size }
+            ?.key?.toString()?.removePrefix("lyric_")?.toIntOrNull()
+        detectDragGesturesAfterLongPress(
+            onDragStart = { position ->
+                anchor = lineAt(position.y) ?: -1
+                if (anchor >= 0) {
+                    isSelectionMode = true
+                    selectedLyricIndices.clear()
+                    selectedLyricIndices.add(anchor)
+                }
+            },
+            onDragEnd = { anchor = -1 },
+            onDragCancel = { anchor = -1 },
+            onDrag = { change, _ ->
+                if (anchor >= 0) {
+                    change.consume()
+                    lineAt(change.position.y)?.let { end ->
+                        selectedLyricIndices.clear()
+                        selectedLyricIndices.addAll(com.nerf.music.util.ShareRules.lyricRange(anchor, end, lyricCount))
+                    }
+                    val height = listState.layoutInfo.viewportEndOffset
+                    val amount = when {
+                        change.position.y < 64f -> -24f
+                        change.position.y > height - 64f -> 24f
+                        else -> 0f
+                    }
+                    if (amount != 0f) selectionScope.launch { listState.scrollBy(amount) }
+                }
+            }
+        )
+    }
 
     // Reset de rolagem imediato quando a faixa muda (garante início limpo)
-    LaunchedEffect(track.id) {
+    LaunchedEffect(track.id, lyrics) {
+        selectedLyricIndices.clear()
+        isSelectionMode = false
         listState.scrollToItem(0, 0)
     }
 
@@ -3357,7 +3391,7 @@ private fun AppleMusicLyricsView(
             if (hasSyncedLyrics) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().then(selectionGesture),
                     contentPadding = PaddingValues(top = 36.dp, bottom = 120.dp, start = 24.dp, end = 68.dp)
                 ) {
                     // Indicador de contagem regressiva instrumental (• • •) apenas quando o Karaokê está ativo
@@ -3367,7 +3401,7 @@ private fun AppleMusicLyricsView(
                         }
                     }
 
-                    itemsIndexed(lyrics!!.syncedLines) { index, line ->
+                    itemsIndexed(lyrics!!.syncedLines, key = { index, _ -> "lyric_$index" }) { index, line ->
                         val isCurrent = index == activeIndex
                         val isSelected = selectedLyricIndices.contains(index)
                         val animatedAlpha by animateFloatAsState(
@@ -3402,16 +3436,9 @@ private fun AppleMusicLyricsView(
                                     indication = null
                                 ) {
                                     if (isSelectionMode) {
-                                        if (isSelected) {
-                                            selectedLyricIndices.remove(index)
-                                            if (selectedLyricIndices.isEmpty()) isSelectionMode = false
-                                        } else {
-                                            if (selectedLyricIndices.size < 4) {
-                                                selectedLyricIndices.add(index)
-                                            } else {
-                                                android.widget.Toast.makeText(context, "Máximo de 4 linhas para compartilhamento", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
+                                        val next = com.nerf.music.util.ShareRules.toggleLine(selectedLyricIndices.toList(), index)
+                                        selectedLyricIndices.clear()
+                                        selectedLyricIndices.addAll(next)
                                     } else {
                                         onSeekTo((line.timeMs - lyricsOffsetMs).coerceAtLeast(0L))
                                     }
@@ -3586,10 +3613,11 @@ private fun AppleMusicLyricsView(
                     }
                 }
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().then(selectionGesture),
                     contentPadding = PaddingValues(top = 36.dp, bottom = 120.dp, start = 24.dp, end = 68.dp)
                 ) {
-                    itemsIndexed(plainStructuredLines) { index, line ->
+                    itemsIndexed(plainStructuredLines, key = { index, _ -> "lyric_$index" }) { index, line ->
                         val isSelected = selectedLyricIndices.contains(index)
                         Row(
                             modifier = Modifier
@@ -3603,16 +3631,9 @@ private fun AppleMusicLyricsView(
                                     indication = null
                                 ) {
                                     if (isSelectionMode) {
-                                        if (isSelected) {
-                                            selectedLyricIndices.remove(index)
-                                            if (selectedLyricIndices.isEmpty()) isSelectionMode = false
-                                        } else {
-                                            if (selectedLyricIndices.size < 4) {
-                                                selectedLyricIndices.add(index)
-                                            } else {
-                                                android.widget.Toast.makeText(context, "Máximo de 4 linhas para compartilhamento", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
+                                        val next = com.nerf.music.util.ShareRules.toggleLine(selectedLyricIndices.toList(), index)
+                                        selectedLyricIndices.clear()
+                                        selectedLyricIndices.addAll(next)
                                     }
                                 }
                                 .padding(horizontal = if (isSelected) 10.dp else 0.dp, vertical = 8.dp),
@@ -4173,17 +4194,7 @@ private fun AppleMusicLyricsView(
                             if (lines.isNotEmpty()) {
                                 kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                                     try {
-                                        val bmp = com.nerf.music.util.SocialShareHelper.renderLyricsShareCard(
-                                            context = context,
-                                            track = track,
-                                            selectedLines = lines
-                                        )
-                                        com.nerf.music.util.SocialShareHelper.shareBitmap(
-                                            context = context,
-                                            bitmap = bmp,
-                                            title = "${track.title} • Trecho de Letra",
-                                            deepLinkUrl = "https://music.youtube.com/watch?v=${track.id}"
-                                        )
+                                        com.nerf.music.util.SocialShareHelper.openPreview(context, track, lines)
                                     } catch (e: Exception) {
                                         android.widget.Toast.makeText(context, "Erro ao gerar card: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                                     }
@@ -4195,9 +4206,10 @@ private fun AppleMusicLyricsView(
                     } else {
                         isSelectionMode = true
                         selectedLyricIndices.clear()
-                        if (activeIndex >= 0) {
-                            selectedLyricIndices.add(activeIndex)
+                        if (lyricCount > 0) {
+                            selectedLyricIndices.add(activeIndex.coerceIn(0, lyricCount - 1))
                         }
+                        android.widget.Toast.makeText(context, "Selecione de 1 a 4 linhas. Segure e arraste para selecionar um trecho.", android.widget.Toast.LENGTH_LONG).show()
                     }
                 },
                 interactionSource = shareLyricsInteraction,
@@ -4227,7 +4239,7 @@ private fun AppleMusicLyricsView(
                     )
                     Text(
                         text = if (isSelectionMode) {
-                            if (selectedLyricIndices.isNotEmpty()) "Compartilhar (${selectedLyricIndices.size})" else "Cancelar"
+                            if (selectedLyricIndices.isNotEmpty()) "Pr\u00e9via (${selectedLyricIndices.size}/4)" else "Cancelar (0/4)"
                         } else {
                             "Card Letra"
                         },

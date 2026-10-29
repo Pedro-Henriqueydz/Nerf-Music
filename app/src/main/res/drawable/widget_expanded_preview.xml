@@ -1,76 +1,16 @@
-<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="260dp"
-    android:height="130dp"
-    android:viewportWidth="260"
-    android:viewportHeight="130">
-
-    <!-- Fundo do Widget -->
-    <path
-        android:fillColor="#E61E1E24"
-        android:pathData="M24,0 h212 a24,24 0 0 1 24,24 v82 a24,24 0 0 1 -24,24 h-212 a24,24 0 0 1 -24,-24 v-82 a24,24 0 0 1 24,-24 z" />
-
-    <!-- Capa do Player com cantos bem arredondados -->
-    <path
-        android:fillColor="#FF381E17"
-        android:pathData="M26,14 h34 a12,12 0 0 1 12,12 v22 a12,12 0 0 1 -12,12 h-34 a12,12 0 0 1 -12,-12 v-22 a12,12 0 0 1 12,-12 z" />
-
-    <path
-        android:fillColor="#FFFF6600"
-        android:pathData="M43,28 v14 a4,4 0 1 1 -3,-3.8 v-7.2 h10 v7 a4,4 0 1 1 -3,-3.8 v-6.2 z" />
-
-    <!-- Título e Artista -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M80,26 h65 a3,3 0 0 1 0,6 h-65 a3,3 0 0 1 0,-6 z" />
-    <path
-        android:fillColor="#80FFFFFF"
-        android:pathData="M80,40 h45 a3,3 0 0 1 0,6 h-45 a3,3 0 0 1 0,-6 z" />
-
-    <!-- Controles Superiores -->
-    <!-- Prev -->
-    <path
-        android:fillColor="#26FFFFFF"
-        android:pathData="M175,37 m-9,0 a9,9 0 1 1 18,0 a9,9 0 1 1 -18,0" />
-    <!-- Play -->
-    <path
-        android:fillColor="#33FFFFFF"
-        android:pathData="M202,37 m-12,0 a12,12 0 1 1 24,0 a12,12 0 1 1 -24,0" />
-    <path
-        android:fillColor="#FFFF6600"
-        android:pathData="M199,32 l8,5 -8,5 z" />
-    <!-- Next -->
-    <path
-        android:fillColor="#26FFFFFF"
-        android:pathData="M229,37 m-9,0 a9,9 0 1 1 18,0 a9,9 0 1 1 -18,0" />
-
-    <!-- Barra de Progresso Fina -->
-    <path
-        android:fillColor="#26FFFFFF"
-        android:pathData="M18,68 h224 a2,2 0 0 1 0,4 h-224 a2,2 0 0 1 0,-4 z" />
-    <path
-        android:fillColor="#FFFF6600"
-        android:pathData="M18,68 h90 a2,2 0 0 1 0,4 h-90 a2,2 0 0 1 0,-4 z" />
-
-    <!-- 5 Capas Recomendadas em Linha (Estilo Spotify & YouTube Music) -->
-    <!-- Capa 1 -->
-    <path
-        android:fillColor="#FF3A2820"
-        android:pathData="M18,80 h36 a10,10 0 0 1 10,10 v18 a10,10 0 0 1 -10,10 h-36 a10,10 0 0 1 -10,-10 v-18 a10,10 0 0 1 10,-10 z" />
-    <!-- Capa 2 -->
-    <path
-        android:fillColor="#FF202C3A"
-        android:pathData="M66,80 h36 a10,10 0 0 1 10,10 v18 a10,10 0 0 1 -10,10 h-36 a10,10 0 0 1 -10,-10 v-18 a10,10 0 0 1 10,-10 z" />
-    <!-- Capa 3 -->
-    <path
-        android:fillColor="#FF2E1E38"
-        android:pathData="M114,80 h36 a10,10 0 0 1 10,10 v18 a10,10 0 0 1 -10,10 h-36 a10,10 0 0 1 -10,-10 v-18 a10,10 0 0 1 10,-10 z" />
-    <!-- Capa 4 -->
-    <path
-        android:fillColor="#FF1E3828"
-        android:pathData="M162,80 h36 a10,10 0 0 1 10,10 v18 a10,10 0 0 1 -10,10 h-36 a10,10 0 0 1 -10,-10 v-18 a10,10 0 0 1 10,-10 z" />
-    <!-- Capa 5 -->
-    <path
-        android:fillColor="#FF38351E"
-        android:pathData="M210,80 h36 a10,10 0 0 1 10,10 v18 a10,10 0 0 1 -10,10 h-36 a10,10 0 0 1 -10,-10 v-18 a10,10 0 0 1 10,-10 z" />
+    android:width="200dp"
+    android:height="70dp"
+    android:viewportWidth="200"
+    android:viewportHeight="70">
+    <path android:fillColor="#E61A1A1E" android:pathData="M20,0h160a20,20 0,0 1,20 20v30a20,20 0,0 1,-20 20H20A20,20 0,0 1,0 50V20A20,20 0,0 1,20 0z"/>
+    <path android:fillColor="#FF3A2820" android:pathData="M16,10h38a10,10 0,0 1,10 10v30a10,10 0,0 1,-10 10H16A10,10 0,0 1,6 50V20A10,10 0,0 1,16 10z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M74,23h38a3,3 0,0 1,0 6H74a3,3 0,0 1,0 -6z"/>
+    <path android:fillColor="#80FFFFFF" android:pathData="M74,39h25a3,3 0,0 1,0 6H74a3,3 0,0 1,0 -6z"/>
+    <path android:fillColor="#26FFFFFF" android:pathData="M137,35m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M136,31h2v8h-2zM139,35l5,-4v8z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M163,35m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0"/>
+    <path android:fillColor="#FF17191F" android:pathData="M160,29l9,6l-9,6z"/>
+    <path android:fillColor="#26FFFFFF" android:pathData="M188,35m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M190,31h2v8h-2zM184,31l5,4l-5,4z"/>
 </vector>

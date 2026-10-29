@@ -61,6 +61,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - Transições inteligentes de faixa em tempo real estilo Spotify (Gapless, Automix e Crossfade de 0s a 12s com curva equal-power).
  * - Notificação de mídia nativa no Android com controles (Play, Pause, Anterior, Próxima, Barra de Progresso).
  */
+@OptIn(UnstableApi::class)
 class AudioPlayerService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
@@ -505,6 +506,7 @@ class AudioPlayerService : MediaSessionService() {
                 fadingPlayer = outgoingPlayer
                 activePlayer = incomingPlayer
                 mediaSession?.setPlayer(activePlayer)
+                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
 
                 incomingPlayer.setAudioAttributes(audioAttributes, true)
                 incomingPlayer.volume = 1f
@@ -577,6 +579,7 @@ class AudioPlayerService : MediaSessionService() {
                     fadingPlayer = outgoingPlayer
                     activePlayer = incomingPlayer
                     mediaSession?.setPlayer(activePlayer)
+                    com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
 
                     val startTime = System.currentTimeMillis()
                     while (isActive) {
@@ -618,6 +621,7 @@ class AudioPlayerService : MediaSessionService() {
             incomingPlayer.pauseAtEndOfMediaItems = false
             activePlayer = outgoingPlayer
             mediaSession?.setPlayer(activePlayer)
+            com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
         }
     }
 
@@ -669,6 +673,29 @@ class AudioPlayerService : MediaSessionService() {
         } else {
             activePlayer.seekToPreviousMediaItem()
         }
+    }
+
+    private val widgetLibrary by lazy { LibraryRepositoryImpl(applicationContext) }
+
+    fun widgetRepeatMode(): Int = if (::activePlayer.isInitialized) activePlayer.repeatMode else Player.REPEAT_MODE_OFF
+
+    fun toggleWidgetRepeat() {
+        if (!::activePlayer.isInitialized) return
+        activePlayer.repeatMode = when (activePlayer.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    fun toggleWidgetFavorite() {
+        val info = getCurrentPlayingTrackInfo() ?: return
+        val track = widgetLibrary.likedTracksFlow.value.firstOrNull { it.id == info.trackId }
+            ?: com.nerf.music.data.repository.UserHistoryRepositoryImpl(this).getRecentlyPlayed()
+                .firstOrNull { it.id == info.trackId }
+            ?: com.nerf.music.data.model.Track(info.trackId, info.title, info.artist,
+                thumbnailUrl = info.artworkUrl, durationSeconds = info.durationMs / 1000)
+        widgetLibrary.toggleFavorite(track)
     }
 
     companion object {
@@ -990,6 +1017,15 @@ class AudioPlayerService : MediaSessionService() {
         playerProcessorMap[playerInstance] = vocalProcessor
 
         playerInstance.addListener(object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                if (playerInstance != activePlayer) return
+                if (events.containsAny(Player.EVENT_REPEAT_MODE_CHANGED, Player.EVENT_MEDIA_METADATA_CHANGED,
+                        Player.EVENT_POSITION_DISCONTINUITY, Player.EVENT_IS_PLAYING_CHANGED,
+                        Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                    com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
+                }
+            }
+
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playerInstance != activePlayer) return
                 val stateName = when (playbackState) {
@@ -1000,13 +1036,11 @@ class AudioPlayerService : MediaSessionService() {
                     else -> "UNKNOWN($playbackState)"
                 }
                 Log.i(TAG, "ExoPlayer estado: $stateName (isPlaying=${playerInstance.isPlaying})")
-                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onIsPlayingChanged: isPlaying=$isPlaying, duration=${playerInstance.duration}ms")
-                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
                 if (isPlaying) {
                     startTransitionMonitor()
                     triggerPrefetchNextTrack()
@@ -1036,7 +1070,6 @@ class AudioPlayerService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
-                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
                 if (mediaItem?.mediaId != currentInstrumentalOriginalTrackId) {
                     isUsingRealInstrumental = false
                     hasAutoAlignedCurrentInstrumental = false
@@ -1311,6 +1344,19 @@ class AudioPlayerService : MediaSessionService() {
         }.build()
 
         serviceScope.launch {
+            LibraryRepositoryImpl.sharedLikedTracksFlow.collect {
+                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
+            }
+        }
+        serviceScope.launch {
+            while (isActive) {
+                delay(3000)
+                if (activePlayer.isPlaying) {
+                    com.nerf.music.widget.CompactPlayerWidgetProvider.updateProgress(applicationContext)
+                }
+            }
+        }
+        serviceScope.launch {
             settingsRepository.loudnessStandard.collect { std ->
                 loudnessProcessors.forEach { it.standard = std }
             }
@@ -1336,6 +1382,7 @@ class AudioPlayerService : MediaSessionService() {
         if (instance == this) {
             instance = null
         }
+        com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
         serviceScope.cancel()
         transitionMonitorJob?.cancel()
         crossfadeJob?.cancel()

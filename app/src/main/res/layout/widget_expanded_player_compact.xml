@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_expanded_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:padding="8dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="52dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <ImageView android:id="@+id/iv_widget_cover" android:layout_width="52dp" android:layout_height="52dp"
+            android:contentDescription="Capa do álbum" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp"
+            android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/tv_widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:ellipsize="end" android:maxLines="1" android:text="NERF Music" android:textColor="#FFFFFFFF" android:textSize="14sp" android:textStyle="bold" />
+            <TextView android:id="@+id/tv_widget_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="2dp" android:ellipsize="end" android:maxLines="1" android:text="Toque para ouvir" android:textColor="#C8D0D8" android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+    <ProgressBar android:id="@+id/pb_widget_progress" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="3dp" android:layout_marginTop="6dp"
+        android:max="100" android:progress="0" android:progressDrawable="@drawable/widget_progress_bar" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:layout_marginTop="3dp"
+        android:gravity="center_vertical" android:orientation="horizontal">
+        <ImageButton android:id="@+id/btn_widget_favorite" android:layout_width="32dp" android:layout_height="32dp"
+            android:background="@drawable/widget_button_circle_bg" android:contentDescription="Curtir" android:padding="8dp" android:src="@drawable/ic_widget_heart" />
+        <TextView android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+        <ImageButton android:id="@+id/btn_widget_expanded_skip_prev" android:layout_width="32dp" android:layout_height="32dp"
+            android:background="@drawable/widget_button_circle_bg" android:contentDescription="@string/action_previous" android:padding="8dp" android:src="@drawable/ic_widget_prev" />
+        <TextView android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+        <ImageButton android:id="@+id/btn_widget_expanded_play_pause" android:layout_width="36dp" android:layout_height="36dp"
+            android:background="@drawable/widget_button_primary_bg" android:contentDescription="@string/action_play" android:padding="8dp" android:tint="#FF17191F" android:src="@drawable/ic_widget_play" />
+        <TextView android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+        <ImageButton android:id="@+id/btn_widget_expanded_skip_next" android:layout_width="32dp" android:layout_height="32dp"
+            android:background="@drawable/widget_button_circle_bg" android:contentDescription="@string/action_next" android:padding="8dp" android:src="@drawable/ic_widget_next" />
+    </LinearLayout>
+    <TextView android:layout_width="match_parent" android:layout_height="10dp" android:layout_marginTop="2dp"
+        android:gravity="center_vertical" android:text="RECOMENDADO PARA VOCÊ" android:textColor="#C8D0D8" android:textSize="9sp" android:textStyle="bold" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="38dp" android:layout_marginTop="2dp" android:orientation="horizontal">
+        <ImageView android:id="@+id/iv_rec_cover_1" android:layout_width="0dp" android:layout_height="38dp" android:layout_marginEnd="4dp" android:layout_weight="1" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+        <ImageView android:id="@+id/iv_rec_cover_2" android:layout_width="0dp" android:layout_height="38dp" android:layout_marginEnd="4dp" android:layout_weight="1" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+        <ImageView android:id="@+id/iv_rec_cover_3" android:layout_width="0dp" android:layout_height="38dp" android:layout_marginEnd="4dp" android:layout_weight="1" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+        <ImageView android:id="@+id/iv_rec_cover_4" android:layout_width="0dp" android:layout_height="38dp" android:layout_marginEnd="4dp" android:layout_weight="1" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+        <ImageView android:id="@+id/iv_rec_cover_5" android:layout_width="0dp" android:layout_height="38dp" android:layout_weight="1" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+    </LinearLayout>
+</LinearLayout>

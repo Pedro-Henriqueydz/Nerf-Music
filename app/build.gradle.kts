@@ -14,8 +14,8 @@ android {
         applicationId = "com.nerf.music"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.4.2"
+        versionCode = 22
+        versionName = "1.4.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -57,6 +57,9 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Allows device tests against the installed release signature without removing user data.
+    testBuildType = providers.gradleProperty("testBuildType").getOrElse("debug")
 
     testOptions {
         unitTests.isReturnDefaultValues = true
