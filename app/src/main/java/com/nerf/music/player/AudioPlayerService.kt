@@ -621,6 +621,56 @@ class AudioPlayerService : MediaSessionService() {
         }
     }
 
+    fun isCurrentPlayerPlaying(): Boolean {
+        return ::activePlayer.isInitialized && activePlayer.isPlaying
+    }
+
+    fun getCurrentPlayingTrackInfo(): Companion.PlayingTrackInfo? {
+        if (!::activePlayer.isInitialized) return null
+        val mediaItem = activePlayer.currentMediaItem ?: return null
+        val meta = mediaItem.mediaMetadata
+        val trackId = mediaItem.mediaId.takeIf { it.isNotBlank() }
+            ?: mediaItem.localConfiguration?.uri?.lastPathSegment.orEmpty()
+        val title = meta.title?.toString() ?: "NERF Music"
+        val artist = meta.artist?.toString() ?: ""
+        val artwork = meta.artworkUri?.toString()
+        val pos = activePlayer.currentPosition.coerceAtLeast(0L)
+        val dur = activePlayer.duration.coerceAtLeast(0L)
+        return Companion.PlayingTrackInfo(
+            trackId = trackId,
+            title = title,
+            artist = artist,
+            artworkUrl = artwork,
+            positionMs = pos,
+            durationMs = dur
+        )
+    }
+
+    fun togglePlayPause() {
+        if (!::activePlayer.isInitialized) return
+        if (activePlayer.isPlaying) {
+            activePlayer.pause()
+        } else {
+            activePlayer.play()
+        }
+    }
+
+    fun skipToNextTrack() {
+        if (!::activePlayer.isInitialized) return
+        if (activePlayer.hasNextMediaItem()) {
+            activePlayer.seekToNextMediaItem()
+        }
+    }
+
+    fun skipToPreviousTrack() {
+        if (!::activePlayer.isInitialized) return
+        if (activePlayer.currentPosition > 3000L || !activePlayer.hasPreviousMediaItem()) {
+            activePlayer.seekTo(0L)
+        } else {
+            activePlayer.seekToPreviousMediaItem()
+        }
+    }
+
     companion object {
         private const val TAG = "AudioPlayerService"
         const val NERF_URI_SCHEME = "nerfmusic"
@@ -630,6 +680,15 @@ class AudioPlayerService : MediaSessionService() {
 
         private var instance: AudioPlayerService? = null
         fun getInstance(): AudioPlayerService? = instance
+
+        data class PlayingTrackInfo(
+            val trackId: String,
+            val title: String,
+            val artist: String,
+            val artworkUrl: String?,
+            val positionMs: Long,
+            val durationMs: Long
+        )
 
         @Volatile
         var isKaraokeEnabled: Boolean = false
@@ -941,11 +1000,13 @@ class AudioPlayerService : MediaSessionService() {
                     else -> "UNKNOWN($playbackState)"
                 }
                 Log.i(TAG, "ExoPlayer estado: $stateName (isPlaying=${playerInstance.isPlaying})")
+                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onIsPlayingChanged: isPlaying=$isPlaying, duration=${playerInstance.duration}ms")
+                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
                 if (isPlaying) {
                     startTransitionMonitor()
                     triggerPrefetchNextTrack()
@@ -975,6 +1036,7 @@ class AudioPlayerService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
+                com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
                 if (mediaItem?.mediaId != currentInstrumentalOriginalTrackId) {
                     isUsingRealInstrumental = false
                     hasAutoAlignedCurrentInstrumental = false

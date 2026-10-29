@@ -76,6 +76,8 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -1587,6 +1589,21 @@ fun FullPlayerSheet(
                                     downloadProgress = downloadProgress,
                                     onToggleLyrics = { isFullscreenLyricsActive = !isFullscreenLyricsActive },
                                     onOpenJam = onOpenJamSheet,
+                                    onShareTrack = {
+                                        coroutineScope.launch {
+                                            try {
+                                                val bmp = com.nerf.music.util.SocialShareHelper.renderMusicShareCard(context, track)
+                                                com.nerf.music.util.SocialShareHelper.shareBitmap(
+                                                    context = context,
+                                                    bitmap = bmp,
+                                                    title = "${track.title} • ${track.artist}",
+                                                    deepLinkUrl = "https://music.youtube.com/watch?v=${track.id}"
+                                                )
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "Erro ao gerar card: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
                                     modifier = Modifier.alpha(((1f - halfExpansionFraction * 2.8f) * controlsAlpha).coerceIn(0f, 1f))
                                 )
                             }
@@ -2212,6 +2229,7 @@ fun PlayerActionRow(
     jamParticipantCount: Int = 0,
     onToggleLyrics: () -> Unit = {},
     onOpenJam: () -> Unit = {},
+    onShareTrack: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -2245,7 +2263,15 @@ fun PlayerActionRow(
             onClick = onOpenJam
         )
 
-        // 3. Favoritar
+        // 3. Compartilhar Card Social
+        RoundedActionPillButton(
+            icon = Icons.Default.Share,
+            label = "Compartilhar",
+            isActive = false,
+            onClick = onShareTrack
+        )
+
+        // 4. Favoritar
         RoundedActionPillButton(
             icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
             label = if (isFavorite) {
@@ -3180,6 +3206,8 @@ private fun AppleMusicLyricsView(
 
     var showTranslationMenu by remember { mutableStateOf(false) }
     var showVocalLevelPopup by remember { mutableStateOf(false) }
+    var isSelectionMode by remember { mutableStateOf(false) }
+    val selectedLyricIndices = remember { mutableStateListOf<Int>() }
 
     // Reset de rolagem imediato quando a faixa muda (garante início limpo)
     LaunchedEffect(track.id) {
@@ -3187,8 +3215,8 @@ private fun AppleMusicLyricsView(
     }
 
     // Auto-scroll inteligente: se a distância for grande (ex: voltando do background), faz snap direto
-    LaunchedEffect(activeIndex) {
-        if (activeIndex >= 0) {
+    LaunchedEffect(activeIndex, isSelectionMode) {
+        if (!isSelectionMode && activeIndex >= 0) {
             val currentIndex = listState.firstVisibleItemIndex
             if (kotlin.math.abs(activeIndex - currentIndex) > 3) {
                 listState.scrollToItem(
@@ -3341,18 +3369,23 @@ private fun AppleMusicLyricsView(
 
                     itemsIndexed(lyrics!!.syncedLines) { index, line ->
                         val isCurrent = index == activeIndex
+                        val isSelected = selectedLyricIndices.contains(index)
                         val animatedAlpha by animateFloatAsState(
-                            targetValue = if (isCurrent) 1f else 0.34f,
+                            targetValue = if (isSelectionMode) {
+                                if (isSelected) 1f else 0.40f
+                            } else {
+                                if (isCurrent) 1f else 0.34f
+                            },
                             animationSpec = tween(durationMillis = 320),
                             label = "LyricAlpha_$index"
                         )
                         val animatedScale by animateFloatAsState(
-                            targetValue = if (isCurrent) 1.04f else 1f,
+                            targetValue = if (isSelected) 1.05f else if (isCurrent && !isSelectionMode) 1.04f else 1f,
                             animationSpec = spring(stiffness = Spring.StiffnessLow),
                             label = "LyricScale_$index"
                         )
 
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .graphicsLayer {
@@ -3360,14 +3393,54 @@ private fun AppleMusicLyricsView(
                                     scaleY = animatedScale
                                     transformOrigin = TransformOrigin(0f, 0.5f)
                                 }
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(
+                                    if (isSelected) Color(0xFFFF6600).copy(alpha = 0.18f) else Color.Transparent
+                                )
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null
                                 ) {
-                                    onSeekTo((line.timeMs - lyricsOffsetMs).coerceAtLeast(0L))
+                                    if (isSelectionMode) {
+                                        if (isSelected) {
+                                            selectedLyricIndices.remove(index)
+                                            if (selectedLyricIndices.isEmpty()) isSelectionMode = false
+                                        } else {
+                                            if (selectedLyricIndices.size < 4) {
+                                                selectedLyricIndices.add(index)
+                                            } else {
+                                                android.widget.Toast.makeText(context, "Máximo de 4 linhas para compartilhamento", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    } else {
+                                        onSeekTo((line.timeMs - lyricsOffsetMs).coerceAtLeast(0L))
+                                    }
                                 }
-                                .padding(vertical = 11.dp)
+                                .padding(horizontal = if (isSelected) 12.dp else 0.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            if (isSelectionMode) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) Color(0xFFFF6600) else Color.White.copy(alpha = 0.20f))
+                                        .border(1.5.dp, if (isSelected) Color(0xFFFF6600) else Color.White.copy(alpha = 0.50f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                            }
+
+                            Column(modifier = Modifier.weight(1f)) {
                             // 1) Linha Original: destaque palavra-por-palavra SOMENTE quando o microfone (Karaokê) estiver ativo
                             if (!hideOriginalLyrics || (!showLyricsTranslation && !showLyricsPronunciation)) {
                                 if (isKaraokeVocalIsolationEnabled && isCurrent && line.words.size > 1) {
@@ -3482,6 +3555,7 @@ private fun AppleMusicLyricsView(
                             }
                         }
                     }
+                }
                     item {
                         val langBadge = buildString {
                             append("Fonte: ${lyrics!!.source}")
@@ -3515,12 +3589,59 @@ private fun AppleMusicLyricsView(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 36.dp, bottom = 120.dp, start = 24.dp, end = 68.dp)
                 ) {
-                    itemsIndexed(plainStructuredLines) { _, line ->
-                        Column(
+                    itemsIndexed(plainStructuredLines) { index, line ->
+                        val isSelected = selectedLyricIndices.contains(index)
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (isSelected) Color(0xFFFF6600).copy(alpha = 0.18f) else Color.Transparent
+                                )
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    if (isSelectionMode) {
+                                        if (isSelected) {
+                                            selectedLyricIndices.remove(index)
+                                            if (selectedLyricIndices.isEmpty()) isSelectionMode = false
+                                        } else {
+                                            if (selectedLyricIndices.size < 4) {
+                                                selectedLyricIndices.add(index)
+                                            } else {
+                                                android.widget.Toast.makeText(context, "Máximo de 4 linhas para compartilhamento", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(horizontal = if (isSelected) 10.dp else 0.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            if (isSelectionMode) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) Color(0xFFFF6600) else Color.White.copy(alpha = 0.20f))
+                                        .border(1.5.dp, if (isSelected) Color(0xFFFF6600) else Color.White.copy(alpha = 0.50f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                            }
+
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                             if (!hideOriginalLyrics || (!showLyricsTranslation && !showLyricsPronunciation)) {
                                 Text(
                                     text = line.text,
@@ -3528,7 +3649,7 @@ private fun AppleMusicLyricsView(
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 21.sp,
                                     lineHeight = 29.sp,
-                                    color = Color.White.copy(alpha = 0.90f),
+                                    color = Color.White.copy(alpha = if (isSelectionMode && !isSelected) 0.40f else 0.90f),
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -3568,6 +3689,7 @@ private fun AppleMusicLyricsView(
                             }
                         }
                     }
+                }
                     item {
                         Spacer(modifier = Modifier.height(20.dp))
                         val langBadge = buildString {
@@ -4024,6 +4146,96 @@ private fun AppleMusicLyricsView(
                             onResetLyricsOffset = onResetLyricsOffset
                         )
                     }
+                }
+            }
+
+            // Botão Selecionar / Compartilhar Trecho de Letras (Lyrics Card)
+            val shareLyricsInteraction = remember { MutableInteractionSource() }
+            val isShareLyricsPressed by shareLyricsInteraction.collectIsPressedAsState()
+            val shareLyricsScale by animateFloatAsState(
+                targetValue = if (isShareLyricsPressed) 0.94f else 1f,
+                animationSpec = tween(120),
+                label = "ShareLyricsBtnPressScale"
+            )
+            Surface(
+                onClick = {
+                    if (isSelectionMode) {
+                        if (selectedLyricIndices.isNotEmpty()) {
+                            // Gerar card de trechos
+                            val lines = if (lyrics?.isSynced == true) {
+                                selectedLyricIndices.sorted().mapNotNull { idx -> lyrics.syncedLines.getOrNull(idx)?.text }
+                            } else {
+                                val plain = lyrics?.plainLines?.ifEmpty {
+                                    KaraokeLyricsEngine.buildPlainLinesWithPronunciation(lyrics.plainLyrics)
+                                } ?: emptyList()
+                                selectedLyricIndices.sorted().mapNotNull { idx -> plain.getOrNull(idx)?.text }
+                            }
+                            if (lines.isNotEmpty()) {
+                                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                                    try {
+                                        val bmp = com.nerf.music.util.SocialShareHelper.renderLyricsShareCard(
+                                            context = context,
+                                            track = track,
+                                            selectedLines = lines
+                                        )
+                                        com.nerf.music.util.SocialShareHelper.shareBitmap(
+                                            context = context,
+                                            bitmap = bmp,
+                                            title = "${track.title} • Trecho de Letra",
+                                            deepLinkUrl = "https://music.youtube.com/watch?v=${track.id}"
+                                        )
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Erro ao gerar card: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        } else {
+                            isSelectionMode = false
+                        }
+                    } else {
+                        isSelectionMode = true
+                        selectedLyricIndices.clear()
+                        if (activeIndex >= 0) {
+                            selectedLyricIndices.add(activeIndex)
+                        }
+                    }
+                },
+                interactionSource = shareLyricsInteraction,
+                shape = RoundedCornerShape(12.dp),
+                color = if (isSelectionMode) Color(0xFFFF6600).copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f),
+                border = BorderStroke(
+                    width = 0.75.dp,
+                    color = if (isSelectionMode) Color(0xFFFF6600).copy(alpha = 0.65f) else Color.White.copy(alpha = 0.12f)
+                ),
+                modifier = Modifier
+                    .height(42.dp)
+                    .graphicsLayer {
+                        scaleX = shareLyricsScale
+                        scaleY = shareLyricsScale
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isSelectionMode && selectedLyricIndices.isNotEmpty()) Icons.Default.Share else Icons.Default.FormatQuote,
+                        contentDescription = "Compartilhar Letra",
+                        tint = if (isSelectionMode) Color(0xFFFF6600) else Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(19.dp)
+                    )
+                    Text(
+                        text = if (isSelectionMode) {
+                            if (selectedLyricIndices.isNotEmpty()) "Compartilhar (${selectedLyricIndices.size})" else "Cancelar"
+                        } else {
+                            "Card Letra"
+                        },
+                        fontFamily = SfProFontFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = if (isSelectionMode) Color(0xFFFF6600) else Color.White.copy(alpha = 0.90f)
+                    )
                 }
             }
 

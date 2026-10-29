@@ -61,6 +61,12 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(UpdateNotificationHelper.EXTRA_OPEN_UPDATE_DIALOG, false) == true) {
             viewModel.checkForAppUpdates()
         }
+        val playTrackId = intent?.getStringExtra("action_play_track_id")
+        if (!playTrackId.isNullOrBlank()) {
+            viewModel.openTrackById(playTrackId)
+        } else if (intent?.getBooleanExtra("action_open_player", false) == true) {
+            viewModel.openFullPlayer()
+        }
         intent?.data?.let { deepLinkUri ->
             viewModel.handleDeepLink(deepLinkUri)
         }

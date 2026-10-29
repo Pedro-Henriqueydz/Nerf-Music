@@ -1,6 +1,7 @@
 package com.nerf.music.ui.screens
 
 import android.content.Intent
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -262,16 +263,23 @@ fun TrackOptionsBottomSheet(
 
             TrackOptionRow(
                 icon = Icons.Default.Share,
-                title = "Compartilhar",
+                title = "Compartilhar Card Social",
                 onClick = {
                     onDismiss()
-                    val shareUrl = "https://music.youtube.com/watch?v=${track.id}"
-                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                        putExtra(Intent.EXTRA_TEXT, "${track.title} - ${track.artist}\n$shareUrl")
-                        type = "text/plain"
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        try {
+                            val bitmap = com.nerf.music.util.SocialShareHelper.renderMusicShareCard(context, track)
+                            val deepLink = "https://music.youtube.com/watch?v=${track.id}"
+                            com.nerf.music.util.SocialShareHelper.shareBitmap(
+                                context = context,
+                                bitmap = bitmap,
+                                title = "${track.title} • ${track.artist}",
+                                deepLinkUrl = deepLink
+                            )
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Erro ao gerar card: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    val shareIntent = Intent.createChooser(sendIntent, "Compartilhar música")
-                    context.startActivity(shareIntent)
                 }
             )
 

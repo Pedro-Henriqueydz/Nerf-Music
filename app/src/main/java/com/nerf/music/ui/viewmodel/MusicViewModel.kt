@@ -3431,14 +3431,64 @@ class MusicViewModel(
         val isJamLink = (scheme == "nerfmusic" && host == "jam") ||
             ((scheme == "https" || scheme == "http") && (host.contains("nerfmusic") || path.startsWith("/jam")))
 
-        if (!isJamLink) return
-
-        _isJamSheetVisible.value = true
-        if (mediaController == null) {
-            pendingDeepLinkUri = uri
+        if (isJamLink) {
+            _isJamSheetVisible.value = true
+            if (mediaController == null) {
+                pendingDeepLinkUri = uri
+                return
+            }
+            jamSessionManager.handleDeepLink(uri)
             return
         }
-        jamSessionManager.handleDeepLink(uri)
+
+        // DeepLink para faixas musicais compartilhadas:
+        // nerfmusic://track/{videoId}, https://nerfmusic.app/track/{videoId} ou https://music.youtube.com/watch?v={videoId}
+        val isTrackLink = (scheme == "nerfmusic" && host == "track") ||
+            ((scheme == "https" || scheme == "http") && (path.startsWith("/track") || host.contains("nerfmusic.app") || host.contains("music.youtube.com") || host.contains("youtube.com")))
+        if (isTrackLink) {
+            val videoId = uri.getQueryParameter("v")?.trim()
+                ?: uri.lastPathSegment?.trim()?.takeIf { it != "track" && it != "watch" }
+                ?: ""
+            if (videoId.isNotBlank()) {
+                openTrackById(videoId)
+            }
+        }
+    }
+
+    fun openTrackById(videoId: String) {
+        viewModelScope.launch {
+            val cachedTrack = trackMetadataMap[videoId]
+            if (cachedTrack != null) {
+                playTrack(cachedTrack)
+                openFullPlayer()
+                return@launch
+            }
+
+            _isLoading.value = true
+            try {
+                val radioRes = repository.getUpNextRadio(videoId = videoId, params = null)
+                radioRes.onSuccess { upNext ->
+                    val seed = upNext.tracks.firstOrNull { it.id == videoId }
+                        ?: upNext.tracks.firstOrNull()
+                        ?: Track(id = videoId, title = "Música Compartilhada", artist = "NERF Music")
+                    trackMetadataMap[seed.id] = seed
+                    playTrack(seed)
+                    openFullPlayer()
+                }.onFailure {
+                    val fallback = Track(id = videoId, title = "Música Compartilhada", artist = "NERF Music")
+                    trackMetadataMap[fallback.id] = fallback
+                    playTrack(fallback)
+                    openFullPlayer()
+                }
+            } catch (_: Exception) {
+                val fallback = Track(id = videoId, title = "Música Compartilhada", artist = "NERF Music")
+                trackMetadataMap[fallback.id] = fallback
+                playTrack(fallback)
+                openFullPlayer()
+            } finally {
+                _isLoading.value = false
+            }
+        }
     }
 
     private fun applyRemoteJamSnapshot(snapshot: JamWireMessage, compensatedPosMs: Long) {
