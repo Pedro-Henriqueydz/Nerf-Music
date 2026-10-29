@@ -8,6 +8,12 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.4.5] - 2026-10-29 [RELEASED]
+
+### Corrigido
+- Widget expandido volta a exigir três linhas, mantendo o layout completo aprovado de controles e recomendações no One UI.
+- Mantida a adaptação do layout ao redimensionar o widget na tela inicial.
+
 ## [1.4.4] - 2026-10-29 [RELEASED]
 
 ### Aprimorado & Corrigido
