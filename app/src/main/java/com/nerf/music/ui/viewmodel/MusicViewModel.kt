@@ -814,22 +814,14 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            ✨ Novidades do NERF Music 1.4.3
+            ✨ Novidades do NERF Music 1.4.4
 
-            🎨 Compartilhe suas músicas do seu jeito:
-            • Escolha entre três estilos de cartão e veja como ele fica antes de compartilhar.
-            • Envie pelo WhatsApp, use nos Stories do Instagram ou salve a imagem no celular.
-            • Selecione até quatro linhas seguidas da letra para criar seu cartão.
+            🎵 Ajustes nos widgets:
+            • O widget 2x1 ficou mais simples, com play e pausa para deixar a música e a capa em destaque.
+            • No widget 3x1, os nomes das faixas e os controles ficaram maiores e mais fáceis de tocar.
+            • O widget expandido voltou ao tamanho compacto e se adapta melhor quando você o redimensiona.
 
-            🎵 Mais opções nos widgets:
-            • Novos tamanhos 2x1 e 3x1, além do player expandido com recomendações.
-            • Acompanhe a música e controle a reprodução sem abrir o app.
-            • Capas, cores e progresso acompanham melhor a faixa atual.
-
-            🔊 Volume mais equilibrado:
-            • Escolha como nivelar o volume entre músicas ou desligue o ajuste quando preferir.
-
-            ✨ Também refinamos a estabilidade e o visual dos controles nos widgets.
+            ✨ Também fizemos pequenos ajustes para deixar os widgets mais organizados na tela inicial.
         """.trimIndent()
     }
 

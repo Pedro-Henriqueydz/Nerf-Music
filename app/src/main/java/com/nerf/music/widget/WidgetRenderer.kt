@@ -121,9 +121,6 @@ internal object WidgetRenderer {
         control(context, views, playId, CompactPlayerWidgetProvider.ACTION_PLAY_PAUSE)
         views.setImageViewResource(playId, if (playing) R.drawable.ic_widget_pause else R.drawable.ic_widget_play)
         views.setContentDescription(playId, if (playing) "Pausar" else "Reproduzir")
-        if (size == Size.TWO) {
-            control(context, views, R.id.btn_compact_skip_next, CompactPlayerWidgetProvider.ACTION_SKIP_NEXT)
-        }
         if (size == Size.FOUR) {
             val liked = LibraryRepositoryImpl.sharedLikedTracksFlow.value.any { it.id == info?.trackId }
             views.setImageViewResource(

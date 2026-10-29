@@ -8,6 +8,13 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
+## [1.4.4] - 2026-10-29 [RELEASED]
+
+### Aprimorado & Corrigido
+- Widget expandido volta à altura mínima de duas linhas; o layout acompanha o redimensionamento feito na tela inicial.
+- Widget 3x1 recebe título e artista maiores, com botão de avançar alinhado ao tamanho do play/pause.
+- Widget 2x1 fica somente com play/pause, liberando espaço para a capa e os nomes das faixas.
+
 ## [1.4.3] - 2026-10-29 [RELEASED]
 
 ### Adicionado
