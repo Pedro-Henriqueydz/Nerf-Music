@@ -12,9 +12,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/MainActivity.kt": {
-    "mtime": 1793217408.9349186,
-    "seen": 1793223124.8578346,
-    "ast_hash": "930e0dee3307866a650986cc3fd61d08",
+    "mtime": 1793232097.3099759,
+    "seen": 1793233200.3770971,
+    "ast_hash": "c2fc756649bc220e64065ab4d3007a9d",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/NerfMusicApp.kt": {
@@ -180,15 +180,15 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/data/repository/UserSettingsRepository.kt": {
-    "mtime": 1793222355.2397354,
-    "seen": 1793223124.8578346,
+    "mtime": 1793224542.1844382,
+    "seen": 1793226434.3390765,
     "ast_hash": "d02fabf3aa1d4edc0e6c0a4c157da80c",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/player/AudioPlayerService.kt": {
-    "mtime": 1793222791.9115646,
-    "seen": 1793223124.8578346,
-    "ast_hash": "40813cf2baf9fddb1a7eacf3eaf35e30",
+    "mtime": 1793232097.3109984,
+    "seen": 1793233200.3770971,
+    "ast_hash": "8a01f11ac4e9f54e45dda3f190829945",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/player/CompositeStreamResolver.kt": {
@@ -276,9 +276,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/PlayerScreen.kt": {
-    "mtime": 1793217408.941703,
-    "seen": 1793223124.8578346,
-    "ast_hash": "afb2e4f35af7688f7496d1f0badacca3",
+    "mtime": 1793232503.593294,
+    "seen": 1793233200.3776147,
+    "ast_hash": "e6a8b2f2bfdd61b8808ef9100bff4ff6",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/PlaylistOptionsBottomSheet.kt": {
@@ -300,8 +300,8 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/SettingsScreen.kt": {
-    "mtime": 1793222706.707188,
-    "seen": 1793223124.8578346,
+    "mtime": 1793224542.1880524,
+    "seen": 1793226434.3390765,
     "ast_hash": "124ead1c3aa02a189dac3c11ba1b8492",
     "semantic_hash": ""
   },
@@ -324,9 +324,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/viewmodel/MusicViewModel.kt": {
-    "mtime": 1793222537.6503644,
-    "seen": 1793223124.8578346,
-    "ast_hash": "5933375f23a8cc9bc72e3a448a1e63c8",
+    "mtime": 1793232097.3146944,
+    "seen": 1793233200.3776147,
+    "ast_hash": "e2534c739921026007560449aada49b9",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/updater/AppUpdateManager.kt": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1793217408.9323647,
-    "seen": 1793223124.8578346,
-    "ast_hash": "5ba0dd5ffc33ba481e6da2374983203d",
+    "mtime": 1793232774.258267,
+    "seen": 1793233200.3776147,
+    "ast_hash": "9226f841a1b8919fe46e628d91007755",
     "semantic_hash": ""
   },
   "README.md": {
@@ -618,8 +618,8 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/player/VocalIsolationAudioProcessor.kt": {
-    "mtime": 1793222261.385609,
-    "seen": 1793223124.8578346,
+    "mtime": 1793224542.1870115,
+    "seen": 1793226434.3390765,
     "ast_hash": "185db1f7a9159cee8f669e42feefce2a",
     "semantic_hash": ""
   },
@@ -648,9 +648,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/TrackOptionsBottomSheet.kt": {
-    "mtime": 1793206821.8231728,
-    "seen": 1793206840.5177119,
-    "ast_hash": "9c619daa9dd6cae2b216f88802fb4a0e",
+    "mtime": 1793232503.5900147,
+    "seen": 1793233200.3776147,
+    "ast_hash": "4b7b3b056874960b5d4eedfb2b361cc7",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/OnboardingScreen.kt": {
@@ -672,15 +672,33 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/player/LoudnessNormalizationAudioProcessor.kt": {
-    "mtime": 1793222893.7049398,
-    "seen": 1793223124.8578346,
+    "mtime": 1793224542.1864927,
+    "seen": 1793226434.3390765,
     "ast_hash": "faee29845e2a7d0a6a9675ac674fda55",
     "semantic_hash": ""
   },
   "app/src/test/java/com/nerf/music/LoudnessNormalizationAudioProcessorTest.kt": {
-    "mtime": 1793222852.0290732,
-    "seen": 1793223124.8578346,
+    "mtime": 1793224542.188565,
+    "seen": 1793226434.3390765,
     "ast_hash": "92d29c9d12a7497eea02fb7de2c993e0",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/SocialShareHelper.kt": {
+    "mtime": 1793232503.594845,
+    "seen": 1793233200.3776147,
+    "ast_hash": "a111b42c0b933571708bc91e9dbe5158",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/widget/CompactPlayerWidgetProvider.kt": {
+    "mtime": 1793232503.5824118,
+    "seen": 1793233200.3776147,
+    "ast_hash": "91dfff69da4997f89b5434d69daa2ca1",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/widget/ExpandedPlayerWidgetProvider.kt": {
+    "mtime": 1793232097.3377032,
+    "seen": 1793233200.3776147,
+    "ast_hash": "8c37a1573a3b5c19bfa667a550e4a30c",
     "semantic_hash": ""
   }
 }
