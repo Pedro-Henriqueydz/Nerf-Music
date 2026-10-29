@@ -7,6 +7,7 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ## [Unreleased]
 
 ### Aprimorado & Corrigido
+- Player de notificação do sistema agora oferece Favoritar/Desfavoritar e Looping (desligado, fila ou faixa), com os estados sincronizados imediatamente com o player interno.
 - Widgets mantêm a última capa disponível mesmo quando o app é fechado e retomam a reprodução em segundo plano pelo botão de play.
 - Reprodução iniciada pelo widget agora monta uma fila de mix dinâmica, incluindo faixas recomendadas além do histórico recente.
 - Atualizações dos widgets receberam transição suave de capa e paleta, revelação rápida de título e artista e feedback tátil com leve efeito de bounce nos controles.
