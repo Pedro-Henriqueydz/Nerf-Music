@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 
 class CompactPlayerWidgetProvider : AppWidgetProvider() {
@@ -48,7 +49,20 @@ class CompactPlayerWidgetProvider : AppWidgetProvider() {
         fun updateProgress(context: Context) = WidgetRenderer.updateProgress(context)
 
         fun handlePlayerControlAction(context: Context, action: String) {
-            val service = com.nerf.music.player.AudioPlayerService.getInstance() ?: return
+            val service = com.nerf.music.player.AudioPlayerService.getInstance()
+            if (service == null && action == ACTION_PLAY_PAUSE) {
+                try {
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(context, com.nerf.music.player.AudioPlayerService::class.java)
+                            .setAction(com.nerf.music.player.AudioPlayerService.ACTION_WIDGET_PLAY_MIX)
+                    )
+                } catch (error: IllegalStateException) {
+                    android.util.Log.w("NERFWidget", "O sistema recusou iniciar a reprodução em segundo plano", error)
+                }
+                return
+            }
+            service ?: return
             when (action) {
                 ACTION_PLAY_PAUSE -> service.togglePlayPause()
                 ACTION_SKIP_NEXT -> service.skipToNextTrack()

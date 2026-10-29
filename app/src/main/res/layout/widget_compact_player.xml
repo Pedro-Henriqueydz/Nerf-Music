@@ -1,21 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_compact_root"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:background="@drawable/widget_background"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:padding="10dp">
-    <ImageView android:id="@+id/iv_compact_cover" android:layout_width="52dp" android:layout_height="52dp"
-        android:contentDescription="Capa do álbum" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
-    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-        android:layout_marginStart="8dp" android:layout_marginEnd="4dp" android:layout_weight="1" android:orientation="vertical">
-        <TextView android:id="@+id/tv_compact_title" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:ellipsize="end" android:maxLines="1" android:text="NERF Music" android:textColor="#FFFFFFFF" android:textSize="14sp" android:textStyle="bold" />
-        <TextView android:id="@+id/tv_compact_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="1dp" android:ellipsize="end" android:maxLines="1" android:text="Toque para ouvir" android:textColor="#B3FFFFFF" android:textSize="12sp" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_compact_root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_background"
+    android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
+    <ViewFlipper android:id="@+id/flipper_compact_cover" android:layout_width="52dp" android:layout_height="52dp" android:inAnimation="@anim/widget_fade_in" android:outAnimation="@anim/widget_fade_out">
+        <ImageView android:id="@+id/iv_compact_cover_a" android:layout_width="match_parent" android:layout_height="match_parent" android:contentDescription="Capa" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+        <ImageView android:id="@+id/iv_compact_cover_b" android:layout_width="match_parent" android:layout_height="match_parent" android:contentDescription="Capa" android:scaleType="centerCrop" android:src="@drawable/ic_widget_placeholder" />
+    </ViewFlipper>
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_marginEnd="4dp" android:layout_weight="1" android:orientation="vertical">
+        <ViewFlipper android:id="@+id/flipper_compact_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:inAnimation="@anim/widget_title_in" android:outAnimation="@anim/widget_title_out">
+            <TextView android:id="@+id/tv_compact_title_a" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:text="NERF Music" android:textColor="#FFFFFFFF" android:textSize="14sp" android:textStyle="bold" />
+            <TextView android:id="@+id/tv_compact_title_b" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:text="NERF Music" android:textColor="#FFFFFFFF" android:textSize="14sp" android:textStyle="bold" />
+        </ViewFlipper>
+        <ViewFlipper android:id="@+id/flipper_compact_artist" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="1dp" android:inAnimation="@anim/widget_artist_in" android:outAnimation="@anim/widget_artist_out">
+            <TextView android:id="@+id/tv_compact_artist_a" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:text="Toque para ouvir" android:textColor="#B3FFFFFF" android:textSize="12sp" />
+            <TextView android:id="@+id/tv_compact_artist_b" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:text="Toque para ouvir" android:textColor="#B3FFFFFF" android:textSize="12sp" />
+        </ViewFlipper>
     </LinearLayout>
-    <ImageButton android:id="@+id/btn_widget_play_pause" android:layout_width="38dp" android:layout_height="38dp"
-        android:background="@drawable/widget_button_primary_bg" android:contentDescription="@string/action_play" android:padding="9dp" android:scaleType="centerInside" android:tint="#FF17191F" android:src="@drawable/ic_widget_play" />
+    <ImageButton android:id="@+id/btn_widget_play_pause" android:stateListAnimator="@animator/widget_button_press" android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/widget_button_primary_bg" android:contentDescription="@string/action_play" android:padding="9dp" android:scaleType="centerInside" android:tint="#FF17191F" android:src="@drawable/ic_widget_play" />
 </LinearLayout>

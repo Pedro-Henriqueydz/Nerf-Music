@@ -25,16 +25,16 @@
         android:max="100" android:progress="0" android:progressDrawable="@drawable/widget_progress_bar" />
     <LinearLayout android:layout_width="match_parent" android:layout_height="60dp" android:layout_marginTop="10dp"
         android:gravity="center_vertical" android:orientation="horizontal">
-        <ImageButton android:id="@+id/btn_widget_favorite" android:layout_width="54dp" android:layout_height="54dp"
+        <ImageButton android:id="@+id/btn_widget_favorite" android:stateListAnimator="@animator/widget_button_press" android:layout_width="54dp" android:layout_height="54dp"
             android:background="@drawable/widget_button_circle_bg" android:contentDescription="Curtir" android:padding="9dp" android:src="@drawable/ic_widget_heart" />
         <TextView android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
-        <ImageButton android:id="@+id/btn_widget_expanded_skip_prev" android:layout_width="54dp" android:layout_height="54dp"
+        <ImageButton android:id="@+id/btn_widget_expanded_skip_prev" android:stateListAnimator="@animator/widget_button_press" android:layout_width="54dp" android:layout_height="54dp"
             android:background="@drawable/widget_button_circle_bg" android:contentDescription="@string/action_previous" android:padding="10dp" android:src="@drawable/ic_widget_prev" />
         <TextView android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
-        <ImageButton android:id="@+id/btn_widget_expanded_play_pause" android:layout_width="60dp" android:layout_height="60dp"
+        <ImageButton android:id="@+id/btn_widget_expanded_play_pause" android:stateListAnimator="@animator/widget_button_press" android:layout_width="60dp" android:layout_height="60dp"
             android:background="@drawable/widget_button_primary_bg" android:contentDescription="@string/action_play" android:padding="10dp" android:tint="#FF17191F" android:src="@drawable/ic_widget_play" />
         <TextView android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
-        <ImageButton android:id="@+id/btn_widget_expanded_skip_next" android:layout_width="54dp" android:layout_height="54dp"
+        <ImageButton android:id="@+id/btn_widget_expanded_skip_next" android:stateListAnimator="@animator/widget_button_press" android:layout_width="54dp" android:layout_height="54dp"
             android:background="@drawable/widget_button_circle_bg" android:contentDescription="@string/action_next" android:padding="10dp" android:src="@drawable/ic_widget_next" />
     </LinearLayout>
     <TextView android:layout_width="match_parent" android:layout_height="14dp" android:layout_marginTop="8dp"
