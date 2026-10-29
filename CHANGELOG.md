@@ -6,6 +6,13 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ## [Unreleased]
 
+### Aprimorado & Corrigido
+- Widgets mantêm a última capa disponível mesmo quando o app é fechado e retomam a reprodução em segundo plano pelo botão de play.
+- Reprodução iniciada pelo widget agora monta uma fila de mix dinâmica, incluindo faixas recomendadas além do histórico recente.
+- Atualizações dos widgets receberam transição suave de capa e paleta, revelação rápida de título e artista e feedback tátil com leve efeito de bounce nos controles.
+- Ajustes de estabilidade evitam flicker no widget 2x1 e preservam a atualização parcial dos demais formatos.
+- Cards de compartilhamento receberam alinhamento centralizado, estados selecionados consistentes, ícone moderno de salvar e ícones sociais refinados, incluindo o WhatsApp.
+
 ---
 
 ## [1.4.5] - 2026-10-29 [RELEASED]

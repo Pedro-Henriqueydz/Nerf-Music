@@ -1,8 +1,11 @@
 package com.nerf.music.player
 
 import android.app.PendingIntent
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.net.Uri
 import android.media.audiofx.AudioEffect
 import android.util.Log
@@ -10,6 +13,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -32,6 +36,10 @@ import com.nerf.music.data.repository.LibraryRepositoryImpl
 import com.nerf.music.data.repository.LoudnessStandard
 import com.nerf.music.data.repository.UserSettingsRepository
 import com.nerf.music.data.repository.UserSettingsRepositoryImpl
+import com.nerf.music.data.repository.UserHistoryRepositoryImpl
+import com.nerf.music.data.repository.UserAffinityRepositoryImpl
+import com.nerf.music.data.repository.MusicRepositoryImpl
+import com.nerf.music.data.model.Track
 import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -652,11 +660,68 @@ class AudioPlayerService : MediaSessionService() {
 
     fun togglePlayPause() {
         if (!::activePlayer.isInitialized) return
-        if (activePlayer.isPlaying) {
+        if (activePlayer.mediaItemCount == 0) {
+            playWidgetMix()
+        } else if (activePlayer.isPlaying) {
             activePlayer.pause()
         } else {
             activePlayer.play()
         }
+    }
+
+    /** Recreates a useful queue when the widget is used after process death. */
+    private fun playWidgetMix() {
+        serviceScope.launch(Dispatchers.IO) {
+            var attempts = 0
+            while (!::activePlayer.isInitialized && attempts++ < 30) delay(100)
+            if (!::activePlayer.isInitialized) return@launch
+            val recent = UserHistoryRepositoryImpl(applicationContext).getRecentlyPlayed()
+            val liked = LibraryRepositoryImpl(applicationContext).likedTracksFlow.value
+            val tracks = (recent + liked).distinctBy { it.id }.take(30)
+            if (tracks.isEmpty()) {
+                withContext(Dispatchers.Main.immediate) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+                return@launch
+            }
+            val first = widgetTrackToMediaItem(tracks.first())
+            withContext(Dispatchers.Main.immediate) {
+                // Prepare one item first so the widget responds immediately; adding the rest
+                // only after playback starts avoids a long resolver/buffering stall.
+                activePlayer.setMediaItem(first)
+                activePlayer.prepare()
+                activePlayer.play()
+            }
+            val seed = tracks.first()
+            val radio = MusicRepositoryImpl().getUpNextRadio(seed.id, null).getOrNull()
+            val upcoming = if (radio != null && radio.tracks.isNotEmpty()) {
+                SmartRadioEngine.buildSmartQueue(seed, radio.tracks, liked, recent,
+                    UserAffinityRepositoryImpl(applicationContext)).drop(1)
+            } else tracks.drop(1)
+            withContext(Dispatchers.Main.immediate) {
+                // A newer user action may have replaced the queue while the radio was loading.
+                if (activePlayer.mediaItemCount == 1 && activePlayer.currentMediaItem?.mediaId == seed.id) {
+                    activePlayer.addMediaItems(upcoming.distinctBy { it.id }.filter { it.id != seed.id }.map(::widgetTrackToMediaItem))
+                }
+            }
+        }
+    }
+
+    private fun widgetTrackToMediaItem(track: Track): MediaItem {
+        val artwork = File(filesDir, "offline_audio/${track.id}.jpg").takeIf { it.exists() }
+        val artworkUri = artwork?.let { Uri.fromFile(it) }
+            ?: (track.highResThumbnailUrl ?: track.thumbnailUrl)?.let(Uri::parse)
+        return MediaItem.Builder()
+            .setMediaId(track.id)
+            .setUri(buildTrackUri(track.id))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setAlbumTitle(track.album)
+                    .setArtworkUri(artworkUri)
+                    .setExtras(Bundle().apply { putString("thumbnail_url", artworkUri?.toString() ?: track.thumbnailUrl) })
+                    .build()
+            )
+            .build()
     }
 
     fun skipToNextTrack() {
@@ -701,6 +766,7 @@ class AudioPlayerService : MediaSessionService() {
     companion object {
         private const val TAG = "AudioPlayerService"
         const val NERF_URI_SCHEME = "nerfmusic"
+        const val ACTION_WIDGET_PLAY_MIX = "com.nerf.music.player.ACTION_WIDGET_PLAY_MIX"
         private const val CACHE_TTL_MS = 25 * 60 * 1000L // 25 minutos de validade em cache
         private const val STREAM_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -1342,6 +1408,9 @@ class AudioPlayerService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, activePlayer).apply {
             sessionActivityPendingIntent?.let { setSessionActivity(it) }
         }.build()
+        // A widget can start the service without a MediaController. Register explicitly so
+        // Media3 observes the session and publishes its playback notification in that case.
+        mediaSession?.let { addSession(it) }
 
         serviceScope.launch {
             LibraryRepositoryImpl.sharedLikedTracksFlow.collect {
@@ -1367,6 +1436,27 @@ class AudioPlayerService : MediaSessionService() {
         return mediaSession
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val result = super.onStartCommand(intent, flags, startId)
+        if (intent?.action == ACTION_WIDGET_PLAY_MIX) {
+            // Stream resolution can take longer than Android's foreground-service deadline.
+            // Show a temporary notification immediately; Media3 replaces it once playback starts.
+            val channel = "widget_playback_start"
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(channel, "Inicialização da reprodução", NotificationManager.IMPORTANCE_LOW)
+            )
+            val notification = androidx.core.app.NotificationCompat.Builder(this, channel)
+                .setSmallIcon(com.nerf.music.R.drawable.ic_widget_play)
+                .setContentTitle("NERF Music")
+                .setContentText("Preparando reprodução…")
+                .setOngoing(true)
+                .build()
+            startForeground(1001, notification)
+            playWidgetMix()
+        }
+        return result
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         Log.i(TAG, "onTaskRemoved disparado: usuário encerrou o app na lista de recentes. Parando reprodução e serviço.")
@@ -1382,7 +1472,7 @@ class AudioPlayerService : MediaSessionService() {
         if (instance == this) {
             instance = null
         }
-        com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
+        com.nerf.music.widget.WidgetRenderer.showStoppedState(applicationContext)
         serviceScope.cancel()
         transitionMonitorJob?.cancel()
         crossfadeJob?.cancel()

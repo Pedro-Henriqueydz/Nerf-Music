@@ -6,15 +6,15 @@
     "semantic_hash": ""
   },
   "app/build.gradle.kts": {
-    "mtime": 1793217408.9338973,
-    "seen": 1793223124.8578346,
-    "ast_hash": "d3301726b3a8a88f9722801e0fe8aeb6",
+    "mtime": 1793244822.0451865,
+    "seen": 1793289902.1508005,
+    "ast_hash": "dbb4eac806e761db69dcadd05db43c62",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/MainActivity.kt": {
-    "mtime": 1793232097.3099759,
-    "seen": 1793233200.3770971,
-    "ast_hash": "c2fc756649bc220e64065ab4d3007a9d",
+    "mtime": 1793243573.4405234,
+    "seen": 1793289902.1508005,
+    "ast_hash": "665dec9ae53e9e88d560a2f15e5b5b86",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/NerfMusicApp.kt": {
@@ -186,9 +186,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/player/AudioPlayerService.kt": {
-    "mtime": 1793232097.3109984,
-    "seen": 1793233200.3770971,
-    "ast_hash": "8a01f11ac4e9f54e45dda3f190829945",
+    "mtime": 1793291976.6993706,
+    "seen": 1793292040.1375809,
+    "ast_hash": "e5a63c929d8d4919bd2892a6fdee5eea",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/player/CompositeStreamResolver.kt": {
@@ -276,9 +276,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/PlayerScreen.kt": {
-    "mtime": 1793232503.593294,
-    "seen": 1793233200.3776147,
-    "ast_hash": "e6a8b2f2bfdd61b8808ef9100bff4ff6",
+    "mtime": 1793243573.4433842,
+    "seen": 1793289902.1508005,
+    "ast_hash": "ae759ad2d1dd70578bf7d0268a6d7c9d",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/PlaylistOptionsBottomSheet.kt": {
@@ -324,9 +324,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/viewmodel/MusicViewModel.kt": {
-    "mtime": 1793232097.3146944,
-    "seen": 1793233200.3776147,
-    "ast_hash": "e2534c739921026007560449aada49b9",
+    "mtime": 1793244822.0467162,
+    "seen": 1793289902.1508005,
+    "ast_hash": "70df4b94eed9fe085949b842f3fe1db3",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/updater/AppUpdateManager.kt": {
@@ -438,9 +438,9 @@
     "semantic_hash": ""
   },
   "CHANGELOG.md": {
-    "mtime": 1793232774.258267,
-    "seen": 1793233200.3776147,
-    "ast_hash": "9226f841a1b8919fe46e628d91007755",
+    "mtime": 1793244822.0435681,
+    "seen": 1793289902.1513212,
+    "ast_hash": "d3af5df26843a9c56de05f84aaf6d2c6",
     "semantic_hash": ""
   },
   "README.md": {
@@ -450,9 +450,9 @@
     "semantic_hash": ""
   },
   "RELEASE_NOTES.md": {
-    "mtime": 1793217408.933385,
-    "seen": 1793223124.8578346,
-    "ast_hash": "7e64297262e3b5f638df289ea72f01b2",
+    "mtime": 1793244822.0441487,
+    "seen": 1793289902.1513212,
+    "ast_hash": "687efb9ee0582daf95a1422c1d8dce4f",
     "semantic_hash": ""
   },
   "app/src/main/res/drawable/ic_nerf_logo.png": {
@@ -648,9 +648,9 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/TrackOptionsBottomSheet.kt": {
-    "mtime": 1793232503.5900147,
-    "seen": 1793233200.3776147,
-    "ast_hash": "4b7b3b056874960b5d4eedfb2b361cc7",
+    "mtime": 1793243573.4449036,
+    "seen": 1793289902.1508005,
+    "ast_hash": "c7d9b9fc6add3ed83f83cf2611ad14c5",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/ui/screens/OnboardingScreen.kt": {
@@ -684,21 +684,147 @@
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/util/SocialShareHelper.kt": {
-    "mtime": 1793232503.594845,
-    "seen": 1793233200.3776147,
-    "ast_hash": "a111b42c0b933571708bc91e9dbe5158",
+    "mtime": 1793243573.4473171,
+    "seen": 1793289902.1508005,
+    "ast_hash": "6cb52c5813e0466ff6386138db384153",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/widget/CompactPlayerWidgetProvider.kt": {
-    "mtime": 1793232503.5824118,
-    "seen": 1793233200.3776147,
-    "ast_hash": "91dfff69da4997f89b5434d69daa2ca1",
+    "mtime": 1793291743.5880718,
+    "seen": 1793291767.4308305,
+    "ast_hash": "62e5eeca83d3951d61ecc775e4a0580f",
     "semantic_hash": ""
   },
   "app/src/main/java/com/nerf/music/widget/ExpandedPlayerWidgetProvider.kt": {
-    "mtime": 1793232097.3377032,
-    "seen": 1793233200.3776147,
-    "ast_hash": "8c37a1573a3b5c19bfa667a550e4a30c",
+    "mtime": 1793244252.6679692,
+    "seen": 1793289902.1508005,
+    "ast_hash": "50346707e0f9233e1075431d5b002f18",
+    "semantic_hash": ""
+  },
+  "app/src/androidTest/java/com/nerf/music/ArtworkColorsInstrumentedTest.kt": {
+    "mtime": 1793243573.43749,
+    "seen": 1793289902.1508005,
+    "ast_hash": "98d064a669c847ce9a4749495b88d65e",
+    "semantic_hash": ""
+  },
+  "app/src/androidTest/java/com/nerf/music/ShareCardInstrumentedTest.kt": {
+    "mtime": 1793243573.4390159,
+    "seen": 1793289902.1508005,
+    "ast_hash": "1ce5754a4f3516aed333e218463a40ef",
+    "semantic_hash": ""
+  },
+  "app/src/androidTest/java/com/nerf/music/widget/WidgetArtworkCacheInstrumentedTest.kt": {
+    "mtime": 1793243573.440018,
+    "seen": 1793289902.1508005,
+    "ast_hash": "413de727c4d567a24417ba6c6d9da282",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/ui/SharePreviewActivity.kt": {
+    "mtime": 1793290817.7642047,
+    "seen": 1793290860.8463972,
+    "ast_hash": "ca986d1d3b59274cdf822b763c185c00",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/ArtworkColors.kt": {
+    "mtime": 1793243573.4473171,
+    "seen": 1793289902.1508005,
+    "ast_hash": "16400bd2b354e1d30af1e63abf091d52",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/util/ShareRules.kt": {
+    "mtime": 1793243573.4473171,
+    "seen": 1793289902.1508005,
+    "ast_hash": "63edd59eca9e23040032f55b8e578559",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/widget/ThreeByOneWidgetProvider.kt": {
+    "mtime": 1793243573.4498496,
+    "seen": 1793289902.1508005,
+    "ast_hash": "17f9ff76e1c3bd44fe115249782cb06c",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/widget/WidgetArtworkCache.kt": {
+    "mtime": 1793243573.4503527,
+    "seen": 1793289902.1508005,
+    "ast_hash": "085d6fa31de9d3de0a2a20ae71eeeecd",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/nerf/music/widget/WidgetRenderer.kt": {
+    "mtime": 1793292148.3357384,
+    "seen": 1793292181.856473,
+    "ast_hash": "6f60e3b62857864dd80d6d3375c2455b",
+    "semantic_hash": ""
+  },
+  "app/src/test/java/com/nerf/music/ShareRulesTest.kt": {
+    "mtime": 1793243573.4605393,
+    "seen": 1793289902.1513212,
+    "ast_hash": "134e49d6149e90f814a15b932185b85b",
+    "semantic_hash": ""
+  },
+  "design/HANDOFF-widget-previa.md": {
+    "mtime": 1793243573.4620552,
+    "seen": 1793289902.1513212,
+    "ast_hash": "de2a2fa819d804e0d75f655d6f7b440b",
+    "semantic_hash": ""
+  },
+  "design/assets/cidade-acesa.png": {
+    "mtime": 1793243573.5336375,
+    "seen": 1793289902.1513212,
+    "ast_hash": "410c9bea5821f0348ee5c539f14ead34",
+    "semantic_hash": ""
+  },
+  "design/assets/depois-do-sol.png": {
+    "mtime": 1793243573.5485,
+    "seen": 1793289902.1513212,
+    "ast_hash": "959925cfa7489751602a00ea75788273",
+    "semantic_hash": ""
+  },
+  "design/assets/folhas.png": {
+    "mtime": 1793243573.5625727,
+    "seen": 1793289902.1513212,
+    "ast_hash": "774f20bcfd5bbf14252303c0b9287052",
+    "semantic_hash": ""
+  },
+  "design/assets/mar-aberto.png": {
+    "mtime": 1793243573.5748837,
+    "seen": 1793289902.1513212,
+    "ast_hash": "37ca2f99875a6f8a47941d039ce36a69",
+    "semantic_hash": ""
+  },
+  "design/assets/noite-rubra.png": {
+    "mtime": 1793243573.5865645,
+    "seen": 1793289902.1513212,
+    "ast_hash": "4af9dee94ce5a117eda131dda471bb21",
+    "semantic_hash": ""
+  },
+  "design/previa-final.png": {
+    "mtime": 1793243573.59214,
+    "seen": 1793289902.1513212,
+    "ast_hash": "920e13e7e2c82304cae04672a7d34410",
+    "semantic_hash": ""
+  },
+  "design/previa-proposta.svg": {
+    "mtime": 1793243573.5936594,
+    "seen": 1793289902.1513212,
+    "ast_hash": "e7754d57746abbfec324f49e9ba13c35",
+    "semantic_hash": ""
+  },
+  "design/widget-final.png": {
+    "mtime": 1793243573.5966911,
+    "seen": 1793289902.1513212,
+    "ast_hash": "445caf27963fed4250ea1a408c465c81",
+    "semantic_hash": ""
+  },
+  "design/widget-proposta.svg": {
+    "mtime": 1793243573.5966911,
+    "seen": 1793289902.1513212,
+    "ast_hash": "aeca7c3f0dd3a30446f2bbad29a4aa56",
+    "semantic_hash": ""
+  },
+  "design/widgets-3x1-2x1.png": {
+    "mtime": 1793243573.598204,
+    "seen": 1793289902.1513212,
+    "ast_hash": "07151223b81e0cbb537b35efd7a30e2b",
     "semantic_hash": ""
   }
 }

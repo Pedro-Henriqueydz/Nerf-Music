@@ -36,7 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,6 +73,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 private val ShareOrange = Color(0xFFFF7135)
+private val FavoritePink = Color(0xFFFF2D55)
 private val GlassBorder = Color.White.copy(alpha = 0.14f)
 
 class SharePreviewActivity : ComponentActivity() {
@@ -285,9 +286,10 @@ private fun SharePreviewSheet(
             DividerLine()
             Spacer(Modifier.height(13.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                ShareAction("Stories", R.drawable.ic_social_instagram, ShareOrange, enabled, onInstagram)
-                ShareAction("WhatsApp", R.drawable.ic_social_whatsapp, Color.White.copy(alpha = 0.10f), enabled, onWhatsApp)
-                ShareAction("Salvar", R.drawable.ic_social_download, Color.White.copy(alpha = 0.10f), enabled, onSave)
+                val actionFill = Color.White.copy(alpha = 0.10f)
+                ShareAction("Stories", R.drawable.ic_social_instagram, actionFill, enabled, onInstagram)
+                ShareAction("WhatsApp", R.drawable.ic_social_whatsapp, actionFill, enabled, onWhatsApp, iconOffsetY = (-1).dp)
+                ShareActionModern("Salvar", Icons.Outlined.SaveAlt, Color.White.copy(alpha = 0.10f), enabled, onSave)
             }
             Spacer(Modifier.height(14.dp))
             Box(
@@ -322,24 +324,36 @@ private fun StyleOption(style: SocialShareHelper.Style, selected: Boolean, enabl
     }
     Box(
         modifier.height(58.dp).clip(RoundedCornerShape(16.dp))
-            .background(if (selected) ShareOrange.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.06f))
-            .border(if (selected) 1.5.dp else 1.dp, if (selected) ShareOrange else GlassBorder, RoundedCornerShape(16.dp))
+            .background(if (selected) FavoritePink.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.06f))
+            .border(if (selected) 1.5.dp else 1.dp, if (selected) FavoritePink else GlassBorder, RoundedCornerShape(16.dp))
             .applePressFeedback(enabled, 0.97f, onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = if (selected) Color.White else Color.White.copy(alpha = 0.64f), fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, textAlign = TextAlign.Center)
+        Text(label, modifier = Modifier.fillMaxWidth().padding(horizontal = 3.dp),
+            color = if (selected) Color.White else Color.White.copy(alpha = 0.64f), fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, textAlign = TextAlign.Center, maxLines = 1)
     }
 }
 
 @Composable
-private fun ShareAction(label: String, iconRes: Int, fill: Color, enabled: Boolean, onClick: () -> Unit) {
+private fun ShareAction(label: String, iconRes: Int, fill: Color, enabled: Boolean, onClick: () -> Unit, iconOffsetY: Dp = 0.dp) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         CircleAction(onClick, enabled, 56.dp, fill) {
-            Icon(painterResource(iconRes), label, tint = Color.White, modifier = Modifier.size(25.dp))
+            Icon(painterResource(iconRes), label, tint = Color.White, modifier = Modifier.size(25.dp).offset(y = iconOffsetY))
         }
         Spacer(Modifier.height(4.dp))
-        Text(label, color = Color.White.copy(alpha = if (enabled) 0.80f else 0.42f), fontSize = 12.sp)
+        Text(label, color = Color.White.copy(alpha = if (enabled) 0.80f else 0.42f), fontSize = 12.sp, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun ShareActionModern(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, fill: Color, enabled: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CircleAction(onClick, enabled, 56.dp, fill) {
+            Icon(icon, label, tint = Color.White, modifier = Modifier.size(25.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = Color.White.copy(alpha = if (enabled) 0.80f else 0.42f), fontSize = 12.sp, textAlign = TextAlign.Center)
     }
 }
 
