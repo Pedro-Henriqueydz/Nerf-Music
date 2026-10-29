@@ -23,15 +23,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // Garante a taxa de atualização máxima de 120Hz (LTPO) em telas como Samsung Galaxy S24+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val modes = display?.supportedModes.orEmpty()
-            val maxMode = modes.maxByOrNull { it.refreshRate }
-            if (maxMode != null && maxMode.refreshRate >= 119f) {
-                val params = window.attributes
-                params.preferredDisplayModeId = maxMode.modeId
-                window.attributes = params
-            }
-        }
+        preferMaximumRefreshRate()
 
         // Inicializa canal de notificação e agenda verificação em segundo plano via WorkManager
         UpdateNotificationHelper.createNotificationChannel(this)
@@ -74,9 +66,30 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        preferMaximumRefreshRate()
         // Reconecta e sincroniza a UI com o estado real do serviço de áudio ao voltar para o app
         viewModel.syncWithPlayer()
         // A tela inicial do launcher pode ter voltado ao initialLayout após uma atualização do APK.
         com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
+    }
+
+    private fun preferMaximumRefreshRate() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val currentDisplay = display ?: return
+        val currentMode = currentDisplay.mode
+        val maxMode = currentDisplay.supportedModes
+            .asSequence()
+            .filter {
+                it.physicalWidth == currentMode.physicalWidth &&
+                    it.physicalHeight == currentMode.physicalHeight
+            }
+            .maxByOrNull { it.refreshRate }
+            ?: return
+
+        if (maxMode.refreshRate < 90f) return
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = maxMode.modeId
+            preferredRefreshRate = maxMode.refreshRate
+        }
     }
 }

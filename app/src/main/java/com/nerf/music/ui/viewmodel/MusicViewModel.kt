@@ -29,6 +29,7 @@ import com.nerf.music.data.model.QueueFilterChip
 import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
+import com.nerf.music.data.model.ExploreRecommendations
 import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
 import com.nerf.music.data.repository.UserHistoryRepository
@@ -93,6 +94,8 @@ import com.nerf.music.data.model.UserPlaylist
 import com.nerf.music.data.model.DownloadedTrack
 import com.nerf.music.data.repository.HomeFeedSynthesizer
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 data class MigrationProgressState(
     val isImporting: Boolean = false,
@@ -414,6 +417,12 @@ class MusicViewModel(
         viewModelScope.launch {
             _exploreLoading.value = true
             try {
+                val cachedExplore: List<HomeSection> = _exploreSections.value.ifEmpty {
+                    userHistoryRepository?.getCachedExploreFeed().orEmpty()
+                }
+                if (_exploreSections.value.isEmpty() && cachedExplore.isNotEmpty()) {
+                    _exploreSections.value = cachedExplore
+                }
                 val penalizedArtists = userAffinityRepository?.getPenalizedArtists().orEmpty()
                 val rawArtists = (userAffinityRepository?.getTopAffinitiveArtists(15).orEmpty() +
                     userHistoryRepository?.getTopArtists(15).orEmpty()).distinct()
@@ -422,6 +431,10 @@ class MusicViewModel(
                     penalizedArtists
                 )
                 val likedIds = _likedTracks.value.map { it.id }.toSet()
+                val recentlyPlayedIds = userHistoryRepository?.getRecentlyPlayed()
+                    .orEmpty()
+                    .map { it.id }
+                    .toSet()
                 val seedIds = buildList {
                     userHistoryRepository?.getFavoriteSeedVideoId()?.let { add(it) }
                     _likedTracks.value.firstOrNull { !it.isAlbumOrPlaylist && it.id.isNotBlank() }?.id?.let { add(it) }
@@ -430,30 +443,70 @@ class MusicViewModel(
                         ?.id?.let { add(it) }
                 }.distinct()
 
-                val newReleases = repository.getNewReleases().getOrNull().orEmpty()
-                val personalizedReleases = if (artists.isNotEmpty() || seedIds.isNotEmpty()) {
-                    repository.discoverPersonalizedRecentReleases(
-                        preferredArtists = artists,
-                        seedVideoIds = seedIds,
-                        penalizedArtists = penalizedArtists
-                    )
-                } else {
-                    emptyList()
-                }
-                val radioArtists = seedIds.firstOrNull()?.let { repository.getUpNextRadio(it).getOrNull() }
-                    ?.tracks.orEmpty().map { it.artist }.filter { it.isNotBlank() }
-                val discoveredClusterArtists = personalizedReleases
-                    .filter { it.sourceIdentifier == "INNERTUBE_CLUSTER_RELEASE" }
-                    .flatMap { com.nerf.music.data.model.ReleaseRecommendations.extractContributors(it.artist) }
-                val relatedArtists = com.nerf.music.data.model.ReleaseRecommendations.cleanPreferredArtists(
-                    (radioArtists + discoveredClusterArtists).distinct(),
-                    penalizedArtists
-                )
+                coroutineScope {
+                    // O feed-base deve aparecer assim que chegar. O enriquecimento mais caro
+                    // (lançamentos personalizados e validação de datas) continua em paralelo.
+                    val exploreDeferred = async { repository.getExploreFeed() }
+                    val newReleasesDeferred = async { repository.getNewReleases().getOrNull().orEmpty() }
+                    val radiosDeferred = async {
+                        coroutineScope {
+                            seedIds.take(2).map { seedId ->
+                                async { repository.getUpNextRadio(seedId).getOrNull()?.tracks.orEmpty() }
+                            }.map { it.await() }
+                        }
+                    }
+                    val personalizedReleasesDeferred = async {
+                        if (artists.isNotEmpty() || seedIds.isNotEmpty()) {
+                            val radioTracks = radiosDeferred.await().flatten()
+                            repository.discoverPersonalizedRecentReleases(
+                                preferredArtists = artists,
+                                seedVideoIds = seedIds,
+                                penalizedArtists = penalizedArtists,
+                                seedRadioTracks = radioTracks
+                            )
+                        } else {
+                            emptyList()
+                        }
+                    }
 
-                repository.getExploreFeed().onSuccess { sections ->
+                    val sections = exploreDeferred.await().getOrNull() ?: return@coroutineScope
                     val musicSections = sections.filterNot { section ->
                         section.title.contains("vídeo", ignoreCase = true) || section.title.contains("video", ignoreCase = true)
                     }
+
+                    // Publicação progressiva: o usuário já pode navegar enquanto as recomendações
+                    // personalizadas terminam de carregar.
+                    val visibleBaseSections = musicSections.withCachedExplorePersonalization(cachedExplore)
+                    _exploreSections.value = visibleBaseSections
+
+                    val radioGroups = radiosDeferred.await()
+                    val discoveryTracks = ExploreRecommendations.selectDiscoveryTracks(
+                        radioGroups = radioGroups,
+                        excludedTrackIds = likedIds + recentlyPlayedIds + seedIds,
+                        penalizedArtists = penalizedArtists,
+                        isTrackPenalized = { id -> userAffinityRepository?.isTrackPenalized(id) == true }
+                    )
+                    val discoverySection = discoveryTracks.takeIf { it.isNotEmpty() }?.let {
+                        HomeSection(
+                            title = "Descobertas para você",
+                            strapline = "FAIXAS NOVAS A PARTIR DO QUE VOCÊ OUVE",
+                            items = it,
+                            style = HomeSectionStyle.QUICK_PICKS_GRID
+                        )
+                    }
+                    _exploreSections.value = visibleBaseSections.withDiscoverySection(discoverySection)
+
+                    val personalizedReleases = personalizedReleasesDeferred.await()
+                    val newReleases = newReleasesDeferred.await()
+                    val radioArtists = radioGroups.flatten().map { it.artist }.filter { it.isNotBlank() }
+                    val discoveredClusterArtists = personalizedReleases
+                        .filter { it.sourceIdentifier == "INNERTUBE_CLUSTER_RELEASE" }
+                        .flatMap { com.nerf.music.data.model.ReleaseRecommendations.extractContributors(it.artist) }
+                    val relatedArtists = com.nerf.music.data.model.ReleaseRecommendations.cleanPreferredArtists(
+                        (radioArtists + discoveredClusterArtists).distinct(),
+                        penalizedArtists
+                    )
+
                     val tailored = musicSections.map { section ->
                         if (section.title.contains("lançamento", true) || section.title.contains("álbu", true)) {
                             val candidates = (personalizedReleases + newReleases + section.items).distinctBy { it.browseId ?: it.id }
@@ -474,19 +527,46 @@ class MusicViewModel(
                             )
                         } else section
                     }
-                    val discoveryTracks = _homeSections.value.flatMap { it.items }
-                        .filter { !it.isAlbumOrPlaylist && it.id.isNotBlank() && it.id !in likedIds && it.sourceIdentifier != "SHORTCUT_LIKED" }
-                        .distinctBy { it.id }
-                        .take(16)
-                    _exploreSections.value = tailored + if (discoveryTracks.isNotEmpty()) listOf(
-                        HomeSection("Descobertas para você", discoveryTracks, style = HomeSectionStyle.QUICK_PICKS_GRID)
-                    ) else emptyList()
+                    val finalSections = tailored.withDiscoverySection(discoverySection)
+                    _exploreSections.value = finalSections
+                    userHistoryRepository?.saveCachedExploreFeed(finalSections)
                 }
             } finally {
                 _exploreLoading.value = false
             }
         }
     }
+
+    private fun List<HomeSection>.withDiscoverySection(discovery: HomeSection?): List<HomeSection> {
+        val withoutOldDiscovery = filterNot { it.title.equals("Descobertas para você", ignoreCase = true) }
+        return if (discovery == null) withoutOldDiscovery else withoutOldDiscovery + discovery
+    }
+
+    private fun List<HomeSection>.withCachedExplorePersonalization(cached: List<HomeSection>): List<HomeSection> {
+        val cachedRelease = cached.firstOrNull { it.isReleaseSection() }
+        val cachedDiscovery = cached.firstOrNull {
+            it.title.equals("Descobertas para você", ignoreCase = true)
+        }
+        var releaseInserted = false
+        return buildList {
+            this@withCachedExplorePersonalization.forEach { section ->
+                when {
+                    section.isReleaseSection() -> {
+                        if (!releaseInserted && cachedRelease != null) add(cachedRelease)
+                        releaseInserted = true
+                    }
+                    section.title.equals("Descobertas para você", ignoreCase = true) -> Unit
+                    else -> add(section)
+                }
+            }
+            cachedDiscovery?.let(::add)
+        }
+    }
+
+    private fun HomeSection.isReleaseSection(): Boolean =
+        title.contains("lançamento", ignoreCase = true) ||
+            title.contains("álbu", ignoreCase = true) ||
+            title.contains("release", ignoreCase = true)
 
     private val _isLoadingHome = MutableStateFlow(false)
     val isLoadingHome: StateFlow<Boolean> = _isLoadingHome.asStateFlow()
@@ -743,40 +823,62 @@ class MusicViewModel(
             _isLoadingHome.value = true
             _homeError.value = null
             val historyRepo = userHistoryRepository
-            val seedId = historyRepo?.getFavoriteSeedVideoId()
-            val topArtists = historyRepo?.getTopArtists(5) ?: emptyList()
+            val selectedChip = _selectedHomeChip.value
 
-            repository.getPersonalizedHomeFeedData(seedId, topArtists, params).onSuccess { feedData ->
-                val synthesizedFeed = homeFeedSynthesizer.synthesizeHomeFeed(
+            // Make locally available listening data visible without waiting for the network.
+            val localFeed = homeFeedSynthesizer.synthesizeHomeFeed(
+                baseFeedData = com.nerf.music.data.model.HomeFeedData(),
+                historyRepo = historyRepo,
+                libraryRepo = libraryRepository,
+                affinityRepo = userAffinityRepository,
+                selectedChip = selectedChip,
+                includeRemoteContent = false
+            )
+            if (_homeSections.value.isEmpty() && localFeed.sections.isNotEmpty()) {
+                _homeSections.value = localFeed.sections
+                prefetchHomeMedia(localFeed.sections)
+            }
+
+            repository.getHomeFeedData(params).onSuccess { feedData ->
+                // Publish the catalog response first. Personalization continues in the background.
+                val baseFeed = homeFeedSynthesizer.synthesizeHomeFeed(
                     baseFeedData = feedData,
-                    historyRepo = userHistoryRepository,
+                    historyRepo = historyRepo,
                     libraryRepo = libraryRepository,
                     affinityRepo = userAffinityRepository,
-                    selectedChip = _selectedHomeChip.value
+                    selectedChip = selectedChip,
+                    includeRemoteContent = false
+                )
+                if (baseFeed.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
+                    _homeChips.value = baseFeed.chips
+                }
+                if (_homeSections.value.isEmpty() && baseFeed.sections.isNotEmpty()) {
+                    _homeSections.value = baseFeed.sections
+                    prefetchHomeMedia(baseFeed.sections)
+                }
+                _isLoadingHome.value = false
+
+                val synthesizedFeed = homeFeedSynthesizer.synthesizeHomeFeed(
+                    baseFeedData = feedData,
+                    historyRepo = historyRepo,
+                    libraryRepo = libraryRepository,
+                    affinityRepo = userAffinityRepository,
+                    selectedChip = selectedChip
                 )
 
                 if (synthesizedFeed.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
                     _homeChips.value = synthesizedFeed.chips
                 }
                 _homeSections.value = synthesizedFeed.sections
-                _isLoadingHome.value = false
                 historyRepo?.saveCachedHomeFeed(synthesizedFeed.sections)
 
                 prefetchHomeMedia(synthesizedFeed.sections)
             }.onFailure {
-                // Fallback com sintese local caso nao haja conexao com o catalogo
-                val fallbackSynthesized = homeFeedSynthesizer.synthesizeHomeFeed(
-                    baseFeedData = com.nerf.music.data.model.HomeFeedData(),
-                    historyRepo = userHistoryRepository,
-                    libraryRepo = libraryRepository,
-                    affinityRepo = userAffinityRepository,
-                    selectedChip = _selectedHomeChip.value
-                )
-                if (fallbackSynthesized.sections.isNotEmpty()) {
-                    _homeSections.value = fallbackSynthesized.sections
-                    prefetchHomeMedia(fallbackSynthesized.sections)
+                if (_homeSections.value.isEmpty() && localFeed.sections.isNotEmpty()) {
+                    _homeSections.value = localFeed.sections
+                    prefetchHomeMedia(localFeed.sections)
                     _isLoadingHome.value = false
-                } else {
+                } else if (_homeSections.value.isEmpty()) {
                     _homeError.value = "Não foi possível carregar o feed inicial."
                     _isLoadingHome.value = false
                 }
@@ -932,11 +1034,11 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            Novidades do NERF Music 1.4.6
+            Novidades do NERF Music 1.4.7
 
-            As recomenda??es acompanham melhor os artistas que voc? escolhe e as m?sicas que ouve. O Explorar destaca lan?amentos recentes relacionados ao seu perfil, com mais variedade.
+            A Home e o Explorar carregam com mais agilidade e mant?m suas recomenda??es est?veis. O Explorar traz descobertas musicais, e a rolagem e as anima??es ficaram mais fluidas.
 
-            A Home, o r?dio e os downloads inteligentes tamb?m ficaram mais atentos ?s suas prefer?ncias. O player, os widgets e o compartilhamento receberam melhorias.
+            O indicador de reprodu??o ganhou ondas animadas, e o player recebeu melhorias visuais e de acessibilidade.
         """.trimIndent()
     }
 

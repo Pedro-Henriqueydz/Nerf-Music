@@ -32,7 +32,8 @@ interface MusicRepository {
     suspend fun discoverPersonalizedRecentReleases(
         preferredArtists: List<String>,
         seedVideoIds: List<String>,
-        penalizedArtists: Set<String> = emptySet()
+        penalizedArtists: Set<String> = emptySet(),
+        seedRadioTracks: List<com.nerf.music.data.model.Track> = emptyList()
     ): List<com.nerf.music.data.model.Track> = emptyList()
     suspend fun verifyReleaseDates(candidates: List<com.nerf.music.data.model.Track>, preferredArtists: List<String>): List<com.nerf.music.data.model.Track> = emptyList()
     suspend fun getChartsFeed(): Result<List<HomeSection>> = Result.success(emptyList())

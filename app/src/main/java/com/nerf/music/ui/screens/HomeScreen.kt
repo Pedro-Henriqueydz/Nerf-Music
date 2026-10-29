@@ -55,7 +55,10 @@ import com.nerf.music.ui.components.AnimatedEqualizerBars
 import com.nerf.music.ui.components.JamPersonWavesIcon
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
+import com.nerf.music.ui.motion.rememberSmoothFlingBehavior
 import com.nerf.music.util.ConnectivityObserver
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,12 +70,20 @@ fun HomeScreen(
     onTrackOptionsClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val smoothFlingBehavior = rememberSmoothFlingBehavior()
     val homeChips by viewModel.homeChips.collectAsState()
     val selectedChip by viewModel.selectedHomeChip.collectAsState()
     val homeSections by viewModel.homeSections.collectAsState()
     val isLoading by viewModel.isLoadingHome.collectAsState()
     val homeError by viewModel.homeError.collectAsState()
-    val playbackState by viewModel.playbackState.collectAsState()
+    val playbackIdentityFlow = remember(viewModel) {
+        viewModel.playbackState
+            .map { it.currentTrack?.id to it.isPlaying }
+            .distinctUntilChanged()
+    }
+    val playbackIdentity by playbackIdentityFlow.collectAsState(initial = null to false)
+    val currentPlayingId = playbackIdentity.first
+    val isPlaybackActive = playbackIdentity.second
     val connectivityStatus by viewModel.connectivityStatus.collectAsState()
     val jamSessionState by viewModel.jamSessionState.collectAsState()
 
@@ -237,6 +248,7 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         LazyColumn(
+                            flingBehavior = smoothFlingBehavior,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 110.dp),
                             verticalArrangement = Arrangement.spacedBy(28.dp)
@@ -269,19 +281,7 @@ fun HomeScreen(
                         items(homeSections, key = { it.title }) { section ->
                             when (section.style) {
                                 HomeSectionStyle.SPEED_DIAL -> {
-                                    val progressFraction = if (playbackState.durationMs > 0L) {
-                                        (playbackState.currentPositionMs.toFloat() / playbackState.durationMs.toFloat()).coerceIn(0f, 1f)
-                                    } else 0f
-
-                                    YtmSpeedDialPagerSection(
-                                        tracks = section.items,
-                                        currentPlayingId = playbackState.currentTrack?.id,
-                                        isPlaybackActive = playbackState.isPlaying,
-                                        playbackProgressFraction = progressFraction,
-                                        onTrackClick = { track ->
-                                            viewModel.handleHomeTrackClick(track, section)
-                                        }
-                                    )
+                                    HomeSpeedDialPlaybackSection(viewModel = viewModel, section = section)
                                 }
 
                                 HomeSectionStyle.YOUR_DOWNLOADS -> {
@@ -321,8 +321,8 @@ fun HomeScreen(
                                     Spacer(modifier = Modifier.height(12.dp))
                                     YtmQuickPicksGridCarousel(
                                         tracks = section.items,
-                                        currentPlayingId = playbackState.currentTrack?.id,
-                                        isPlaybackActive = playbackState.isPlaying,
+                                        currentPlayingId = currentPlayingId,
+                                        isPlaybackActive = isPlaybackActive,
                                         onTrackClick = { track ->
                                             val idx = section.items.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
                                             viewModel.playSection(section, startIndex = idx)
@@ -342,8 +342,8 @@ fun HomeScreen(
                                     Spacer(modifier = Modifier.height(12.dp))
                                     YtmTwoRowCarousel(
                                         tracks = section.items,
-                                        currentPlayingId = playbackState.currentTrack?.id,
-                                        isPlaybackActive = playbackState.isPlaying,
+                                        currentPlayingId = currentPlayingId,
+                                        isPlaybackActive = isPlaybackActive,
                                         onTrackClick = { track ->
                                             val albumId = track.browseId?.takeIf { it.isNotBlank() }
                                                 ?: if (track.isAlbumOrPlaylist) track.id else null
@@ -363,6 +363,27 @@ fun HomeScreen(
         }
     }
 }
+
+}
+
+@Composable
+private fun HomeSpeedDialPlaybackSection(
+    viewModel: MusicViewModel,
+    section: HomeSection
+) {
+    val playbackState by viewModel.playbackState.collectAsState()
+    val progressFraction = if (playbackState.durationMs > 0L) {
+        (playbackState.currentPositionMs.toFloat() / playbackState.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    YtmSpeedDialPagerSection(
+        tracks = section.items,
+        currentPlayingId = playbackState.currentTrack?.id,
+        isPlaybackActive = playbackState.isPlaying,
+        playbackProgressFraction = progressFraction,
+        onTrackClick = { track -> viewModel.handleHomeTrackClick(track, section) }
+    )
 }
 
 /**

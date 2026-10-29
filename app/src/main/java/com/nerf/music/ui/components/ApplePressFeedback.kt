@@ -1,5 +1,6 @@
 package com.nerf.music.ui.components
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -32,17 +33,24 @@ fun Modifier.applePressFeedback(
 ): Modifier {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val animationsEnabled = ValueAnimator.areAnimatorsEnabled()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled) targetScale else 1f,
+        targetValue = if (isPressed && enabled && animationsEnabled) targetScale else 1f,
         animationSpec = AppleSpringSpec,
         label = "applePressScale"
     )
 
-    return this
-        .graphicsLayer {
+    val pressTransform = if (scale < 0.999f) {
+        Modifier.graphicsLayer {
             scaleX = scale
             scaleY = scale
         }
+    } else {
+        Modifier
+    }
+
+    return this
+        .then(pressTransform)
         .then(
             if (onClick != null) {
                 Modifier.clickable(

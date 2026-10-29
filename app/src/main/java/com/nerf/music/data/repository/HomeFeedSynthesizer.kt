@@ -33,7 +33,8 @@ class HomeFeedSynthesizer(
         historyRepo: UserHistoryRepository?,
         libraryRepo: LibraryRepository?,
         affinityRepo: UserAffinityRepository?,
-        selectedChip: HomeChip? = null
+        selectedChip: HomeChip? = null,
+        includeRemoteContent: Boolean = true
     ): HomeFeedData = withContext(Dispatchers.IO) {
         val syntheticSections = mutableListOf<HomeSection>()
 
@@ -112,7 +113,7 @@ class HomeFeedSynthesizer(
         // -----------------------------------------------------------------------------------------
         // 2. SEU SUPERMIX DIÁRIO (40% Favoritos Conhecidos + 60% Novidades Contextuais)
         // -----------------------------------------------------------------------------------------
-        if (selectedChip == null && !favoriteSeedId.isNullOrBlank()) {
+        if (includeRemoteContent && selectedChip == null && !favoriteSeedId.isNullOrBlank()) {
             val supermixItems = mutableListOf<Track>()
             val supermixSeenIds = mutableSetOf<String>()
 
@@ -152,7 +153,7 @@ class HomeFeedSynthesizer(
         // -----------------------------------------------------------------------------------------
         // 3. PRATELEIRAS DEDICADAS POR ARTISTA ("Porque você ouve [Artista]")
         // -----------------------------------------------------------------------------------------
-        if (selectedChip == null && topArtists.isNotEmpty()) {
+        if (includeRemoteContent && selectedChip == null && topArtists.isNotEmpty()) {
             for (artist in topArtists.take(3)) {
                 try {
                     val artistTracksResult = catalogClient.search(artist, SearchFilter.SONGS).getOrNull()
@@ -179,7 +180,7 @@ class HomeFeedSynthesizer(
         // -----------------------------------------------------------------------------------------
         // 4. SEÇÃO CONTEXTUAL DE HORÁRIO ADAPTADA AO GOSTO REAL DO USUÁRIO
         // -----------------------------------------------------------------------------------------
-        if (selectedChip == null) {
+        if (includeRemoteContent && selectedChip == null) {
             val cal = Calendar.getInstance()
             val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
             val hourOfDay = cal.get(Calendar.HOUR_OF_DAY)
@@ -279,7 +280,7 @@ class HomeFeedSynthesizer(
         // -----------------------------------------------------------------------------------------
         // 6. COVERS AND REMIXES (Foco estrito em versões Slowed, Sped Up, Remixes e VIP Edits)
         // -----------------------------------------------------------------------------------------
-        if (selectedChip == null) {
+        if (includeRemoteContent && selectedChip == null) {
             val topArtistForRemix = topArtists.firstOrNull() ?: userRecent.firstOrNull()?.artist
             val remixQuery = if (!topArtistForRemix.isNullOrBlank()) {
                 "$topArtistForRemix slowed remix vip cover"
@@ -311,7 +312,7 @@ class HomeFeedSynthesizer(
         // -----------------------------------------------------------------------------------------
         // 7. YOUR DAILY DISCOVER (Hero Card com a assinatura "Parecido com X de Y")
         // -----------------------------------------------------------------------------------------
-        if (selectedChip == null) {
+        if (includeRemoteContent && selectedChip == null) {
             val favoriteTrack = userRecent.firstOrNull() ?: userLiked.firstOrNull()
             if (favoriteTrack != null && favoriteSeedId != null) {
                 val radioRes = catalogClient.getUpNextRadio(favoriteSeedId).getOrNull()
@@ -340,7 +341,7 @@ class HomeFeedSynthesizer(
         // -----------------------------------------------------------------------------------------
         // 8. MOOD CHIPS ATIVOS (Energia, Relax, Treino, Foco, etc.)
         // -----------------------------------------------------------------------------------------
-        if (selectedChip != null) {
+        if (includeRemoteContent && selectedChip != null) {
             val moodQuery = if (!primaryArtist.isNullOrBlank()) {
                 "$primaryArtist ${selectedChip.title}"
             } else {

@@ -42,11 +42,13 @@ class MusicRepositoryImpl(
     override suspend fun discoverPersonalizedRecentReleases(
         preferredArtists: List<String>,
         seedVideoIds: List<String>,
-        penalizedArtists: Set<String>
+        penalizedArtists: Set<String>,
+        seedRadioTracks: List<Track>
     ): List<Track> = catalogClient.discoverPersonalizedRecentReleases(
         preferredArtists = preferredArtists,
         seedVideoIds = seedVideoIds,
-        penalizedArtists = penalizedArtists
+        penalizedArtists = penalizedArtists,
+        seedRadioTracks = seedRadioTracks
     )
     override suspend fun verifyReleaseDates(candidates: List<Track>, preferredArtists: List<String>) = catalogClient.verifyReleaseDates(candidates, preferredArtists)
     override suspend fun getChartsFeed() = catalogClient.getChartsFeed()

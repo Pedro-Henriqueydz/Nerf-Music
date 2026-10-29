@@ -6,10 +6,19 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ## [Unreleased]
 
+---
+
+## [1.4.7] - 2026-10-29
+
 ### Aprimorado & Corrigido
 - Indicador de reprodução reformulado com ondas sonoras fluidas baseadas em molas, padrões orgânicos defasados, renderização otimizada e suporte à preferência de movimento reduzido do sistema.
 - Janela de Letras simplificada com botões de Card de Letra e JAM exibindo somente os ícones.
 - Normalização de volume aplicada também à faixa instrumental dedicada quando o modo Karaokê usa um instrumental real.
+- Home e Explorar carregam o cache personalizado imediatamente e atualizam recomendações em segundo plano sem substituir a tela por conteúdo genérico.
+- Explorar apresenta descobertas musicais recomendadas com base no histórico, nas curtidas e nas afinidades do ouvinte.
+- Rolagem da Home e do Explorar mais natural, com desaceleração progressiva; indicador de reprodução animado também no Explorar.
+- Interações com feedback de mola, respeitando a preferência de movimento reduzido.
+- Busca na Home e no Explorar paralelizada e compartilhada para evitar requisições de rádio redundantes ao catálogo.
 
 ---
 

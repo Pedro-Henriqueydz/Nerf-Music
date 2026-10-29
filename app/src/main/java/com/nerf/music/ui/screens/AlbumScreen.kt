@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
 import com.nerf.music.ui.components.AnimatedEqualizerBars
+import com.nerf.music.ui.components.applePressFeedback
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
@@ -366,7 +367,7 @@ private fun AlbumHeroHeader(
                         .size(44.dp)
                         .clip(CircleShape)
                         .background(Color(0x22FFFFFF))
-                        .clickable(onClick = onDownload),
+                        .applePressFeedback(targetScale = 0.94f, onClick = onDownload),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -418,7 +419,7 @@ private fun AlbumHeroHeader(
                     .size(56.dp)
                     .clip(CircleShape)
                     .background(YtmWhite)
-                    .clickable(onClick = onPlayAll),
+                    .applePressFeedback(targetScale = 0.94f, onClick = onPlayAll),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(

@@ -20,6 +20,8 @@ interface UserHistoryRepository {
     fun getFavoriteSeedVideoId(): String?
     fun getCachedHomeFeed(): List<HomeSection>
     fun saveCachedHomeFeed(sections: List<HomeSection>)
+    fun getCachedExploreFeed(): List<HomeSection>
+    fun saveCachedExploreFeed(sections: List<HomeSection>)
     fun getTracksByArtist(artistName: String): List<Track>
     fun getSearchHistory(): List<String>
     fun addSearchQuery(query: String)
@@ -48,6 +50,7 @@ class UserHistoryRepositoryImpl(
         private const val KEY_ARTIST_COUNTS = "artist_play_counts"
         private const val KEY_LAST_SEED_VIDEO_ID = "last_seed_video_id"
         private const val KEY_CACHED_HOME = "cached_home_feed"
+        private const val KEY_CACHED_EXPLORE = "cached_explore_feed"
         private const val KEY_LAST_SEEN_VERSION = "last_seen_app_version"
         private const val MAX_RECENT_TRACKS = 40
         private const val MAX_SEARCH_QUERIES = 25
@@ -163,6 +166,25 @@ class UserHistoryRepositoryImpl(
             prefs.edit().putString(KEY_CACHED_HOME, json.encodeToString(sections)).apply()
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao salvar cache da Home: ${e.message}", e)
+        }
+    }
+
+    override fun getCachedExploreFeed(): List<HomeSection> {
+        val rawJson = prefs.getString(KEY_CACHED_EXPLORE, null) ?: return emptyList()
+        return try {
+            json.decodeFromString<List<HomeSection>>(rawJson)
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao carregar cache do Explorar: ${e.message}")
+            emptyList()
+        }
+    }
+
+    override fun saveCachedExploreFeed(sections: List<HomeSection>) {
+        if (sections.isEmpty()) return
+        try {
+            prefs.edit().putString(KEY_CACHED_EXPLORE, json.encodeToString(sections)).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Falha ao salvar cache do Explorar: ${e.message}", e)
         }
     }
 

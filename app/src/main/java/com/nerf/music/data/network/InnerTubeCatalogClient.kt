@@ -585,7 +585,8 @@ class InnerTubeCatalogClient(
     suspend fun discoverPersonalizedRecentReleases(
         preferredArtists: List<String>,
         seedVideoIds: List<String>,
-        penalizedArtists: Set<String> = emptySet()
+        penalizedArtists: Set<String> = emptySet(),
+        seedRadioTracks: List<Track> = emptyList()
     ): List<Track> = withContext(Dispatchers.IO) {
         val cleanPreferred = com.nerf.music.data.model.ReleaseRecommendations.cleanPreferredArtists(
             preferredArtists,
@@ -595,11 +596,11 @@ class InnerTubeCatalogClient(
 
         coroutineScope {
             // 1. Coleta faixas e canais de artistas da rádio das sementes favoritas (até 2 sementes em paralelo)
-            val radioResults = seedVideoIds.filter { it.isNotBlank() }.distinct().take(2).map { seed ->
-                async { getUpNextRadio(seed).getOrNull() }
-            }.mapNotNull { it.await() }
-
-            val radioTracks = radioResults.flatMap { it.tracks }
+            val radioTracks = seedRadioTracks.ifEmpty {
+                seedVideoIds.filter { it.isNotBlank() }.distinct().take(2).map { seed ->
+                    async { getUpNextRadio(seed).getOrNull() }
+                }.mapNotNull { it.await() }.flatMap { it.tracks }
+            }
             val radioArtistChannels = LinkedHashMap<String, String>() // artistName -> UC... browseId
             for (t in radioTracks) {
                 val cleanName = t.artist.trim()
