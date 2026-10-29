@@ -4,7 +4,7 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 
 ---
 
-## [1.4.6] - 2026-10-29
+## [1.4.5] - 2026-10-29
 
 ### Aprimorado & Corrigido
 - Afinidade musical: artistas escolhidos no onboarding recebem o mesmo peso inicial, enquanto escutas e preferências posteriores continuam atualizando o perfil.
@@ -16,13 +16,11 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 - Widgets receberam transições de capa e paleta, animação de título e artista e feedback tátil; ajustes estabilizam os formatos compactos.
 - Cards de compartilhamento receberam alinhamento e estados de seleção consistentes, opção moderna para salvar e ícones sociais atualizados.
 
----
-
-## [1.4.5] - 2026-10-29 [RELEASED]
-
 ### Corrigido
 - Widget expandido volta a exigir três linhas, mantendo o layout completo aprovado de controles e recomendações no One UI.
 - Mantida a adaptação do layout ao redimensionar o widget na tela inicial.
+
+---
 
 ## [1.4.4] - 2026-10-29 [RELEASED]
 
