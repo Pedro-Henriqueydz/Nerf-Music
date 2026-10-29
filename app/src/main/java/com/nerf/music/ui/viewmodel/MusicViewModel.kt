@@ -814,14 +814,11 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            ✨ Novidades do NERF Music 1.4.4
+            ✨ Novidade do NERF Music 1.4.5
 
-            🎵 Ajustes nos widgets:
-            • O widget 2x1 ficou mais simples, com play e pausa para deixar a música e a capa em destaque.
-            • No widget 3x1, os nomes das faixas e os controles ficaram maiores e mais fáceis de tocar.
-            • O widget expandido voltou ao tamanho compacto e se adapta melhor quando você o redimensiona.
+            🎵 O widget expandido voltou ao tamanho que permite mostrar com clareza a música atual, os controles e as recomendações.
 
-            ✨ Também fizemos pequenos ajustes para deixar os widgets mais organizados na tela inicial.
+            ✨ Ele também atualiza o layout quando você muda seu tamanho na tela inicial.
         """.trimIndent()
     }
 
