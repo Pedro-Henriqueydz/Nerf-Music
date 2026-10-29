@@ -1,33 +1,56 @@
 package com.nerf.music.ui.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import android.animation.ValueAnimator
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+private val RestingFractions = floatArrayOf(0.28f, 0.42f, 0.22f, 0.32f)
+
+// Curvas irregulares evitam o aspecto mecânico de um loop espelhado. Cada alvo é
+// alcançado por uma mola, então a velocidade permanece contínua entre os pulsos.
+private val PlayingPatterns = arrayOf(
+    floatArrayOf(0.76f, 0.38f, 0.88f, 0.48f, 0.68f, 0.30f),
+    floatArrayOf(0.48f, 0.94f, 0.58f, 0.34f, 0.82f, 0.44f),
+    floatArrayOf(0.32f, 0.70f, 0.42f, 0.86f, 0.52f, 0.24f),
+    floatArrayOf(0.64f, 0.36f, 0.80f, 0.46f, 0.92f, 0.40f)
+)
+
+private val PlayingSpring = spring<Float>(
+    dampingRatio = 0.86f,
+    stiffness = 210f
+)
+
+private val RestingSpring = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessMediumLow
+)
 
 /**
- * Indicador animado de reprodução (Equalizador de áudio estilo YouTube Music Premium).
- * Exibe 3 (ou 4) barrinhas verticais que pulsam de forma suave, sofisticada e orgânica
- * exclusivamente quando `isPlaying == true`. Quando pausado, as barras repousam
- * de forma estática e elegante, sem nenhuma oscilação.
+ * Indicador de reprodução com movimento orgânico e baseado em molas.
+ *
+ * O desenho acontece em um único Canvas para evitar relayout a cada frame. Ao
+ * pausar, as barras preservam a velocidade atual e assentam suavemente; com as
+ * animações do sistema desativadas, o indicador permanece em uma pose estática.
  */
 @Composable
 fun AnimatedEqualizerBars(
@@ -39,72 +62,58 @@ fun AnimatedEqualizerBars(
     barSpacing: Dp = 1.5.dp,
     maxHeight: Dp = 14.dp
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "PremiumEqualizerTransition")
+    val visibleBarCount = barCount.coerceIn(1, PlayingPatterns.size)
+    val bars = remember {
+        List(PlayingPatterns.size) { index -> Animatable(RestingFractions[index]) }
+    }
+    val animationsEnabled = ValueAnimator.areAnimatorsEnabled()
 
-    // Animações suaves com curvas senoidais/FastOutSlowInEasing calibradas para um ritmo nobre
-    val active1 by infiniteTransition.animateFloat(
-        initialValue = 0.30f,
-        targetValue = 0.82f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 560, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PremiumBar1"
-    )
-    val active2 by infiniteTransition.animateFloat(
-        initialValue = 0.40f,
-        targetValue = 0.98f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 440, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PremiumBar2"
-    )
-    val active3 by infiniteTransition.animateFloat(
-        initialValue = 0.22f,
-        targetValue = 0.74f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 620, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PremiumBar3"
-    )
-    val active4 by infiniteTransition.animateFloat(
-        initialValue = 0.32f,
-        targetValue = 0.88f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PremiumBar4"
-    )
+    LaunchedEffect(isPlaying, animationsEnabled) {
+        coroutineScope {
+            bars.forEachIndexed { index, bar ->
+                launch {
+                    if (!isPlaying || !animationsEnabled) {
+                        if (animationsEnabled) {
+                            bar.animateTo(RestingFractions[index], RestingSpring)
+                        } else {
+                            bar.snapTo(RestingFractions[index])
+                        }
+                        return@launch
+                    }
 
-    // Alturas de repouso (quando pausado, as barras ficam 100% estáticas)
-    val target1 = if (isPlaying) active1 else 0.28f
-    val target2 = if (isPlaying) active2 else 0.42f
-    val target3 = if (isPlaying) active3 else 0.20f
-    val target4 = if (isPlaying) active4 else 0.30f
+                    delay(index * 42L)
+                    var pulse = index
+                    while (isActive) {
+                        val pattern = PlayingPatterns[index]
+                        bar.animateTo(
+                            targetValue = pattern[pulse % pattern.size],
+                            animationSpec = PlayingSpring
+                        )
+                        pulse++
+                    }
+                }
+            }
+        }
+    }
 
-    // Transição suave ao pausar / despausar sem cortes bruscos
-    val f1 by animateFloatAsState(targetValue = target1, animationSpec = tween(220, easing = FastOutSlowInEasing), label = "Bar1Fraction")
-    val f2 by animateFloatAsState(targetValue = target2, animationSpec = tween(220, easing = FastOutSlowInEasing), label = "Bar2Fraction")
-    val f3 by animateFloatAsState(targetValue = target3, animationSpec = tween(220, easing = FastOutSlowInEasing), label = "Bar3Fraction")
-    val f4 by animateFloatAsState(targetValue = target4, animationSpec = tween(220, easing = FastOutSlowInEasing), label = "Bar4Fraction")
+    val canvasWidth = barWidth * visibleBarCount + barSpacing * (visibleBarCount - 1)
+    val density = LocalDensity.current
+    val barWidthPx = with(density) { barWidth.toPx() }
+    val spacingPx = with(density) { barSpacing.toPx() }
 
-    val fractions = listOf(f1, f2, f3, f4)
-
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(barSpacing),
-        verticalAlignment = Alignment.Bottom
+    Canvas(
+        modifier = modifier
+            .size(width = canvasWidth, height = maxHeight)
+            .semantics { contentDescription = if (isPlaying) "Reproduzindo" else "Pausado" }
     ) {
-        fractions.take(barCount.coerceIn(1, 4)).forEach { fraction ->
-            Box(
-                modifier = Modifier
-                    .width(barWidth)
-                    .height(maxHeight * fraction)
-                    .clip(RoundedCornerShape(50))
-                    .background(barColor)
+        repeat(visibleBarCount) { index ->
+            val height = size.height * bars[index].value.coerceIn(0.16f, 1f)
+            val left = index * (barWidthPx + spacingPx)
+            drawRoundRect(
+                color = barColor,
+                topLeft = Offset(left, size.height - height),
+                size = Size(barWidthPx, height),
+                cornerRadius = CornerRadius(barWidthPx / 2f, barWidthPx / 2f)
             )
         }
     }

@@ -7,6 +7,7 @@ Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seg
 ## [Unreleased]
 
 ### Aprimorado & Corrigido
+- Indicador de reprodução reformulado com ondas sonoras fluidas baseadas em molas, padrões orgânicos defasados, renderização otimizada e suporte à preferência de movimento reduzido do sistema.
 - Janela de Letras simplificada com botões de Card de Letra e JAM exibindo somente os ícones.
 - Normalização de volume aplicada também à faixa instrumental dedicada quando o modo Karaokê usa um instrumental real.
 
