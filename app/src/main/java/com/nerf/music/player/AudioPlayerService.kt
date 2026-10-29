@@ -31,6 +31,9 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.CommandButton
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.nerf.music.data.repository.AudioQuality
 import com.nerf.music.data.repository.LibraryRepositoryImpl
 import com.nerf.music.data.repository.LoudnessStandard
@@ -53,6 +56,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -73,6 +78,42 @@ import java.util.concurrent.ConcurrentHashMap
 class AudioPlayerService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    private val favoriteSessionCommand = SessionCommand(CUSTOM_ACTION_FAVORITE, Bundle.EMPTY)
+    private val repeatSessionCommand = SessionCommand(CUSTOM_ACTION_REPEAT, Bundle.EMPTY)
+    private val mediaSessionCallback = object : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                .add(favoriteSessionCommand)
+                .add(repeatSessionCommand)
+                .build()
+            return MediaSession.ConnectionResult.accept(
+                commands,
+                MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
+            )
+        }
+
+        override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            session.setCustomLayout(controller, notificationCustomLayout())
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            when {
+                customCommand == favoriteSessionCommand -> toggleWidgetFavorite()
+                customCommand == repeatSessionCommand -> toggleWidgetRepeat()
+                else -> return super.onCustomCommand(session, controller, customCommand, args)
+            }
+            updateMediaNotificationLayout()
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
     private lateinit var playerA: ExoPlayer
     private lateinit var playerB: ExoPlayer
     private lateinit var activePlayer: ExoPlayer
@@ -751,6 +792,7 @@ class AudioPlayerService : MediaSessionService() {
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
         }
+        updateMediaNotificationLayout()
     }
 
     fun toggleWidgetFavorite() {
@@ -761,12 +803,48 @@ class AudioPlayerService : MediaSessionService() {
             ?: com.nerf.music.data.model.Track(info.trackId, info.title, info.artist,
                 thumbnailUrl = info.artworkUrl, durationSeconds = info.durationMs / 1000)
         widgetLibrary.toggleFavorite(track)
+        updateMediaNotificationLayout()
+    }
+
+    private fun notificationCustomLayout(): List<CommandButton> {
+        val current = getCurrentPlayingTrackInfo()
+        val isFavorite = current?.let { widgetLibrary.isFavorite(it.trackId) } == true
+        val repeatMode = if (::activePlayer.isInitialized) activePlayer.repeatMode else Player.REPEAT_MODE_OFF
+        val repeatIcon = when (repeatMode) {
+            Player.REPEAT_MODE_ONE -> CommandButton.ICON_REPEAT_ONE
+            Player.REPEAT_MODE_ALL -> CommandButton.ICON_REPEAT_ALL
+            else -> CommandButton.ICON_REPEAT_OFF
+        }
+        return listOf(
+            CommandButton.Builder(
+                if (isFavorite) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED
+            )
+                .setSessionCommand(favoriteSessionCommand)
+                .setDisplayName(if (isFavorite) "Desfavoritar" else "Favoritar")
+                .build(),
+            CommandButton.Builder(repeatIcon)
+                .setSessionCommand(repeatSessionCommand)
+                .setDisplayName(
+                    when (repeatMode) {
+                        Player.REPEAT_MODE_ONE -> "Loop da faixa"
+                        Player.REPEAT_MODE_ALL -> "Loop da fila"
+                        else -> "Ativar looping"
+                    }
+                )
+                .build()
+        )
+    }
+
+    private fun updateMediaNotificationLayout() {
+        mediaSession?.setCustomLayout(notificationCustomLayout())
     }
 
     companion object {
         private const val TAG = "AudioPlayerService"
         const val NERF_URI_SCHEME = "nerfmusic"
         const val ACTION_WIDGET_PLAY_MIX = "com.nerf.music.player.ACTION_WIDGET_PLAY_MIX"
+        private const val CUSTOM_ACTION_FAVORITE = "com.nerf.music.player.CUSTOM_ACTION_FAVORITE"
+        private const val CUSTOM_ACTION_REPEAT = "com.nerf.music.player.CUSTOM_ACTION_REPEAT"
         private const val CACHE_TTL_MS = 25 * 60 * 1000L // 25 minutos de validade em cache
         private const val STREAM_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -1089,6 +1167,11 @@ class AudioPlayerService : MediaSessionService() {
                         Player.EVENT_POSITION_DISCONTINUITY, Player.EVENT_IS_PLAYING_CHANGED,
                         Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                     com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
+                    if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED) ||
+                        events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
+                    ) {
+                        updateMediaNotificationLayout()
+                    }
                 }
             }
 
@@ -1407,6 +1490,8 @@ class AudioPlayerService : MediaSessionService() {
 
         mediaSession = MediaSession.Builder(this, activePlayer).apply {
             sessionActivityPendingIntent?.let { setSessionActivity(it) }
+            setCallback(mediaSessionCallback)
+            setCustomLayout(notificationCustomLayout())
         }.build()
         // A widget can start the service without a MediaController. Register explicitly so
         // Media3 observes the session and publishes its playback notification in that case.
@@ -1415,6 +1500,7 @@ class AudioPlayerService : MediaSessionService() {
         serviceScope.launch {
             LibraryRepositoryImpl.sharedLikedTracksFlow.collect {
                 com.nerf.music.widget.CompactPlayerWidgetProvider.updateAllWidgets(applicationContext)
+                updateMediaNotificationLayout()
             }
         }
         serviceScope.launch {
