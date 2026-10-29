@@ -7,4 +7,8 @@
     <files-path
         name="offline_audio"
         path="offline_audio/" />
+    <!-- Compartilhamento de cards sociais gerados dinamicamente em cache -->
+    <cache-path
+        name="share_cards"
+        path="share_cards/" />
 </paths>

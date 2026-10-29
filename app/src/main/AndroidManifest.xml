@@ -42,6 +42,38 @@
                     android:host="jam" />
             </intent-filter>
 
+            <!-- DeepLinks para Músicas (Social Share Cards) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="nerfmusic"
+                    android:host="track" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="nerfmusic.app"
+                    android:pathPrefix="/track" />
+                <data
+                    android:scheme="http"
+                    android:host="nerfmusic.app"
+                    android:pathPrefix="/track" />
+                <data
+                    android:scheme="https"
+                    android:host="music.youtube.com"
+                    android:path="/watch" />
+                <data
+                    android:scheme="http"
+                    android:host="music.youtube.com"
+                    android:path="/watch" />
+            </intent-filter>
+
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -56,6 +88,37 @@
                     android:pathPrefix="/jam" />
             </intent-filter>
         </activity>
+
+        <!-- Widgets de Tela Inicial (Compacto e Expandido) -->
+        <receiver
+            android:name=".widget.CompactPlayerWidgetProvider"
+            android:exported="true"
+            android:label="NERF Player Compacto">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.nerf.music.widget.ACTION_PLAY_PAUSE" />
+                <action android:name="com.nerf.music.widget.ACTION_SKIP_NEXT" />
+                <action android:name="com.nerf.music.widget.ACTION_SKIP_PREV" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_compact_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ExpandedPlayerWidgetProvider"
+            android:exported="true"
+            android:label="NERF Player Expandido">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.nerf.music.widget.ACTION_PLAY_PAUSE" />
+                <action android:name="com.nerf.music.widget.ACTION_SKIP_NEXT" />
+                <action android:name="com.nerf.music.widget.ACTION_SKIP_PREV" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_expanded_info" />
+        </receiver>
 
         <!-- Serviço de Reprodução Media3 com suporte a segundo plano -->
         <service

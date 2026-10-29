@@ -32,4 +32,10 @@
     <string name="selected_track_label">Faixa Selecionada</string>
     <string name="clear_search">Limpar busca</string>
     <string name="action_lyrics">Letra</string>
+    <string name="action_play">Reproduzir</string>
+    <string name="action_pause">Pausar</string>
+    <string name="action_next">Próxima</string>
+    <string name="action_previous">Anterior</string>
+    <string name="widget_compact_desc">Controles compactos de reprodução do NERF Music</string>
+    <string name="widget_expanded_desc">Reprodutor expandido do NERF Music com capa e progresso</string>
 </resources>
