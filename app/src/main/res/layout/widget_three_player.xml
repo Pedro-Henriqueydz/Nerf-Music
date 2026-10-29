@@ -12,14 +12,14 @@
     <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp"
         android:layout_marginEnd="10dp" android:layout_weight="1" android:orientation="vertical">
         <TextView android:id="@+id/tv_three_title" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:ellipsize="end" android:maxLines="1" android:text="NERF Music" android:textColor="#FFFFFFFF" android:textSize="12sp" android:textStyle="bold" />
+            android:ellipsize="end" android:maxLines="1" android:text="NERF Music" android:textColor="#FFFFFFFF" android:textSize="14sp" android:textStyle="bold" />
         <TextView android:id="@+id/tv_three_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="2dp" android:ellipsize="end" android:maxLines="1" android:text="Toque para ouvir" android:textColor="#B3FFFFFF" android:textSize="11sp" />
+            android:layout_marginTop="2dp" android:ellipsize="end" android:maxLines="1" android:text="Toque para ouvir" android:textColor="#B3FFFFFF" android:textSize="12sp" />
         <ProgressBar android:id="@+id/pb_three_progress" style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent" android:layout_height="3dp" android:layout_marginTop="8dp"
             android:max="100" android:progress="0" android:progressDrawable="@drawable/widget_progress_bar" />
     </LinearLayout>
-    <ImageButton android:id="@+id/btn_three_skip" android:layout_width="34dp" android:layout_height="34dp"
+    <ImageButton android:id="@+id/btn_three_skip" android:layout_width="42dp" android:layout_height="42dp"
         android:background="@drawable/widget_button_circle_bg" android:contentDescription="@string/action_next"
         android:padding="8dp" android:scaleType="centerInside" android:src="@drawable/ic_widget_next" />
     <ImageButton android:id="@+id/btn_three_play_pause" android:layout_width="42dp" android:layout_height="42dp"

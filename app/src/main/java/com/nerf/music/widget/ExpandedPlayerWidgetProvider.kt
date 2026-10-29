@@ -38,4 +38,30 @@ class ExpandedPlayerWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: android.os.Bundle
+    ) {
+        val pending = goAsync()
+        WidgetRenderer.scope.launch {
+            try {
+                withTimeoutOrNull(8000) {
+                    WidgetRenderer.update(
+                        context.applicationContext,
+                        intArrayOf(appWidgetId),
+                        WidgetRenderer.Size.FOUR
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                android.util.Log.w("NERFWidget", "Falha ao adaptar o widget redimensionado", error)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
 }

@@ -18,6 +18,4 @@
     </LinearLayout>
     <ImageButton android:id="@+id/btn_widget_play_pause" android:layout_width="38dp" android:layout_height="38dp"
         android:background="@drawable/widget_button_primary_bg" android:contentDescription="@string/action_play" android:padding="9dp" android:scaleType="centerInside" android:tint="#FF17191F" android:src="@drawable/ic_widget_play" />
-    <ImageButton android:id="@+id/btn_compact_skip_next" android:layout_width="38dp" android:layout_height="38dp"
-        android:layout_marginStart="4dp" android:background="@drawable/widget_button_circle_bg" android:contentDescription="@string/action_next" android:padding="7dp" android:scaleType="centerInside" android:src="@drawable/ic_widget_next" />
 </LinearLayout>
