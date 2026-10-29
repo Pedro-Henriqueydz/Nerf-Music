@@ -12,7 +12,7 @@ A versão **1.4.6** aprimora as recomendações com base nos artistas escolhidos
 
 ### Informações da compilação
 
-- Versão: `1.4.6` (versionCode `25`)
+- Versão: `1.4.6` (versionCode `26`)
 - Target SDK: Android 14 (API 34)
 - Min SDK: Android 8.0 (API 26)
 - APK de release: assinado pelo pipeline do GitHub Actions.
