@@ -1,6 +1,14 @@
 # Registro de Alterações (Changelog) - NERF Music
 
-Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seguindo as convenções de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
+Todas as mudanças notáveis deste projeto serão documentadas neste arquivo seguindo as convenções de [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/). Sempre que encontar mudanças que está na tag [Unreleased] apenas adicione o que foi feito, não mude para uma versão até que seja pedido que seja transformada em versão.
+
+---
+
+## [Unreleased]
+
+### Aprimorado & Corrigido
+- Janela de Letras simplificada com botões de Card de Letra e JAM exibindo somente os ícones.
+- Normalização de volume aplicada também à faixa instrumental dedicada quando o modo Karaokê usa um instrumental real.
 
 ---
 

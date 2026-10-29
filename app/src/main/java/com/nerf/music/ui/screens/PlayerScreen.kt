@@ -105,6 +105,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -4221,33 +4223,19 @@ private fun AppleMusicLyricsView(
                     color = if (isSelectionMode) Color(0xFFFF6600).copy(alpha = 0.65f) else Color.White.copy(alpha = 0.12f)
                 ),
                 modifier = Modifier
+                    .width(42.dp)
                     .height(42.dp)
                     .graphicsLayer {
                         scaleX = shareLyricsScale
                         scaleY = shareLyricsScale
                     }
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = if (isSelectionMode && selectedLyricIndices.isNotEmpty()) Icons.Default.Share else Icons.Default.FormatQuote,
-                        contentDescription = "Compartilhar Letra",
+                        contentDescription = if (isSelectionMode) "Compartilhar card de letra" else "Criar card de letra",
                         tint = if (isSelectionMode) Color(0xFFFF6600) else Color.White.copy(alpha = 0.85f),
                         modifier = Modifier.size(19.dp)
-                    )
-                    Text(
-                        text = if (isSelectionMode) {
-                            if (selectedLyricIndices.isNotEmpty()) "Pr\u00e9via (${selectedLyricIndices.size}/4)" else "Cancelar (0/4)"
-                        } else {
-                            "Card Letra"
-                        },
-                        fontFamily = SfProFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = if (isSelectionMode) Color(0xFFFF6600) else Color.White.copy(alpha = 0.90f)
                     )
                 }
             }
@@ -4270,31 +4258,20 @@ private fun AppleMusicLyricsView(
                     color = if (jamSessionState.isInJam) Color(0xFF1DB954).copy(alpha = 0.65f) else Color.White.copy(alpha = 0.14f)
                 ),
                 modifier = Modifier
+                    .width(42.dp)
                     .height(42.dp)
+                    .semantics {
+                        contentDescription = if (jamSessionState.isInJam) "Abrir Jam ativa" else "Abrir Jam"
+                    }
                     .graphicsLayer {
                         scaleX = jamScale
                         scaleY = jamScale
                     }
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
+                Box(contentAlignment = Alignment.Center) {
                     JamPersonWavesIcon(
                         tint = if (jamSessionState.isInJam) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.85f),
                         size = 20.dp
-                    )
-                    Text(
-                        text = if (jamSessionState.isInJam) {
-                            "JAM (${jamSessionState.participants.size.coerceAtLeast(1)})"
-                        } else {
-                            "JAM"
-                        },
-                        fontFamily = SfProFontFamily,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = if (jamSessionState.isInJam) Color(0xFF4ADE80) else Color.White.copy(alpha = 0.90f)
                     )
                 }
             }

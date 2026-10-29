@@ -1417,6 +1417,11 @@ class AudioPlayerService : MediaSessionService() {
         activePlayer = playerA
         fadingPlayer = null
 
+        val instrumentalLoudnessProcessor = LoudnessNormalizationAudioProcessor().apply {
+            standard = settingsRepository.loudnessStandard.value
+        }
+        loudnessProcessors.add(instrumentalLoudnessProcessor)
+
         val instRenderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -1426,7 +1431,7 @@ class AudioPlayerService : MediaSessionService() {
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                    .setAudioProcessors(arrayOf(instrumentalEnvelopeProcessor))
+                    .setAudioProcessors(arrayOf(instrumentalEnvelopeProcessor, instrumentalLoudnessProcessor))
                     .build()
             }
         }
