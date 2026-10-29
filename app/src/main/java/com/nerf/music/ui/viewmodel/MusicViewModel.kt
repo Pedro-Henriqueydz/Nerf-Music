@@ -932,11 +932,11 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            ✨ Novidade do NERF Music 1.4.5
+            Novidades do NERF Music 1.4.6
 
-            🎵 O widget expandido voltou ao tamanho que permite mostrar com clareza a música atual, os controles e as recomendações.
+            As recomenda??es acompanham melhor os artistas que voc? escolhe e as m?sicas que ouve. O Explorar destaca lan?amentos recentes relacionados ao seu perfil, com mais variedade.
 
-            ✨ Ele também atualiza o layout quando você muda seu tamanho na tela inicial.
+            A Home, o r?dio e os downloads inteligentes tamb?m ficaram mais atentos ?s suas prefer?ncias. O player, os widgets e o compartilhamento receberam melhorias.
         """.trimIndent()
     }
 
