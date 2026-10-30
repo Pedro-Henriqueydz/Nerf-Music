@@ -398,6 +398,7 @@ fun FullPlayerSheet(
     onToggleDownload: (String) -> Unit,
     onOpenTrackOptions: (Track) -> Unit,
     downloadProgress: Float? = null,
+    isSleepTimerActive: Boolean = false,
     onSelectQueueChip: (QueueFilterChip) -> Unit,
     onPlayQueueItem: (Int) -> Unit,
     onMoveQueueItem: (Int, Int) -> Unit,
@@ -1626,13 +1627,13 @@ fun FullPlayerSheet(
                                     enabled = effectiveDurationMs > 0L,
                                     interactionSource = sliderInteractionSource,
                                     colors = SliderDefaults.colors(
-                                        thumbColor = Color.White,
-                                        activeTrackColor = Color.White,
-                                        inactiveTrackColor = Color.White.copy(alpha = 0.28f)
+                                        thumbColor = if (isSleepTimerActive) Color(0xFFFFB74D) else Color.White,
+                                        activeTrackColor = if (isSleepTimerActive) Color(0xFFFFB74D) else Color.White,
+                                        inactiveTrackColor = if (isSleepTimerActive) Color(0xFFFFB74D).copy(alpha = 0.24f) else Color.White.copy(alpha = 0.28f)
                                     ),
                                     thumb = {
                                         Box(
-                                            modifier = Modifier.size(24.dp),
+                                            modifier = Modifier.size(28.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             val thumbScale by animateFloatAsState(
@@ -1643,17 +1644,23 @@ fun FullPlayerSheet(
                                                 ),
                                                 label = "ThumbScale"
                                             )
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(9.dp)
-                                                    .graphicsLayer {
-                                                        scaleX = thumbScale
-                                                        scaleY = thumbScale
-                                                    }
-                                                    .shadow(elevation = if (isDraggingSlider) 6.dp else 2.dp, shape = CircleShape, clip = false)
-                                                    .clip(CircleShape)
-                                                    .background(Color.White)
-                                            )
+                                            if (isSleepTimerActive) {
+                                                SleepTimerMoonThumb(
+                                                    modifier = Modifier
+                                                        .size(19.dp)
+                                                        .graphicsLayer { scaleX = thumbScale; scaleY = thumbScale }
+                                                        .shadow(elevation = if (isDraggingSlider) 4.dp else 1.dp, shape = CircleShape, clip = false)
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(9.dp)
+                                                        .graphicsLayer { scaleX = thumbScale; scaleY = thumbScale }
+                                                        .shadow(elevation = if (isDraggingSlider) 6.dp else 2.dp, shape = CircleShape, clip = false)
+                                                        .clip(CircleShape)
+                                                        .background(Color.White)
+                                                )
+                                            }
                                         }
                                     },
                                     track = { sliderState ->
@@ -1669,14 +1676,14 @@ fun FullPlayerSheet(
                                                     .fillMaxWidth()
                                                     .height(3.dp)
                                                     .clip(RoundedCornerShape(50))
-                                                    .background(Color.White.copy(alpha = 0.28f))
+                                                    .background(if (isSleepTimerActive) Color(0xFFFFB74D).copy(alpha = 0.24f) else Color.White.copy(alpha = 0.28f))
                                             ) {
                                                 Box(
                                                     modifier = Modifier
                                                         .fillMaxWidth(fraction)
                                                         .fillMaxHeight()
                                                         .clip(RoundedCornerShape(50))
-                                                        .background(Color.White)
+                                                        .background(if (isSleepTimerActive) Color(0xFFFFB74D) else Color.White)
                                                 )
                                             }
                                         }
@@ -2042,6 +2049,34 @@ fun FullPlayerSheet(
 }
 
 /** Displays a long synced lyric as timed, one-line segments without growing the player layout. */
+@Composable
+private fun SleepTimerMoonThumb(modifier: Modifier = Modifier) {
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(Color(0xFFFFB74D))
+        )
+        Box(
+            modifier = Modifier
+                .size(13.dp)
+                .align(Alignment.TopEnd)
+                .offset(x = (-1).dp, y = (-2).dp)
+                .clip(CircleShape)
+                .background(Color(0xFF241B16))
+        )
+        Box(
+            modifier = Modifier
+                .size(2.dp)
+                .align(Alignment.BottomStart)
+                .offset(x = 2.dp, y = 1.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFFFE0A3))
+        )
+    }
+}
+
 @Composable
 private fun InlineSyncedLyrics(
     lyricText: String,

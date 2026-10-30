@@ -4,6 +4,12 @@ import android.content.Context
 import android.util.Log
 import com.nerf.music.data.model.HomeSection
 import com.nerf.music.data.model.Track
+import com.nerf.music.data.db.AppDatabase
+import com.nerf.music.data.db.LibraryTrackEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.concurrent.ConcurrentHashMap
@@ -15,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 interface UserHistoryRepository {
     fun getRecentlyPlayed(): List<Track>
     fun recordTrackPlayed(track: Track)
+    fun recordTrackListening(track: Track, listenedMs: Long)
     fun getTopArtists(limit: Int = 5): List<String>
     fun recordInitialArtists(artists: List<String>)
     fun getFavoriteSeedVideoId(): String?
@@ -57,6 +64,8 @@ class UserHistoryRepositoryImpl(
     }
 
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val libraryTrackDao = AppDatabase.getInstance(context.applicationContext).libraryTrackDao()
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -108,6 +117,17 @@ class UserHistoryRepositoryImpl(
             prefs.edit().putString(KEY_LAST_SEED_VIDEO_ID, track.id).apply()
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao registrar faixa ouvida: ${e.message}", e)
+        }
+    }
+
+    override fun recordTrackListening(track: Track, listenedMs: Long) {
+        if (track.id.isBlank() || track.isAlbumOrPlaylist || listenedMs < 30_000L) return
+        ioScope.launch {
+            libraryTrackDao.recordPlay(
+                entity = LibraryTrackEntity.fromTrack(track),
+                listenedMs = listenedMs,
+                playedAt = System.currentTimeMillis()
+            )
         }
     }
 

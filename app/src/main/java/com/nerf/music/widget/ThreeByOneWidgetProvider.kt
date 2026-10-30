@@ -15,10 +15,15 @@ class ThreeByOneWidgetProvider : AppWidgetProvider() {
             if (ids.isNotEmpty()) {
                 val pending = goAsync()
                 WidgetRenderer.scope.launch {
-                    try { withTimeoutOrNull(8000) { WidgetRenderer.update(context.applicationContext, ids, WidgetRenderer.Size.THREE, partial = true) } }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) { android.util.Log.w("NERFWidget", "Falha ao atualizar widget 3×1", error) }
-                    finally { pending.finish() }
+                    try {
+                        withTimeoutOrNull(8000) { WidgetRenderer.update(context.applicationContext, ids, WidgetRenderer.Size.THREE, partial = true) }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        android.util.Log.w("NERFWidget", "Falha ao atualizar widget 3×1", error)
+                    } finally {
+                        pending.finish()
+                    }
                 }
             }
             return
@@ -33,10 +38,15 @@ class ThreeByOneWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         val pending = goAsync()
         WidgetRenderer.scope.launch {
-            try { withTimeoutOrNull(8000) { WidgetRenderer.update(context.applicationContext, ids, WidgetRenderer.Size.THREE) } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { android.util.Log.w("NERFWidget", "Falha ao atualizar widget 3×1", error) }
-            finally { pending.finish() }
+            try {
+                withTimeoutOrNull(8000) { WidgetRenderer.update(context.applicationContext, ids, WidgetRenderer.Size.THREE) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                android.util.Log.w("NERFWidget", "Falha ao atualizar widget 3×1", error)
+            } finally {
+                pending.finish()
+            }
         }
     }
 }

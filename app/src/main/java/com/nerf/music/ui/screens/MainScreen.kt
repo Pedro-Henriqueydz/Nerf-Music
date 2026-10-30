@@ -142,11 +142,15 @@ fun MainScreen(
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     var showSaveToPlaylistSheet by remember { mutableStateOf(false) }
     var trackForOptions by remember { mutableStateOf<Track?>(null) }
+    var trackOptionsFromFullPlayer by remember { mutableStateOf(false) }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
     var trackToSaveInPlaylist by remember { mutableStateOf<Track?>(null) }
     var showCreatePlaylistFromPlayer by remember { mutableStateOf(false) }
     var newPlaylistFromPlayerTitle by remember { mutableStateOf("") }
     var newPlaylistFromPlayerVisibility by remember { mutableStateOf("Pública") }
     var showVisibilitySheetFromPlayer by remember { mutableStateOf(false) }
+    val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
+    val sleepTimerAtEndOfTrack by viewModel.sleepTimerAtEndOfTrack.collectAsState()
 
     val context = LocalContext.current
 
@@ -344,6 +348,7 @@ fun MainScreen(
             modifier = Modifier.fillMaxSize(),
             containerColor = YtmBlack,
             bottomBar = {
+                if (currentRoute == "recap") return@Scaffold
                 val isDetailRoute = currentRoute.startsWith("album") || currentRoute.startsWith("artist")
                 Column(
                     modifier = Modifier
@@ -417,6 +422,7 @@ fun MainScreen(
                                 launchSingleTop = true
                             }
                         },
+                        onOpenRecap = { navController.navigate("recap") { launchSingleTop = true } },
                         onTrackOptionsClick = { track ->
                             trackForOptions = track
                         }
@@ -426,6 +432,16 @@ fun MainScreen(
                     SettingsScreen(
                         viewModel = viewModel,
                         onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable("recap") {
+                    val recap by viewModel.recapSummary.collectAsState()
+                    RecapScreen(
+                        summary = recap,
+                        onBack = { navController.popBackStack() },
+                        onPlayRecapMix = { viewModel.playRecapMix(recap) },
+                        onPlayTrack = { viewModel.playTrack(it) },
+                        resolveArtistImage = { name -> viewModel.getRecapArtistImageUrl(name) }
                     )
                 }
                 composable(Screen.Explore.route) {
@@ -549,8 +565,16 @@ fun MainScreen(
                 onToggleFavorite = { trackId -> viewModel.toggleFavorite(trackId) },
                 onToggleSave = { _ -> showSaveToPlaylistSheet = true },
                 onToggleDownload = { trackId -> viewModel.toggleDownload(trackId) },
-                onOpenTrackOptions = { trackForOptions = it },
+                onOpenTrackOptions = {
+                    trackOptionsFromFullPlayer = true
+                    trackForOptions = it
+                },
                 downloadProgress = playbackState.currentTrack?.let { downloadProgressMap[it.id] },
+                // The sleep timer highlight belongs to active playback. As soon as the
+                // timer pauses the player, restore the regular progress bar even if
+                // the timer state flow is still delivering its completion update.
+                isSleepTimerActive = playbackState.isPlaying &&
+                    (sleepTimerRemainingSeconds != null || sleepTimerAtEndOfTrack),
                 onSelectQueueChip = { chip -> viewModel.selectQueueFilterChip(chip) },
                 onPlayQueueItem = { index -> viewModel.playQueueItemAt(index) },
                 onMoveQueueItem = { fromIndex, toIndex -> viewModel.moveQueueItem(fromIndex, toIndex) },
@@ -658,7 +682,10 @@ fun MainScreen(
             track = track,
             isLiked = isLiked,
             isDownloaded = isDownloaded,
-            onDismiss = { trackForOptions = null },
+            onDismiss = {
+                trackForOptions = null
+                trackOptionsFromFullPlayer = false
+            },
             onPlayNext = {
                 viewModel.addTracksToPlayNext(listOf(track))
                 trackForOptions = null
@@ -682,6 +709,17 @@ fun MainScreen(
             onToggleDownload = {
                 viewModel.toggleDownload(track.id)
             },
+            onOpenSleepTimer = if (trackOptionsFromFullPlayer) ({ showSleepTimerSheet = true }) else null,
+            sleepTimerStatus = when {
+                sleepTimerAtEndOfTrack -> "fim da faixa"
+                sleepTimerRemainingSeconds != null -> {
+                    val remaining = sleepTimerRemainingSeconds ?: 0L
+                    val mins = remaining / 60
+                    val secs = remaining % 60
+                    "%02d:%02d".format(mins, secs)
+                }
+                else -> null
+            },
             onOpenArtist = { artistId ->
                 trackForOptions = null
                 viewModel.closeFullPlayer()
@@ -696,6 +734,26 @@ fun MainScreen(
                     launchSingleTop = true
                 }
             }
+        )
+    }
+
+    if (showSleepTimerSheet) {
+        SleepTimerBottomSheet(
+            remainingSeconds = sleepTimerRemainingSeconds,
+            isEndOfTrack = sleepTimerAtEndOfTrack,
+            onSelectMinutes = {
+                viewModel.setSleepTimerMinutes(it)
+                showSleepTimerSheet = false
+            },
+            onSelectEndOfTrack = {
+                viewModel.setSleepTimerEndOfTrack()
+                showSleepTimerSheet = false
+            },
+            onCancelTimer = {
+                viewModel.cancelSleepTimer()
+                showSleepTimerSheet = false
+            },
+            onDismiss = { showSleepTimerSheet = false }
         )
     }
 

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.outlined.Cast
@@ -68,6 +69,7 @@ fun HomeScreen(
     onOpenAlbum: (browseId: String) -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onOpenRecap: () -> Unit = {},
     onTrackOptionsClick: (Track) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -87,6 +89,7 @@ fun HomeScreen(
     val isPlaybackActive = playbackIdentity.second
     val connectivityStatus by viewModel.connectivityStatus.collectAsState()
     val jamSessionState by viewModel.jamSessionState.collectAsState()
+    val recapSummary by viewModel.recapSummary.collectAsState()
 
     val isOffline = connectivityStatus == ConnectivityObserver.Status.Unavailable ||
             connectivityStatus == ConnectivityObserver.Status.Lost
@@ -262,6 +265,30 @@ fun HomeScreen(
                                     selectedChip = selectedChip,
                                     onChipClick = { chip -> viewModel.selectHomeChip(chip) }
                                 )
+                            }
+                        }
+
+                        if (recapSummary.hasEnoughData) {
+                            item(key = "recap-${recapSummary.year}") {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).applePressFeedback(onClick = onOpenRecap),
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = Color.Transparent
+                                ) {
+                                    Row(
+                                        modifier = Modifier.background(
+                                            Brush.linearGradient(listOf(Color(0xFFFF5F3D), Color(0xFF6E1A70)))
+                                        ).padding(20.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("SEU ANO EM MÚSICA", color = Color.White.copy(.72f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                                            Text("Recap ${recapSummary.year}", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                                            Text(if (recapSummary.annualEligible) "Veja a história completa" else "Prévia disponível para teste", color = Color.White.copy(.82f), fontSize = 14.sp)
+                                        }
+                                        Icon(Icons.Default.Stars, null, tint = Color.White, modifier = Modifier.size(38.dp))
+                                    }
+                                }
                             }
                         }
 

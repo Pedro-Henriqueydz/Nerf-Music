@@ -705,8 +705,11 @@ class InnerTubeCatalogClient(
                         val array = JSONObject(body).optJSONArray("results") ?: return@async artist to emptyList<JSONObject>()
                         artist to (0 until array.length()).mapNotNull { array.optJSONObject(it) }
                             .filter { normalized(it.optString("artistName")) == normalized(artist) }
-                    } catch (e: IOException) { artist to emptyList<JSONObject>() }
-                    catch (e: org.json.JSONException) { artist to emptyList<JSONObject>() }
+                    } catch (e: IOException) {
+                        artist to emptyList<JSONObject>()
+                    } catch (e: org.json.JSONException) {
+                        artist to emptyList<JSONObject>()
+                    }
                 } }.map { it.await() }
             }.forEach { (name, items) -> records[normalized(name)] = items }
         }
