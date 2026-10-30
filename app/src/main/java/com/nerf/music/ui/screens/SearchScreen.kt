@@ -1,5 +1,7 @@
 package com.nerf.music.ui.screens
 
+import com.nerf.music.ui.components.applePressFeedback
+
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -460,7 +462,7 @@ private fun RecentSearchCard(
         modifier = modifier
             .width(115.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.97f, onClick = onClick)
     ) {
         Box(
             modifier = Modifier
@@ -578,7 +580,7 @@ private fun ArtistResultCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.98f, onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -644,7 +646,7 @@ private fun SearchSongRowItem(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.98f, onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

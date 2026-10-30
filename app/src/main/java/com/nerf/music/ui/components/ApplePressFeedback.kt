@@ -40,17 +40,14 @@ fun Modifier.applePressFeedback(
         label = "applePressScale"
     )
 
-    val pressTransform = if (scale < 0.999f) {
-        Modifier.graphicsLayer {
+    return this
+        // Keep the layer in the modifier chain for the whole lifetime of the
+        // composable. Adding/removing it while pressed can briefly invalidate
+        // the draw layer (most visible on light surfaces such as the play disc).
+        .graphicsLayer {
             scaleX = scale
             scaleY = scale
         }
-    } else {
-        Modifier
-    }
-
-    return this
-        .then(pressTransform)
         .then(
             if (onClick != null) {
                 Modifier.clickable(

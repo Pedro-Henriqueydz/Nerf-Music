@@ -53,6 +53,7 @@ import com.nerf.music.data.model.Track
 import com.nerf.music.jam.JamSessionState
 import com.nerf.music.ui.components.AnimatedEqualizerBars
 import com.nerf.music.ui.components.JamPersonWavesIcon
+import com.nerf.music.ui.components.applePressFeedback
 import com.nerf.music.ui.theme.*
 import com.nerf.music.ui.viewmodel.MusicViewModel
 import com.nerf.music.ui.motion.rememberSmoothFlingBehavior
@@ -727,7 +728,7 @@ fun YtmSpeedDialCard(
                     Modifier
                 }
             )
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.97f, onClick = onClick)
     ) {
         when {
             isLikedShortcut -> {
@@ -909,7 +910,7 @@ fun YtmDownloadCard(
             .height(205.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(gradient)
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.97f, onClick = onClick)
             .padding(14.dp)
     ) {
         // Ícone ilustrativo sutil centralizado
@@ -1167,7 +1168,7 @@ fun YtmQuickPickRowItem(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.98f, onClick = onClick)
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1305,7 +1306,7 @@ fun HomeSongCard(
         modifier = modifier
             .width(116.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.97f, onClick = onClick)
     ) {
         Box(
             modifier = Modifier

@@ -452,7 +452,7 @@ private fun AlbumTrackRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.98f, onClick = onClick)
             .padding(vertical = 10.dp, horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

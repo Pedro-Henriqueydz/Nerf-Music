@@ -1,5 +1,7 @@
 package com.nerf.music.ui.screens
 
+import com.nerf.music.ui.components.applePressFeedback
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -563,7 +565,7 @@ private fun ArtistTopSongRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.98f, onClick = onClick)
             .padding(vertical = 8.dp, horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -677,7 +679,7 @@ private fun ArtistVideoCard(
         modifier = modifier
             .width(220.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .applePressFeedback(targetScale = 0.97f, onClick = onClick)
     ) {
         Box(
             modifier = Modifier
