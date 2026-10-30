@@ -30,10 +30,15 @@ import com.nerf.music.data.model.SearchFilter
 import com.nerf.music.data.model.SearchResult
 import com.nerf.music.data.model.Track
 import com.nerf.music.data.model.ExploreRecommendations
+import com.nerf.music.data.model.RecapSummary
+import com.nerf.music.data.model.RecapTrackStats
+import com.nerf.music.data.model.RecapArtistStats
+import com.nerf.music.data.db.AppDatabase
 import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
 import com.nerf.music.data.repository.UserHistoryRepository
 import com.nerf.music.data.repository.UserHistoryRepositoryImpl
+import com.nerf.music.data.repository.BackupRepository
 import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.data.repository.UpdateRepository
 import com.nerf.music.data.repository.UpdateRepositoryImpl
@@ -197,12 +202,8 @@ class MusicViewModel(
     private val _smartDownloadSyncState = MutableStateFlow(SmartDownloadSyncState())
     val smartDownloadSyncState: StateFlow<SmartDownloadSyncState> = _smartDownloadSyncState.asStateFlow()
 
-    private var sleepTimerJob: Job? = null
-    private val _sleepTimerRemainingSeconds = MutableStateFlow<Long?>(null)
-    val sleepTimerRemainingSeconds: StateFlow<Long?> = _sleepTimerRemainingSeconds.asStateFlow()
-
-    private val _sleepTimerAtEndOfTrack = MutableStateFlow(false)
-    val sleepTimerAtEndOfTrack: StateFlow<Boolean> = _sleepTimerAtEndOfTrack.asStateFlow()
+    val sleepTimerRemainingSeconds: StateFlow<Long?> = AudioPlayerService.sleepTimerRemainingSeconds
+    val sleepTimerAtEndOfTrack: StateFlow<Boolean> = AudioPlayerService.sleepTimerAtEndOfTrack
 
     private val _storageBreakdown = MutableStateFlow<StorageBreakdown?>(null)
     val storageBreakdown: StateFlow<StorageBreakdown?> = _storageBreakdown.asStateFlow()
@@ -629,6 +630,17 @@ class MusicViewModel(
     private val _downloadedTracks = MutableStateFlow<List<DownloadedTrack>>(emptyList())
     val downloadedTracks: StateFlow<List<DownloadedTrack>> = _downloadedTracks.asStateFlow()
 
+    private val _mostPlayedTracks = MutableStateFlow<List<Track>>(emptyList())
+    val mostPlayedTracks: StateFlow<List<Track>> = _mostPlayedTracks.asStateFlow()
+    private val _recentlyAddedTracks = MutableStateFlow<List<Track>>(emptyList())
+    val recentlyAddedTracks: StateFlow<List<Track>> = _recentlyAddedTracks.asStateFlow()
+    private val _forgottenFavoriteTracks = MutableStateFlow<List<Track>>(emptyList())
+    val forgottenFavoriteTracks: StateFlow<List<Track>> = _forgottenFavoriteTracks.asStateFlow()
+    private val _recapSummary = MutableStateFlow(RecapSummary())
+    val recapSummary: StateFlow<RecapSummary> = _recapSummary.asStateFlow()
+    private val recapArtistImageCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private var libraryAnalyticsInitialized = false
+
     private val _downloadProgressMap = MutableStateFlow<Map<String, Float>>(emptyMap())
     val downloadProgressMap: StateFlow<Map<String, Float>> = _downloadProgressMap.asStateFlow()
     private var applicationContext: Context? = null
@@ -638,6 +650,92 @@ class MusicViewModel(
             applicationContext = context.applicationContext
         }
         AudioPlayerService.setPrefetchContext(context.applicationContext)
+        if (!libraryAnalyticsInitialized) {
+            libraryAnalyticsInitialized = true
+            val analyticsDao = AppDatabase.getInstance(context.applicationContext).libraryTrackDao()
+            viewModelScope.launch {
+                analyticsDao.allTracksFlow().collect { rows ->
+                    val recapYear = java.time.Year.now().value
+                    val played = rows.filter { it.statsYear == recapYear && it.playCount > 0 }
+                    val rankedTracks = played
+                        .sortedWith(
+                            compareByDescending<com.nerf.music.data.db.LibraryTrackEntity> { it.playCount }
+                                .thenByDescending { it.totalListenMs }
+                                .thenByDescending { it.lastPlayedAtEpochMs ?: 0L }
+                        )
+                    val parsedCredits = played.associateWith { splitRecapArtistCredit(it.artist) }
+                    // Featured appearances resolve to an artist profile when that artist is a primary credit elsewhere.
+                    val profileByArtistName = parsedCredits.flatMap { (row, credit) ->
+                        val browseId = row.artistBrowseId?.trim()?.takeIf(String::isNotBlank)
+                        if (browseId == null) emptyList() else credit.primary.map { normalizeRecapArtistName(it) to browseId }
+                    }.groupBy({ it.first }, { it.second })
+                        .mapValues { (_, ids) -> ids.groupingBy { it }.eachCount().maxByOrNull { it.value }!!.key }
+                    val artistContributions = mutableMapOf<String, MutableList<RecapArtistContribution>>()
+                    parsedCredits.forEach { (row, credit) ->
+                        val allNames = (credit.primary + credit.featured).distinctBy(::normalizeRecapArtistName)
+                        if (allNames.isEmpty()) return@forEach
+                        val totalWeight = credit.primary.size * 2.0 + credit.featured.size
+                        allNames.forEach { name ->
+                            val normalizedName = normalizeRecapArtistName(name)
+                            val isPrimary = credit.primary.any { normalizeRecapArtistName(it) == normalizedName }
+                            val weight = (if (isPrimary) 2.0 else 1.0) / totalWeight
+                            val browseId = profileByArtistName[normalizedName]
+                                ?: if (isPrimary) row.artistBrowseId?.trim()?.takeIf(String::isNotBlank) else null
+                            val key = browseId?.let { "browse:${it.lowercase(Locale.ROOT)}" } ?: "name:$normalizedName"
+                            artistContributions.getOrPut(key) { mutableListOf() }.add(RecapArtistContribution(name, row, weight))
+                        }
+                    }
+                    val rankedArtists = artistContributions.values.map { contributions ->
+                        val listenMs = contributions.sumOf { contribution ->
+                            contribution.track.totalListenMs * contribution.weight
+                        }
+                        val weightedPlays = contributions.sumOf { it.track.playCount * it.weight }
+                        val name = contributions.groupBy { it.name }
+                            .maxByOrNull { (_, items) -> items.sumOf { it.weight } }!!.key
+                        val representative = contributions.maxByOrNull {
+                            it.track.totalListenMs * it.weight
+                        }!!.track
+                        RecapArtistStats(
+                            name = name,
+                            plays = weightedPlays.toInt(),
+                            listenedMs = listenMs.toLong(),
+                            representativeTrack = representative.toTrack()
+                        )
+                    }.sortedWith(compareByDescending<RecapArtistStats> { it.listenedMs }.thenByDescending { it.plays })
+                    val trackStats = rankedTracks.map {
+                        RecapTrackStats(it.toTrack(), it.playCount, it.totalListenMs)
+                    }
+                    _recapSummary.value = RecapSummary(
+                        year = recapYear,
+                        totalMinutes = played.sumOf { it.totalListenMs } / 60_000L,
+                        totalPlays = played.sumOf { it.playCount },
+                        topTracks = trackStats.take(5),
+                        // Keep the full artist set so Recap can calculate the listening-share remainder.
+                        topArtists = rankedArtists,
+                        mixTracks = trackStats.take(50).map { it.track }
+                    )
+                }
+            }
+            viewModelScope.launch {
+                analyticsDao.mostPlayedFlow(minimumPlays = 3).collect { rows ->
+                    _mostPlayedTracks.value = rows.map { it.toTrack() }
+                }
+            }
+            viewModelScope.launch {
+                analyticsDao.recentlyAddedFlow().collect { rows ->
+                    _recentlyAddedTracks.value = rows.map { it.toTrack() }
+                }
+            }
+            viewModelScope.launch {
+                val cutoff = System.currentTimeMillis() - 45L * 24L * 60L * 60L * 1000L
+                analyticsDao.forgottenFavoritesFlow(cutoff).collect { rows ->
+                    _forgottenFavoriteTracks.value = rows.map { it.toTrack() }
+                    if (_homeSections.value.isNotEmpty()) {
+                        _homeSections.value = curateHomeSections(_homeSections.value)
+                    }
+                }
+            }
+        }
         if (userSettingsRepository == null) {
             val settingsRepo = UserSettingsRepositoryImpl(context.applicationContext)
             userSettingsRepository = settingsRepo
@@ -670,7 +768,7 @@ class MusicViewModel(
             }
             val cachedHome = historyRepo.getCachedHomeFeed()
             if (cachedHome.isNotEmpty() && _homeSections.value.isEmpty()) {
-                _homeSections.value = cachedHome
+                _homeSections.value = curateHomeSections(cachedHome)
                 prefetchHomeMedia(cachedHome)
             }
             _searchHistory.value = historyRepo.getSearchHistory()
@@ -818,6 +916,38 @@ class MusicViewModel(
         }
     }
 
+    private fun curateHomeSections(sections: List<HomeSection>): List<HomeSection> {
+        fun normalized(value: String): String = java.text.Normalizer
+            .normalize(value, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .lowercase(Locale.ROOT)
+
+        val filtered = sections.filterNot { section ->
+            val title = normalized(section.title)
+            title.contains("em alta") || title.contains("trending") ||
+                title.contains("novos videos") || title.contains("new videos") ||
+                title.contains("novos albuns e singles") || title.contains("new albums and singles") ||
+                title.contains("new albums & singles")
+        }.filterNot { it.title == "Forgotten Favorites" }
+
+        val forgotten = _forgottenFavoriteTracks.value
+            .filterNot { userAffinityRepository?.isTrackPenalized(it.id) == true }
+            .distinctBy { it.id }
+            .take(16)
+        if (forgotten.isEmpty() || _selectedHomeChip.value != null) return filtered
+
+        val section = HomeSection(
+            title = "Forgotten Favorites",
+            strapline = "FAVORITAS QUE MERECEM VOLTAR",
+            items = forgotten,
+            style = HomeSectionStyle.QUICK_PICKS_GRID
+        )
+        val speedDialIndex = filtered.indexOfFirst { it.style == HomeSectionStyle.SPEED_DIAL }
+        return if (speedDialIndex >= 0) {
+            filtered.toMutableList().apply { add(speedDialIndex + 1, section) }
+        } else listOf(section) + filtered
+    }
+
     fun loadHomeFeed(params: String? = _selectedHomeChip.value?.params, force: Boolean = false) {
         viewModelScope.launch {
             _isLoadingHome.value = true
@@ -835,7 +965,7 @@ class MusicViewModel(
                 includeRemoteContent = false
             )
             if (_homeSections.value.isEmpty() && localFeed.sections.isNotEmpty()) {
-                _homeSections.value = localFeed.sections
+                _homeSections.value = curateHomeSections(localFeed.sections)
                 prefetchHomeMedia(localFeed.sections)
             }
 
@@ -853,7 +983,7 @@ class MusicViewModel(
                     _homeChips.value = baseFeed.chips
                 }
                 if (_homeSections.value.isEmpty() && baseFeed.sections.isNotEmpty()) {
-                    _homeSections.value = baseFeed.sections
+                    _homeSections.value = curateHomeSections(baseFeed.sections)
                     prefetchHomeMedia(baseFeed.sections)
                 }
                 _isLoadingHome.value = false
@@ -869,13 +999,13 @@ class MusicViewModel(
                 if (synthesizedFeed.chips.isNotEmpty() && _homeChips.value.isEmpty()) {
                     _homeChips.value = synthesizedFeed.chips
                 }
-                _homeSections.value = synthesizedFeed.sections
+                _homeSections.value = curateHomeSections(synthesizedFeed.sections)
                 historyRepo?.saveCachedHomeFeed(synthesizedFeed.sections)
 
                 prefetchHomeMedia(synthesizedFeed.sections)
             }.onFailure {
                 if (_homeSections.value.isEmpty() && localFeed.sections.isNotEmpty()) {
-                    _homeSections.value = localFeed.sections
+                    _homeSections.value = curateHomeSections(localFeed.sections)
                     prefetchHomeMedia(localFeed.sections)
                     _isLoadingHome.value = false
                 } else if (_homeSections.value.isEmpty()) {
@@ -1281,16 +1411,12 @@ class MusicViewModel(
                         val wasSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK || 
                                          (elapsed < 30_000L && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
                         userAffinityRepository?.recordTrackEnded(prevTrack, elapsed, dur, wasSkipped)
+                        userHistoryRepository?.recordTrackListening(prevTrack, elapsed.coerceAtMost(dur.takeIf { it > 0 } ?: elapsed))
                     }
                 }
                 activeTrackId = mediaItem?.mediaId
                 currentTrackPlayStartTime = System.currentTimeMillis()
 
-                if (_sleepTimerAtEndOfTrack.value && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                    _sleepTimerAtEndOfTrack.value = false
-                    player.pause()
-                    _userMessage.value = "Temporizador de sono: reprodução pausada ao final da música."
-                }
                 syncTimelineState(player)
                 checkAndLoadMoreQueue(player)
             }
@@ -2276,6 +2402,30 @@ class MusicViewModel(
         controller.play()
     }
 
+    fun playRecapMix(summary: RecapSummary) {
+        val tracks = summary.mixTracks.distinctBy { it.id }
+        if (tracks.isNotEmpty()) {
+            playTrackList(
+                title = "NERF Recap ${summary.year}",
+                tracks = tracks,
+                startIndex = 0,
+                isShuffle = false
+            )
+        }
+    }
+
+    suspend fun getRecapArtistImageUrl(name: String): String? {
+        val key = name.trim().lowercase(Locale.ROOT)
+        if (key.isBlank()) return null
+        recapArtistImageCache[key]?.let { return it }
+        val result = repository.search(name, SearchFilter.ARTISTS).getOrNull() ?: return null
+        val artists = listOfNotNull(result.topArtist) + result.artists
+        val imageUrl = artists.firstOrNull { it.name.equals(name, ignoreCase = true) }?.thumbnailUrl
+            ?: result.topArtist?.thumbnailUrl
+            ?: result.artists.firstOrNull()?.thumbnailUrl
+        return imageUrl?.takeIf(String::isNotBlank)?.also { recapArtistImageCache[key] = it }
+    }
+
     fun playTrackList(title: String, tracks: List<Track>, startIndex: Int = 0, isShuffle: Boolean = false) {
         if (tracks.isEmpty()) return
         val effectiveTracks = if (isShuffle) tracks.shuffled() else tracks
@@ -3056,40 +3206,44 @@ class MusicViewModel(
         }
     }
 
-    fun setSleepTimerMinutes(minutes: Int) {
-        sleepTimerJob?.cancel()
-        _sleepTimerAtEndOfTrack.value = false
-        if (minutes <= 0) {
-            _sleepTimerRemainingSeconds.value = null
-            return
-        }
-
-        sleepTimerJob = viewModelScope.launch {
-            var remaining = minutes * 60L
-            while (remaining > 0) {
-                _sleepTimerRemainingSeconds.value = remaining
-                delay(1000L)
-                remaining--
-            }
-            _sleepTimerRemainingSeconds.value = 0L
-            mediaController?.pause()
-            _userMessage.value = "Temporizador de sono: reprodução finalizada."
-            _sleepTimerRemainingSeconds.value = null
+    fun exportBackup(uri: Uri) {
+        val context = applicationContext ?: return
+        viewModelScope.launch {
+            runCatching { BackupRepository(context).exportTo(uri) }
+                .onSuccess { summary ->
+                    _userMessage.value = "Backup criado: ${summary.preferenceCount} preferências e ${summary.trackCount} faixas."
+                }
+                .onFailure { error -> _userMessage.value = "Falha ao criar backup: ${error.message}" }
         }
     }
 
+    fun restoreBackup(uri: Uri) {
+        val context = applicationContext ?: return
+        viewModelScope.launch {
+            runCatching { BackupRepository(context).restoreFrom(uri) }
+                .onSuccess { summary ->
+                    _userMessage.value = "Backup restaurado: ${summary.preferenceCount} preferências e ${summary.trackCount} faixas."
+                    libraryRepository = null
+                    userHistoryRepository = null
+                    userAffinityRepository = null
+                    initializePlayerController(context)
+                    loadHomeFeed(force = true)
+                }
+                .onFailure { error -> _userMessage.value = "Falha ao restaurar backup: ${error.message}" }
+        }
+    }
+
+    fun setSleepTimerMinutes(minutes: Int) {
+        AudioPlayerService.setSleepTimerMinutes(minutes)
+    }
+
     fun setSleepTimerEndOfTrack() {
-        sleepTimerJob?.cancel()
-        _sleepTimerRemainingSeconds.value = null
-        _sleepTimerAtEndOfTrack.value = true
+        AudioPlayerService.setSleepTimerEndOfTrack()
         _userMessage.value = "Temporizador: a reprodução será pausada ao final desta música."
     }
 
     fun cancelSleepTimer() {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        _sleepTimerRemainingSeconds.value = null
-        _sleepTimerAtEndOfTrack.value = false
+        AudioPlayerService.cancelSleepTimer()
         _userMessage.value = "Temporizador de sono cancelado."
     }
 

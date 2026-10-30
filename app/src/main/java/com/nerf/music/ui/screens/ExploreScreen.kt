@@ -71,6 +71,8 @@ fun ExploreScreen(
     val moodSections by viewModel.moodSections.collectAsState()
     val moodLoading by viewModel.moodLoading.collectAsState()
     val charts by viewModel.chartsSections.collectAsState()
+    val mostPlayed by viewModel.mostPlayedTracks.collectAsState()
+    val recentlyAdded by viewModel.recentlyAddedTracks.collectAsState()
     var category by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedMood by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedMoodParams by rememberSaveable { mutableStateOf<String?>(null) }
@@ -83,12 +85,33 @@ fun ExploreScreen(
         if (category == "Paradas musicais") viewModel.loadCharts()
     }
     BackHandler(enabled = category != null) { if (selectedMood != null) { selectedMood = null; selectedMoodParams = null } else category = null }
-    val displayedSections = when (category) {
+    val remoteDisplayedSections = when (category) {
         "Novos lançamentos" -> homeSections.filter { it.title.contains("lançamento", true) || it.title.contains("álbu", true) || it.title.contains("release", true) }
         "Paradas musicais" -> charts
         "Momentos e gêneros" -> if (selectedMood == null) emptyList() else moodSections
         else -> homeSections
     }
+    val displayedSections = if (category == null) {
+        buildList {
+            if (mostPlayed.isNotEmpty()) add(
+                com.nerf.music.data.model.HomeSection(
+                    title = "Mais Tocadas",
+                    strapline = "SUA ATIVIDADE",
+                    items = mostPlayed.take(20),
+                    style = HomeSectionStyle.QUICK_PICKS_GRID
+                )
+            )
+            if (recentlyAdded.isNotEmpty()) add(
+                com.nerf.music.data.model.HomeSection(
+                    title = "Adicionadas Recentemente",
+                    strapline = "SUA BIBLIOTECA",
+                    items = recentlyAdded.take(20),
+                    style = HomeSectionStyle.QUICK_PICKS_GRID
+                )
+            )
+            addAll(remoteDisplayedSections)
+        }
+    } else remoteDisplayedSections
 
     Column(
         modifier = modifier

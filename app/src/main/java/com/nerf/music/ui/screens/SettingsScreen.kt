@@ -2,6 +2,8 @@ package com.nerf.music.ui.screens
 
 import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -95,9 +97,14 @@ fun SettingsScreen(
     var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.MAIN) }
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
-    var showSleepTimerSheet by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let(viewModel::exportBackup) }
+    val restoreBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(viewModel::restoreBackup) }
 
     // Intercepta botão Voltar do sistema Android quando em uma sub-tela ou busca ativa
     BackHandler(enabled = isSearchActive || currentSubScreen != SettingsSubScreen.MAIN) {
@@ -120,8 +127,6 @@ fun SettingsScreen(
     val isDownloadOverCellular by viewModel.isDownloadOverCellular.collectAsState()
     val wifiAudioQuality by viewModel.wifiAudioQuality.collectAsState()
     val cellularAudioQuality by viewModel.cellularAudioQuality.collectAsState()
-    val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
-    val sleepTimerAtEndOfTrack by viewModel.sleepTimerAtEndOfTrack.collectAsState()
     val storageBreakdown by viewModel.storageBreakdown.collectAsState()
     val downloadAudioQuality by viewModel.downloadAudioQuality.collectAsState()
     val isDownloadCanvasEnabled by viewModel.isDownloadCanvasEnabled.collectAsState()
@@ -134,27 +139,6 @@ fun SettingsScreen(
     // Atualiza armazenamento ao entrar
     LaunchedEffect(Unit) {
         viewModel.refreshStorageBreakdown(context)
-    }
-
-    // Modal de Temporizador de Sono (Sleep Timer)
-    if (showSleepTimerSheet) {
-        SleepTimerBottomSheet(
-            remainingSeconds = sleepTimerRemainingSeconds,
-            isEndOfTrack = sleepTimerAtEndOfTrack,
-            onSelectMinutes = {
-                viewModel.setSleepTimerMinutes(it)
-                showSleepTimerSheet = false
-            },
-            onSelectEndOfTrack = {
-                viewModel.setSleepTimerEndOfTrack()
-                showSleepTimerSheet = false
-            },
-            onCancelTimer = {
-                viewModel.cancelSleepTimer()
-                showSleepTimerSheet = false
-            },
-            onDismiss = { showSleepTimerSheet = false }
-        )
     }
 
     AnimatedContent(
@@ -250,9 +234,6 @@ fun SettingsScreen(
                     onAutomixChange = { viewModel.setAutomixEnabled(it) },
                     loudnessStandard = loudnessStandard,
                     onLoudnessStandardChange = { viewModel.setLoudnessStandard(it) },
-                    sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
-                    sleepTimerAtEndOfTrack = sleepTimerAtEndOfTrack,
-                    onOpenSleepTimer = { showSleepTimerSheet = true },
                     onOpenEqualizer = { viewModel.openEqualizer(context) },
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
                     modifier = modifier
@@ -297,6 +278,12 @@ fun SettingsScreen(
                         }
                     },
                     onClearCache = { viewModel.clearAppCache(context) },
+                    onExportBackup = {
+                        exportBackupLauncher.launch("nerf-music-backup-${java.time.LocalDate.now()}.nerfbackup")
+                    },
+                    onRestoreBackup = {
+                        restoreBackupLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
+                    },
                     onRefresh = { viewModel.refreshStorageBreakdown(context) },
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
                     modifier = modifier
@@ -360,7 +347,6 @@ private fun SettingsMainContent(
             SearchableSetting("Automix", "Transições fluidas inteligentes em playlists", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Normalização de volume (Loudness)", "Padronização de áudio em tempo real (-14 LUFS Spotify, -16 LUFS Apple Music, -11 LUFS CD, -9 LUFS CD Moderno)", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Equalizador", "Abre o painel de equalização de áudio", "Reprodução", SettingsSubScreen.PLAYBACK),
-            SearchableSetting("Temporizador de sono (Sleep Timer)", "Pausa a reprodução após tempo determinado ou fim da faixa", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Canvas", "Exibe efeitos visuais curtos em loop no player", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
             SearchableSetting("Canvas apenas no Wi-Fi", "Economiza dados móveis reproduzindo Canvas só no Wi-Fi", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
             SearchableSetting("Letras sincronizadas no Player", "Exibe a frase da letra em tempo real acima do título", "Conteúdo e exibição", SettingsSubScreen.CONTENT_DISPLAY),
@@ -660,7 +646,7 @@ private fun SettingsMainContent(
                 SpotifyCategoryRow(
                     icon = Icons.Default.PlayCircleOutline,
                     title = "Reprodução",
-                    subtitle = "Crossfade • Sem pausas • Equalizador • Sleep timer",
+                subtitle = "Crossfade • Sem pausas • Equalizador",
                     onClick = onOpenPlayback
                 )
 
@@ -730,6 +716,8 @@ private fun StorageSettingsScreen(
     onTriggerSyncNow: () -> Unit,
     onSyncDownloads: (onDone: () -> Unit) -> Unit = {},
     onClearCache: () -> Unit,
+    onExportBackup: () -> Unit,
+    onRestoreBackup: () -> Unit,
     onRefresh: () -> Unit,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -951,6 +939,22 @@ private fun StorageSettingsScreen(
                 color = Color(0x1AFFFFFF),
                 thickness = 0.5.dp,
                 modifier = Modifier.padding(vertical = 18.dp)
+            )
+
+            SpotifySectionHeader(title = "Backup e restauração")
+
+            SpotifyActionItemWithIcon(
+                title = "Exportar backup local",
+                subtitle = "Salva playlists, favoritos, histórico e preferências em um arquivo",
+                trailingIcon = Icons.Default.FileUpload,
+                onClick = onExportBackup
+            )
+
+            SpotifyActionItemWithIcon(
+                title = "Restaurar backup local",
+                subtitle = "Valida e restaura um arquivo de backup do NERF Music",
+                trailingIcon = Icons.Default.Restore,
+                onClick = onRestoreBackup
             )
 
             SpotifySectionHeader(title = "Downloads Inteligentes (Smart Downloads)")
@@ -1426,9 +1430,6 @@ private fun PlaybackSettingsScreen(
     onAutomixChange: (Boolean) -> Unit,
     loudnessStandard: LoudnessStandard,
     onLoudnessStandardChange: (LoudnessStandard) -> Unit,
-    sleepTimerRemainingSeconds: Long?,
-    sleepTimerAtEndOfTrack: Boolean,
-    onOpenSleepTimer: () -> Unit,
     onOpenEqualizer: () -> Unit,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
@@ -1532,25 +1533,6 @@ private fun PlaybackSettingsScreen(
                 onClick = onOpenEqualizer
             )
 
-            // Temporizador de sono (Sleep Timer)
-            val sleepTimerStatusText = when {
-                sleepTimerAtEndOfTrack -> "Pausará ao final desta música"
-                sleepTimerRemainingSeconds != null -> {
-                    val mins = sleepTimerRemainingSeconds / 60
-                    val secs = sleepTimerRemainingSeconds % 60
-                    "Pausará em %02d:%02d min".format(mins, secs)
-                }
-                else -> "Desativado"
-            }
-
-            SpotifyActionItemWithStatus(
-                title = "Temporizador de sono",
-                subtitle = "Pausa automaticamente a reprodução após o período escolhido",
-                statusText = sleepTimerStatusText,
-                isStatusActive = sleepTimerRemainingSeconds != null || sleepTimerAtEndOfTrack,
-                onClick = onOpenSleepTimer
-            )
-
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -1614,7 +1596,7 @@ private fun LoudnessNormalizationBottomSheet(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SleepTimerBottomSheet(
+internal fun SleepTimerBottomSheet(
     remainingSeconds: Long?,
     isEndOfTrack: Boolean,
     onSelectMinutes: (Int) -> Unit,

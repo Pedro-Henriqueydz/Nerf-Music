@@ -9,6 +9,7 @@ import com.nerf.music.player.NewPipeStreamResolver
 import com.nerf.music.player.StreamResolver
 import com.nerf.music.data.db.AppDatabase
 import com.nerf.music.data.db.DownloadedTrackEntity
+import com.nerf.music.data.db.LibraryTrackEntity
 import com.nerf.music.util.NetworkUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -102,6 +103,7 @@ class LibraryRepositoryImpl(
 
     private val database = AppDatabase.getInstance(context)
     private val downloadedTrackDao = database.downloadedTrackDao()
+    private val libraryTrackDao = database.libraryTrackDao()
 
     override val likedTracksFlow: StateFlow<List<Track>> = sharedLikedTracksFlow
     override val playlistsFlow: StateFlow<List<UserPlaylist>> = sharedPlaylistsFlow
@@ -121,6 +123,23 @@ class LibraryRepositoryImpl(
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         GlobalScope.launch(Dispatchers.IO) {
             try {
+                val migrationNow = System.currentTimeMillis()
+                _likedTracksFlow.value.forEachIndexed { index, track ->
+                    libraryTrackDao.markAdded(
+                        LibraryTrackEntity.fromTrack(track),
+                        migrationNow - index * 1_000L,
+                        liked = true
+                    )
+                }
+                _playlistsFlow.value.forEach { playlist ->
+                    playlist.tracks.forEachIndexed { index, track ->
+                        libraryTrackDao.markAdded(
+                            LibraryTrackEntity.fromTrack(track),
+                            playlist.createdAtEpochMs + index,
+                            liked = _likedTracksFlow.value.any { it.id == track.id }
+                        )
+                    }
+                }
                 val dbTracks = downloadedTrackDao.getAllTracks()
                 if (dbTracks.isNotEmpty()) {
                     val tracks = dbTracks.map { it.toDownloadedTrack() }
@@ -218,6 +237,14 @@ class LibraryRepositoryImpl(
         }
         _likedTracksFlow.value = current
         saveLikedTracks(current)
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        GlobalScope.launch(Dispatchers.IO) {
+            if (added) {
+                libraryTrackDao.markAdded(LibraryTrackEntity.fromTrack(track), System.currentTimeMillis(), liked = true)
+            } else {
+                libraryTrackDao.clearLiked(track.id)
+            }
+        }
         return added
     }
 
@@ -230,6 +257,13 @@ class LibraryRepositoryImpl(
         current.addAll(0, toAdd)
         _likedTracksFlow.value = current
         saveLikedTracks(current)
+        val addedAt = System.currentTimeMillis()
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        GlobalScope.launch(Dispatchers.IO) {
+            toAdd.forEachIndexed { index, track ->
+                libraryTrackDao.markAdded(LibraryTrackEntity.fromTrack(track), addedAt + index, liked = true)
+            }
+        }
         return toAdd.size
     }
 
@@ -1035,6 +1069,14 @@ class LibraryRepositoryImpl(
             current[index] = playlist.copy(tracks = updatedTracks)
             _playlistsFlow.value = current
             savePlaylists(current)
+            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+            GlobalScope.launch(Dispatchers.IO) {
+                libraryTrackDao.markAdded(
+                    LibraryTrackEntity.fromTrack(track),
+                    System.currentTimeMillis(),
+                    liked = _likedTracksFlow.value.any { it.id == track.id }
+                )
+            }
             return true
         }
         return false
@@ -1052,6 +1094,17 @@ class LibraryRepositoryImpl(
             current[index] = playlist.copy(tracks = updatedTracks)
             _playlistsFlow.value = current
             savePlaylists(current)
+            val addedAt = System.currentTimeMillis()
+            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+            GlobalScope.launch(Dispatchers.IO) {
+                toAdd.forEachIndexed { offset, track ->
+                    libraryTrackDao.markAdded(
+                        LibraryTrackEntity.fromTrack(track),
+                        addedAt + offset,
+                        liked = _likedTracksFlow.value.any { it.id == track.id }
+                    )
+                }
+            }
             return toAdd.size
         }
         return 0

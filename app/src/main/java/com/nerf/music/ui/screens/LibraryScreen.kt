@@ -68,6 +68,8 @@ fun LibraryScreen(
     val likedTracks by viewModel.likedTracks.collectAsState()
     val userPlaylists by viewModel.userPlaylists.collectAsState()
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
+    val mostPlayedTracks by viewModel.mostPlayedTracks.collectAsState()
+    val recentlyAddedTracks by viewModel.recentlyAddedTracks.collectAsState()
     val isGridView by viewModel.isLibraryGridView.collectAsState()
 
     var selectedFilter by remember { mutableStateOf(LibraryFilter.ALL) }
@@ -92,13 +94,14 @@ fun LibraryScreen(
     var selectedUserPlaylist by remember { mutableStateOf<UserPlaylist?>(null) }
     var showLikedTracksView by remember { mutableStateOf(false) }
     var showDownloadedTracksView by remember { mutableStateOf(false) }
+    var selectedSmartPlaylist by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(YtmBlack)
     ) {
-        val isInsideSubView = showLikedTracksView || showDownloadedTracksView || selectedUserPlaylist != null
+        val isInsideSubView = showLikedTracksView || showDownloadedTracksView || selectedUserPlaylist != null || selectedSmartPlaylist != null
 
         // 1. TopBar Oficial da Biblioteca (visível apenas na raiz da biblioteca)
         if (!isInsideSubView) {
@@ -200,6 +203,18 @@ fun LibraryScreen(
 
         // Sub-telas de navegação direta (Músicas Curtidas / Downloads / Playlist do Usuário)
         when {
+            selectedSmartPlaylist != null -> {
+                val smartTitle = selectedSmartPlaylist.orEmpty()
+                val smartTracks = if (smartTitle == "Mais Tocadas") mostPlayedTracks else recentlyAddedTracks
+                TrackListDetailView(
+                    title = smartTitle,
+                    subtitle = "Playlist automática • ${smartTracks.size} músicas",
+                    tracks = smartTracks,
+                    onBack = { selectedSmartPlaylist = null },
+                    onPlayTrack = { _, index -> viewModel.playTrackList(smartTitle, smartTracks, index, false) },
+                    onShuffleAll = { viewModel.playTrackList(smartTitle, smartTracks, 0, true) }
+                )
+            }
             showLikedTracksView -> {
                 TrackListDetailView(
                     title = "Músicas Curtidas",
@@ -400,6 +415,26 @@ fun LibraryScreen(
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 90.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
+                            if (mostPlayedTracks.isNotEmpty()) {
+                                item(key = "most_played_smart") {
+                                    LibraryListItem(
+                                        title = "Mais Tocadas",
+                                        subtitle = "Playlist automática • ${mostPlayedTracks.size} músicas",
+                                        playlistTracks = mostPlayedTracks,
+                                        onClick = { selectedSmartPlaylist = "Mais Tocadas" }
+                                    )
+                                }
+                            }
+                            if (recentlyAddedTracks.isNotEmpty()) {
+                                item(key = "recently_added_smart") {
+                                    LibraryListItem(
+                                        title = "Adicionadas Recentemente",
+                                        subtitle = "Playlist automática • ${recentlyAddedTracks.size} músicas",
+                                        playlistTracks = recentlyAddedTracks,
+                                        onClick = { selectedSmartPlaylist = "Adicionadas Recentemente" }
+                                    )
+                                }
+                            }
                             if (shouldShowLiked) {
                                 item(key = "liked_music_item") {
                                     LibraryListItem(
@@ -453,6 +488,26 @@ fun LibraryScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
+                            if (mostPlayedTracks.isNotEmpty()) {
+                                item(key = "most_played_smart_grid") {
+                                    LibraryGridCard(
+                                        title = "Mais Tocadas",
+                                        subtitle = "Playlist automática",
+                                        playlistTracks = mostPlayedTracks,
+                                        onClick = { selectedSmartPlaylist = "Mais Tocadas" }
+                                    )
+                                }
+                            }
+                            if (recentlyAddedTracks.isNotEmpty()) {
+                                item(key = "recently_added_smart_grid") {
+                                    LibraryGridCard(
+                                        title = "Adicionadas Recentemente",
+                                        subtitle = "Playlist automática",
+                                        playlistTracks = recentlyAddedTracks,
+                                        onClick = { selectedSmartPlaylist = "Adicionadas Recentemente" }
+                                    )
+                                }
+                            }
                             if (shouldShowLiked) {
                                 item(key = "liked_music_grid") {
                                     LibraryGridCard(

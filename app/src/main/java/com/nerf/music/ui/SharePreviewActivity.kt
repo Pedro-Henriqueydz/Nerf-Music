@@ -104,16 +104,23 @@ class SharePreviewActivity : ComponentActivity() {
                 LaunchedEffect(style) {
                     bitmap = null
                     error = null
-                    try { bitmap = SocialShareHelper.renderCard(this@SharePreviewActivity, track, lines, style) }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { error = "Não foi possível gerar a prévia. Tente outro estilo." }
+                    try {
+                        bitmap = SocialShareHelper.renderCard(this@SharePreviewActivity, track, lines, style)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        error = "Não foi possível gerar a prévia. Tente outro estilo."
+                    }
                 }
                 fun send(action: suspend (Bitmap) -> Unit) {
                     val image = bitmap ?: return
                     busy = true
                     scope.launch {
-                        try { perform { action(image) } }
-                        finally { busy = false }
+                        try {
+                            perform { action(image) }
+                        } finally {
+                            busy = false
+                        }
                     }
                 }
                 SharePreviewSheet(
@@ -146,10 +153,15 @@ class SharePreviewActivity : ComponentActivity() {
     }
 
     private suspend fun perform(action: suspend () -> Unit) {
-        try { action() }
-        catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: android.content.ActivityNotFoundException) { message("Aplicativo não instalado. Salve a imagem ou copie o link.") }
-        catch (_: Exception) { message("Não foi possível concluir. Tente novamente.") }
+        try {
+            action()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: android.content.ActivityNotFoundException) {
+            message("Aplicativo não instalado. Salve a imagem ou copie o link.")
+        } catch (_: Exception) {
+            message("Não foi possível concluir. Tente novamente.")
+        }
     }
 
     private fun message(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()

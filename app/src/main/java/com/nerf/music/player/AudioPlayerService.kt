@@ -3,13 +3,17 @@ package com.nerf.music.player
 import android.app.PendingIntent
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
+import android.os.SystemClock
 import android.net.Uri
 import android.media.audiofx.AudioEffect
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -56,6 +60,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import java.io.File
@@ -423,7 +430,72 @@ class AudioPlayerService : MediaSessionService() {
     private var isCrossfading: Boolean = false
     private var crossfadeJob: Job? = null
     private var transitionMonitorJob: Job? = null
+    private var sleepTimerJob: Job? = null
+    private var sleepTimerDeadlineElapsedMs: Long? = null
     private var lastSeekTimestampMs: Long = 0L
+    private var noisyReceiverRegistered = false
+
+    private val noisyAudioReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                Log.i(TAG, "Saida de audio desconectada; pausando todos os players ativos.")
+                pauseAllPlayers()
+            }
+        }
+    }
+
+    private fun pauseAllPlayers() {
+        crossfadeJob?.cancel()
+        isCrossfading = false
+        fadingPlayer?.pause()
+        fadingPlayer = null
+        if (::activePlayer.isInitialized) activePlayer.pause()
+        if (::instrumentalPlayer.isInitialized) instrumentalPlayer.pause()
+    }
+
+    private fun finishSleepTimer(message: String) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerDeadlineElapsedMs = null
+        if (::activePlayer.isInitialized) activePlayer.pauseAtEndOfMediaItems = false
+        _sleepTimerRemainingSeconds.value = null
+        _sleepTimerAtEndOfTrack.value = false
+        _sleepTimerMessage.value = message
+    }
+
+    private fun startSleepTimer(minutes: Int) {
+        cancelSleepTimerInternal(notify = false)
+        if (minutes <= 0) return
+        val deadline = SystemClock.elapsedRealtime() + minutes * 60_000L
+        sleepTimerDeadlineElapsedMs = deadline
+        sleepTimerJob = serviceScope.launch {
+            while (isActive) {
+                val remainingMs = deadline - SystemClock.elapsedRealtime()
+                if (remainingMs <= 0L) break
+                _sleepTimerRemainingSeconds.value = (remainingMs + 999L) / 1000L
+                delay(1_000L.coerceAtMost(remainingMs))
+            }
+            pauseAllPlayers()
+            finishSleepTimer("Temporizador de sono: reproducao pausada.")
+        }
+    }
+
+    private fun startEndOfTrackSleepTimer() {
+        cancelSleepTimerInternal(notify = false)
+        _sleepTimerAtEndOfTrack.value = true
+        if (::activePlayer.isInitialized) activePlayer.pauseAtEndOfMediaItems = true
+        _sleepTimerMessage.value = "Temporizador: a reproducao sera pausada ao final desta musica."
+    }
+
+    private fun cancelSleepTimerInternal(notify: Boolean) {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepTimerDeadlineElapsedMs = null
+        if (::activePlayer.isInitialized) activePlayer.pauseAtEndOfMediaItems = false
+        _sleepTimerRemainingSeconds.value = null
+        _sleepTimerAtEndOfTrack.value = false
+        if (notify) _sleepTimerMessage.value = "Temporizador de sono cancelado."
+    }
 
     private val incomingPlayerCandidate: ExoPlayer
         get() = if (::activePlayer.isInitialized && activePlayer === playerA) playerB else playerA
@@ -513,6 +585,11 @@ class AudioPlayerService : MediaSessionService() {
         val triggerThresholdMs = effectiveFadeMs + 600L
 
         if (remainingMs in 100..triggerThresholdMs) {
+            if (_sleepTimerAtEndOfTrack.value) {
+                pauseAllPlayers()
+                finishSleepTimer("Temporizador de sono: reproducao pausada ao final da musica.")
+                return
+            }
             executeCrossfade(nextIndex, effectiveFadeMs, isSkip = false)
         }
     }
@@ -852,6 +929,25 @@ class AudioPlayerService : MediaSessionService() {
         private var instance: AudioPlayerService? = null
         fun getInstance(): AudioPlayerService? = instance
 
+        private val _sleepTimerRemainingSeconds = MutableStateFlow<Long?>(null)
+        val sleepTimerRemainingSeconds: StateFlow<Long?> = _sleepTimerRemainingSeconds.asStateFlow()
+        private val _sleepTimerAtEndOfTrack = MutableStateFlow(false)
+        val sleepTimerAtEndOfTrack: StateFlow<Boolean> = _sleepTimerAtEndOfTrack.asStateFlow()
+        private val _sleepTimerMessage = MutableStateFlow<String?>(null)
+        val sleepTimerMessage: StateFlow<String?> = _sleepTimerMessage.asStateFlow()
+
+        fun setSleepTimerMinutes(minutes: Int) {
+            instance?.startSleepTimer(minutes)
+        }
+
+        fun setSleepTimerEndOfTrack() {
+            instance?.startEndOfTrackSleepTimer()
+        }
+
+        fun cancelSleepTimer() {
+            instance?.cancelSleepTimerInternal(notify = true)
+        }
+
         data class PlayingTrackInfo(
             val trackId: String,
             val title: String,
@@ -1185,6 +1281,10 @@ class AudioPlayerService : MediaSessionService() {
                     else -> "UNKNOWN($playbackState)"
                 }
                 Log.i(TAG, "ExoPlayer estado: $stateName (isPlaying=${playerInstance.isPlaying})")
+                if (playerInstance == activePlayer && playbackState == Player.STATE_ENDED && _sleepTimerAtEndOfTrack.value) {
+                    pauseAllPlayers()
+                    finishSleepTimer("Temporizador de sono: reproducao pausada ao final da musica.")
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1219,6 +1319,11 @@ class AudioPlayerService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (playerInstance != activePlayer) return
                 Log.i(TAG, "ExoPlayer onMediaItemTransition: ${mediaItem?.mediaId}, reason=$reason")
+                if (_sleepTimerAtEndOfTrack.value && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                    pauseAllPlayers()
+                    finishSleepTimer("Temporizador de sono: reproducao pausada ao final da musica.")
+                    return
+                }
                 if (mediaItem?.mediaId != currentInstrumentalOriginalTrackId) {
                     isUsingRealInstrumental = false
                     hasAutoAlignedCurrentInstrumental = false
@@ -1337,6 +1442,13 @@ class AudioPlayerService : MediaSessionService() {
         super.onCreate()
         instance = this
         serviceAppContext = applicationContext
+        ContextCompat.registerReceiver(
+            this,
+            noisyAudioReceiver,
+            IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+        noisyReceiverRegistered = true
 
         settingsRepository = UserSettingsRepositoryImpl(this)
 
@@ -1567,6 +1679,16 @@ class AudioPlayerService : MediaSessionService() {
         serviceScope.cancel()
         transitionMonitorJob?.cancel()
         crossfadeJob?.cancel()
+        sleepTimerJob?.cancel()
+        _sleepTimerRemainingSeconds.value = null
+        _sleepTimerAtEndOfTrack.value = false
+        if (noisyReceiverRegistered) {
+            try {
+                unregisterReceiver(noisyAudioReceiver)
+            } catch (_: IllegalArgumentException) {
+            }
+            noisyReceiverRegistered = false
+        }
         fadingPlayer = null
         vocalProcessors.clear()
         loudnessProcessors.clear()

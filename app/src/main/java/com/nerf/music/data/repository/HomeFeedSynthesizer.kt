@@ -5,7 +5,11 @@ import android.util.Log
 import com.nerf.music.data.model.*
 import com.nerf.music.data.network.InnerTubeCatalogClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import java.text.Normalizer
 import java.util.Calendar
 
 /**
@@ -370,14 +374,97 @@ class HomeFeedSynthesizer(
         }
 
         // -----------------------------------------------------------------------------------------
-        // 9. SEÇÕES DO CATÁLOGO ORIGINAL (Lançamentos, Álbuns, Comunidade)
+        // 9. FROM THE COMMUNITY — playlists públicas alinhadas aos artistas preferidos
+        // -----------------------------------------------------------------------------------------
+        if (includeRemoteContent && selectedChip == null) {
+            fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replace(Regex("\\p{M}+"), "")
+                .lowercase()
+                .trim()
+
+            val tasteArtists = (topArtists + userLiked.map { it.artist } + userRecent.map { it.artist })
+                .flatMap { ReleaseRecommendations.extractContributors(it) }
+                .map(::normalize)
+                .filter { it.length >= 3 && it != "various artists" }
+                .distinct()
+                .take(12)
+            val tasteTrackIds = (userLiked + userRecent).map { it.id }.filter { it.isNotBlank() }.toSet()
+            val allPublicPlaylists = baseFeedData.sections
+                .flatMap { it.items }
+                .filter { item ->
+                    val identity = item.browseId ?: item.playlistId ?: item.id
+                    val isPublicPlaylist = identity.startsWith("VLPL") || identity.startsWith("PL")
+                    isPublicPlaylist && affinityRepo?.isArtistPenalized(item.artist) != true
+                }
+                .distinctBy { it.playlistId ?: it.browseId ?: it.id }
+
+            val scoredPlaylists = coroutineScope {
+                allPublicPlaylists.take(12).map { playlist ->
+                    async {
+                        val identity = playlist.browseId ?: playlist.playlistId ?: playlist.id
+                        val browseId = if (identity.startsWith("VL")) identity else "VL$identity"
+                        val tracks = catalogClient.getAlbumOrPlaylist(browseId).getOrNull()?.tracks.orEmpty()
+                        if (tracks.isEmpty()) return@async playlist to 0
+
+                        var score = 0
+                        var matchingTracks = 0
+                        tracks.take(40).forEach { candidate ->
+                            if (candidate.id in tasteTrackIds) {
+                                score += 8
+                                matchingTracks++
+                            }
+                            val candidateArtists = ReleaseRecommendations.extractContributors(candidate.artist)
+                                .map(::normalize)
+                            val artistMatches = candidateArtists.count { artist ->
+                                tasteArtists.any { preferred -> artist.contains(preferred) || preferred.contains(artist) }
+                            }
+                            if (artistMatches > 0) {
+                                score += artistMatches * 4
+                                matchingTracks++
+                            }
+                            val affinity = affinityRepo?.getArtistAffinity(candidate.artist) ?: 0
+                            if (affinity > 0) score += affinity.coerceAtMost(8)
+                            if (affinityRepo?.isTrackPenalized(candidate.id) == true) score -= 5
+                        }
+                        val metadata = normalize("${playlist.title} ${playlist.artist}")
+                        if (tasteArtists.any(metadata::contains)) score += 3
+                        playlist to if (matchingTracks > 0) score else 0
+                    }
+                }
+                    .awaitAll()
+            }
+            val communityPlaylists = scoredPlaylists
+                .filter { (_, score) -> score >= 4 }
+                .sortedByDescending { (_, score) -> score }
+                .map { it.first }
+                .take(10)
+            if (communityPlaylists.isNotEmpty()) {
+                syntheticSections.add(
+                    HomeSection(
+                        title = "From the community",
+                        strapline = "PLAYLISTS ESCOLHIDAS PARA O SEU GOSTO",
+                        items = communityPlaylists,
+                        style = HomeSectionStyle.COMMUNITY_PLAYLIST
+                    )
+                )
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // 10. SEÇÕES DO CATÁLOGO ORIGINAL
         // -----------------------------------------------------------------------------------------
         baseFeedData.sections.forEach { section ->
             val titleLower = section.title.lowercase()
             val isDuplicate = titleLower.contains("escolha a dedo") ||
                     titleLower.contains("ouvir novamente") ||
                     titleLower.contains("speed dial") ||
-                    titleLower.contains("supermix")
+                    titleLower.contains("supermix") ||
+                    titleLower.contains("em alta") ||
+                    titleLower.contains("trending") ||
+                    titleLower.contains("novos vídeos") ||
+                    titleLower.contains("new videos") ||
+                    titleLower.contains("novos álbuns e singles") ||
+                    titleLower.contains("new albums and singles")
 
             if (!isDuplicate && section.items.isNotEmpty()) {
                 val nonPenalized = section.items.filter { affinityRepo?.isTrackPenalized(it.id) != true }

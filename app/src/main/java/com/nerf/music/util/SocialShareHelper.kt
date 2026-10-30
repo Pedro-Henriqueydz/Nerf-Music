@@ -1,6 +1,7 @@
 package com.nerf.music.util
 
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -13,13 +14,17 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.provider.MediaStore
 import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.content.FileProvider
+import androidx.core.content.res.ResourcesCompat
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.nerf.music.R
 import com.nerf.music.data.model.Track
+import com.nerf.music.data.model.RecapSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -110,6 +115,115 @@ object SocialShareHelper {
     private const val CARD_HEIGHT = 1920
 
     private data class PaletteColors(val topColor: Int, val bottomColor: Int, val cardColor: Int)
+
+    suspend fun renderRecapShareCard(context: Context, summary: RecapSummary): Bitmap = withContext(Dispatchers.IO) {
+        val featured = summary.topTracks.firstOrNull()
+        val artwork = featured?.track?.let { loadArtworkBitmap(context, it) }
+        val colors = ArtworkColors.extract(artwork)
+        val bitmap = Bitmap.createBitmap(CARD_WIDTH, CARD_HEIGHT, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val background = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = android.graphics.LinearGradient(
+                0f, 0f, CARD_WIDTH.toFloat(), CARD_HEIGHT.toFloat(),
+                intArrayOf(colors.top, colors.bottom, Color.rgb(8, 9, 11)),
+                floatArrayOf(0f, 0.52f, 1f),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, CARD_WIDTH.toFloat(), CARD_HEIGHT.toFloat(), background)
+
+        if (artwork != null) {
+            val scale = maxOf(CARD_WIDTH.toFloat() / artwork.width, CARD_HEIGHT.toFloat() / artwork.height)
+            val drawnWidth = artwork.width * scale
+            val drawnHeight = artwork.height * scale
+            canvas.drawBitmap(
+                artwork,
+                null,
+                RectF(
+                    (CARD_WIDTH - drawnWidth) / 2f,
+                    (CARD_HEIGHT - drawnHeight) / 2f,
+                    (CARD_WIDTH + drawnWidth) / 2f,
+                    (CARD_HEIGHT + drawnHeight) / 2f
+                ),
+                Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = 105 }
+            )
+            canvas.drawRect(
+                0f, 0f, CARD_WIDTH.toFloat(), CARD_HEIGHT.toFloat(),
+                Paint().apply {
+                    shader = android.graphics.LinearGradient(
+                        0f, 0f, 0f, CARD_HEIGHT.toFloat(),
+                        intArrayOf(0x9908090B.toInt(), 0xAA08090B.toInt(), 0xF508090B.toInt()),
+                        floatArrayOf(0f, 0.48f, 1f),
+                        android.graphics.Shader.TileMode.CLAMP
+                    )
+                }
+            )
+        }
+
+        val left = 92f
+        val right = CARD_WIDTH - left
+        val sfMedium = ResourcesCompat.getFont(context, R.font.sf_pro_medium) ?: Typeface.DEFAULT
+        val sfSemibold = ResourcesCompat.getFont(context, R.font.sf_pro_semibold) ?: Typeface.DEFAULT_BOLD
+        val sfBold = ResourcesCompat.getFont(context, R.font.sf_pro_bold) ?: Typeface.DEFAULT_BOLD
+
+        fun textPaint(size: Float, color: Int, typeface: Typeface = sfMedium) = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            textSize = size
+            this.typeface = typeface
+        }
+        fun drawText(text: String, x: Float, y: Float, width: Int, paint: TextPaint, maxLines: Int = 2): Int {
+            if (text.isBlank()) return 0
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
+                .setMaxLines(maxLines)
+                .setEllipsize(android.text.TextUtils.TruncateAt.END)
+                .build()
+            canvas.save()
+            canvas.translate(x, y)
+            layout.draw(canvas)
+            canvas.restore()
+            return layout.height
+        }
+
+        val accent = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(30, 215, 96) }
+        canvas.drawCircle(left + 8f, 138f, 8f, accent)
+        drawText("NERF MUSIC  /  RECAP ${summary.year}", left + 34f, 116f, 760, textPaint(28f, Color.WHITE, sfSemibold), 1)
+
+        drawText("SEU ANO. SEU SOM.", left, 340f, 850, textPaint(35f, 0xCCFFFFFF.toInt(), sfSemibold), 1)
+        drawText("${summary.totalMinutes / 60}h", left - 6f, 422f, 870, textPaint(164f, Color.WHITE, sfBold), 1)
+        drawText("com música por perto", left + 6f, 620f, 820, textPaint(44f, 0xE6FFFFFF.toInt(), sfSemibold), 1)
+
+        val panel = RectF(left, 780f, right, 1042f)
+        canvas.drawRoundRect(panel, 42f, 42f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x24FFFFFF })
+        canvas.drawRoundRect(panel, 42f, 42f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            color = 0x35FFFFFF
+        })
+        drawText("${summary.totalPlays} reproduções", left + 42f, 832f, 770, textPaint(46f, Color.WHITE, sfSemibold), 1)
+        drawText("${summary.topArtist?.name ?: "Sua trilha sonora"} · artista mais ouvido", left + 42f, 916f, 770, textPaint(31f, 0xCCFFFFFF.toInt()), 1)
+
+        if (featured != null) {
+            val coverRect = RectF(left, 1110f, left + 220f, 1330f)
+            if (artwork != null) {
+                val cover = getRoundedCornerBitmap(artwork, 28f, 220, 220)
+                canvas.drawBitmap(cover, coverRect.left, coverRect.top, Paint(Paint.ANTI_ALIAS_FLAG))
+            } else {
+                canvas.drawRoundRect(coverRect, 28f, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colors.card })
+            }
+            drawText("FAIXA MAIS OUVIDA", left + 260f, 1138f, 600, textPaint(27f, 0xAAFFFFFF.toInt(), sfSemibold), 1)
+            drawText(featured.track.title, left + 260f, 1192f, 600, textPaint(43f, Color.WHITE, sfBold), 2)
+            drawText("${featured.track.artist} · ${featured.plays} plays", left + 260f, 1290f, 600, textPaint(29f, 0xC8FFFFFF.toInt()), 1)
+        }
+
+        drawText("AS 5 FAIXAS DO SEU ANO", left, 1432f, 800, textPaint(26f, 0xAAFFFFFF.toInt(), sfSemibold), 1)
+        summary.topTracks.take(5).forEachIndexed { index, item ->
+            val y = 1500f + index * 58f
+            val line = "${index + 1}.  ${item.track.title}  ·  ${item.track.artist}"
+            drawText(line, left, y, 890, textPaint(28f, if (index == 0) Color.WHITE else 0xCCFFFFFF.toInt(), if (index == 0) sfSemibold else sfMedium), 1)
+        }
+        drawText("NERF MUSIC", left, 1830f, 400, textPaint(29f, 0xBBFFFFFF.toInt(), sfBold), 1)
+        bitmap
+    }
 
     suspend fun renderMusicShareCard(context: Context, track: Track): Bitmap = withContext(Dispatchers.IO) {
         val artworkBitmap = loadArtworkBitmap(context, track)
@@ -454,6 +568,28 @@ object SocialShareHelper {
             FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         } catch (error: Exception) {
             file.delete()
+            throw error
+        }
+    }
+
+    suspend fun saveBitmapToGallery(context: Context, bitmap: Bitmap, displayName: String, relativePath: String): Uri = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: error("NÃ£o foi possÃ­vel criar a imagem na galeria.")
+        try {
+            resolver.openOutputStream(uri)?.use { output ->
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "Falha ao gravar a imagem." }
+            } ?: error("NÃ£o foi possÃ­vel abrir o ficheiro da imagem.")
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+            uri
+        } catch (error: Exception) {
+            resolver.delete(uri, null, null)
             throw error
         }
     }

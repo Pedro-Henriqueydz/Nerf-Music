@@ -55,6 +55,8 @@ fun TrackOptionsBottomSheet(
     onSaveToPlaylist: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleDownload: () -> Unit,
+    onOpenSleepTimer: (() -> Unit)? = null,
+    sleepTimerStatus: String? = null,
     onOpenArtist: ((String) -> Unit)? = null,
     onOpenAlbum: ((String) -> Unit)? = null
 ) {
@@ -260,6 +262,17 @@ fun TrackOptionsBottomSheet(
                     onToggleDownload()
                 }
             )
+
+            if (onOpenSleepTimer != null) {
+                TrackOptionRow(
+                    icon = Icons.Default.Bedtime,
+                    title = sleepTimerStatus?.let { "Temporizador • $it" } ?: "Temporizador de sono",
+                    onClick = {
+                        onDismiss()
+                        onOpenSleepTimer()
+                    }
+                )
+            }
 
             TrackOptionRow(
                 icon = Icons.Default.Share,
