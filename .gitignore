@@ -26,3 +26,8 @@ scratch/
 /graphify-out/.graphify*
 /.android/
 /.codex/
+
+# Release notes are maintained locally and must not be committed
+/CHANGELOG.md
+/RELEASE.md
+/RELEASE_NOTES.md
