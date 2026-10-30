@@ -26,7 +26,8 @@ data class SmartDownloadSyncState(
     val currentTrackTitle: String? = null,
     val currentTrackProgress: Float = 0f,
     val lastSyncTimestamp: Long = 0L,
-    val lastErrorMessage: String? = null
+    val lastErrorMessage: String? = null,
+    val lastFailedCount: Int = 0
 )
 
 /**
@@ -114,7 +115,8 @@ class SmartDownloadManager(
             _syncState.value = _syncState.value.copy(
                 isSyncing = true,
                 targetQuota = targetQuota,
-                lastErrorMessage = null
+                lastErrorMessage = null,
+                lastFailedCount = 0
             )
 
             // 1. Sintetiza a lista ponderada de candidatos
@@ -152,6 +154,7 @@ class SmartDownloadManager(
             val toDownload = candidates.filter { !existingIds.contains(it.id) }.take(availableQuota)
             val initialSmartCount = smartDownloadsToKeep.size
             var downloadedCount = 0
+            var failedCount = 0
 
             if (toDownload.isEmpty()) {
                 Log.i(TAG, "Todas as faixas de Smart Downloads ($initialSmartCount/$targetQuota) já estão baixadas.")
@@ -212,6 +215,7 @@ class SmartDownloadManager(
                     )
                     Log.d(TAG, "Smart Download concluído (${index + 1}/${toDownload.size}): ${track.title}")
                 } else {
+                    failedCount++
                     Log.w(TAG, "Falha ao baixar faixa inteligente ${track.title}: ${result.exceptionOrNull()?.message}")
                 }
             }
@@ -223,7 +227,11 @@ class SmartDownloadManager(
                 isSyncing = false,
                 currentTrackTitle = null,
                 currentTrackProgress = 0f,
-                lastSyncTimestamp = System.currentTimeMillis()
+                lastSyncTimestamp = System.currentTimeMillis(),
+                lastFailedCount = failedCount,
+                lastErrorMessage = if (failedCount > 0) {
+                    "$failedCount ${if (failedCount == 1) "faixa não pôde ser baixada" else "faixas não puderam ser baixadas"}."
+                } else null
             )
 
             Result.success(downloadedCount)

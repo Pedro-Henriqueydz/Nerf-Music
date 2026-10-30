@@ -97,6 +97,7 @@ fun SettingsScreen(
     var currentSubScreen by remember { mutableStateOf(SettingsSubScreen.MAIN) }
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var backupUriPendingRestore by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val context = LocalContext.current
     val exportBackupLauncher = rememberLauncherForActivityResult(
@@ -104,7 +105,26 @@ fun SettingsScreen(
     ) { uri -> uri?.let(viewModel::exportBackup) }
     val restoreBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
-    ) { uri -> uri?.let(viewModel::restoreBackup) }
+    ) { uri -> backupUriPendingRestore = uri }
+
+    if (backupUriPendingRestore != null) {
+        AlertDialog(
+            onDismissRequest = { backupUriPendingRestore = null },
+            title = { Text("Substituir dados locais?") },
+            text = {
+                Text("A restauração substituirá playlists, favoritos, histórico e preferências atuais pelos dados do backup. Os arquivos de áudio baixados não estão incluídos e serão mantidos.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    backupUriPendingRestore?.let(viewModel::restoreBackup)
+                    backupUriPendingRestore = null
+                }) { Text("Restaurar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { backupUriPendingRestore = null }) { Text("Cancelar") }
+            }
+        )
+    }
 
     // Intercepta botão Voltar do sistema Android quando em uma sub-tela ou busca ativa
     BackHandler(enabled = isSearchActive || currentSubScreen != SettingsSubScreen.MAIN) {
@@ -1069,7 +1089,11 @@ private fun StorageSettingsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (syncState.isSyncing) "Sincronizando faixas..." else "Mix Offline pronto",
+                                    text = when {
+                                        syncState.isSyncing -> "Sincronizando faixas..."
+                                        syncState.lastErrorMessage != null -> "Sincronização incompleta"
+                                        else -> "Mix Offline pronto"
+                                    },
                                     fontFamily = YouTubeSansFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
@@ -1078,8 +1102,10 @@ private fun StorageSettingsScreen(
                                 Text(
                                     text = if (syncState.isSyncing) {
                                         syncState.currentTrackTitle ?: "Conectando ao catálogo..."
+                                    } else if (syncState.lastErrorMessage != null) {
+                                        syncState.lastErrorMessage
                                     } else {
-                                        "${syncState.currentDownloadedCount} de ${smartDownloadsLimit} faixas disponíveis"
+                                        "${syncState.currentSmartDownloadedCount} de ${smartDownloadsLimit} faixas inteligentes • ${syncState.currentDownloadedCount} downloads no total"
                                     },
                                     fontFamily = YouTubeSansFontFamily,
                                     fontSize = 12.sp,
@@ -1111,6 +1137,14 @@ private fun StorageSettingsScreen(
                                     .clip(RoundedCornerShape(2.dp)),
                                 color = SpotifyGreen,
                                 trackColor = SpotifyTrackInactive
+                            )
+                        } else if (syncState.lastSyncTimestamp > 0L) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Última verificação: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(syncState.lastSyncTimestamp))}",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 11.sp,
+                                color = SpotifyTextSecondary
                             )
                         }
                     }

@@ -59,6 +59,16 @@ O APK de depuração será gerado em `app\build\outputs\apk\debug\app-debug.apk`
 .\gradlew.bat installDebug
 ```
 
+A variante `debug` usa o identificador `com.nerf.music.debug`, então pode ser instalada ao lado da versão publicada (`com.nerf.music`) sem removê-la. Para instalar por ADB Wi-Fi, ative a depuração sem fio nas opções do desenvolvedor e use os endereços e portas exibidos pelo Android:
+
+```powershell
+adb pair IP_DO_DISPOSITIVO:PORTA_DE_PAREAMENTO
+adb connect IP_DO_DISPOSITIVO:PORTA_ADB
+.\gradlew.bat installDebug
+```
+
+Se o dispositivo já estiver pareado, basta executar `adb connect IP_DO_DISPOSITIVO:PORTA_ADB` antes de `installDebug`.
+
 Para compilar a variante de lançamento:
 
 ```powershell

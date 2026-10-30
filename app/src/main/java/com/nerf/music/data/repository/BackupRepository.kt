@@ -105,7 +105,11 @@ class BackupRepository(private val context: Context) {
                 database.libraryTrackDao().upsertAnnualStatsAll(annualStats)
             }
             backup.preferenceGroups.forEach { (name, entries) ->
-                restorePreferences(appContext.getSharedPreferences(name, Context.MODE_PRIVATE), entries)
+                restorePreferences(
+                    prefs = appContext.getSharedPreferences(name, Context.MODE_PRIVATE),
+                    entries = entries,
+                    preservedKeys = portableBackupExclusions[name].orEmpty()
+                )
             }
         } catch (error: Throwable) {
             database.withTransaction {
@@ -140,9 +144,14 @@ class BackupRepository(private val context: Context) {
         }
         .sortedBy { it.key }
 
-    private fun restorePreferences(prefs: SharedPreferences, entries: List<BackupPreferenceEntry>) {
+    private fun restorePreferences(
+        prefs: SharedPreferences,
+        entries: List<BackupPreferenceEntry>,
+        preservedKeys: Set<String> = emptySet()
+    ) {
+        val preservedEntries = snapshotPreferences(prefs).filter { it.key in preservedKeys }
         val editor = prefs.edit().clear()
-        entries.forEach { item ->
+        (entries + preservedEntries).distinctBy { it.key }.forEach { item ->
             when (item.type) {
                 "string" -> editor.putString(item.key, item.value)
                 "boolean" -> editor.putBoolean(item.key, item.value.toBooleanStrict())
@@ -155,4 +164,9 @@ class BackupRepository(private val context: Context) {
         }
         check(editor.commit()) { "Falha ao restaurar preferências locais." }
     }
+
+    private val portableBackupExclusions = mapOf(
+        "nerf_library_prefs" to setOf("downloaded_tracks_json"),
+        "nerf_user_history_prefs" to setOf("cached_home_feed", "cached_explore_feed")
+    )
 }

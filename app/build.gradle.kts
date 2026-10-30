@@ -32,6 +32,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            resValue("string", "app_name", "NERF Music (Debug)")
+        }
+
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName(
