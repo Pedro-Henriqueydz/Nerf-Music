@@ -69,6 +69,7 @@ enum class SettingsSubScreen {
     MEDIA_QUALITY,
     PLAYBACK,
     CONTENT_DISPLAY,
+    RECOMMENDATIONS,
     STORAGE,
     MIGRATION,
     ABOUT
@@ -193,6 +194,7 @@ fun SettingsScreen(
     val smartDownloadsLimit by viewModel.smartDownloadsLimit.collectAsState()
     val isSmartDownloadsWifiOnly by viewModel.isSmartDownloadsWifiOnly.collectAsState()
     val smartDownloadSyncState by viewModel.smartDownloadSyncState.collectAsState()
+    val excludedRecommendationArtists by viewModel.excludedRecommendationArtists.collectAsState()
 
     // Atualiza armazenamento ao entrar
     LaunchedEffect(Unit) {
@@ -236,6 +238,7 @@ fun SettingsScreen(
                     onOpenDataSaver = { currentSubScreen = SettingsSubScreen.DATA_SAVER },
                     onOpenMediaQuality = { currentSubScreen = SettingsSubScreen.MEDIA_QUALITY },
                     onOpenPlayback = { currentSubScreen = SettingsSubScreen.PLAYBACK },
+                    onOpenRecommendations = { currentSubScreen = SettingsSubScreen.RECOMMENDATIONS },
                     onOpenContentDisplay = { currentSubScreen = SettingsSubScreen.CONTENT_DISPLAY },
                     onOpenStorage = { currentSubScreen = SettingsSubScreen.STORAGE },
                     onOpenMigration = { currentSubScreen = SettingsSubScreen.MIGRATION },
@@ -305,6 +308,16 @@ fun SettingsScreen(
                     onCanvasWifiOnlyChange = { viewModel.setCanvasWifiOnly(it) },
                     isLyricsAboveTitleEnabled = isLyricsAboveTitleEnabled,
                     onLyricsAboveTitleChange = { viewModel.setLyricsAboveTitleEnabled(it) },
+                    onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
+                    modifier = modifier
+                )
+            }
+            SettingsSubScreen.RECOMMENDATIONS -> {
+                RecommendationsSettingsScreen(
+                    excludedArtists = excludedRecommendationArtists,
+                    onExcludeArtist = viewModel::excludeRecommendationArtist,
+                    onIncludeArtist = viewModel::includeRecommendationArtist,
+                    onClearExclusions = viewModel::clearExcludedRecommendationArtists,
                     onNavigateBack = { currentSubScreen = SettingsSubScreen.MAIN },
                     modifier = modifier
                 )
@@ -384,6 +397,7 @@ private fun SettingsMainContent(
     onOpenDataSaver: () -> Unit,
     onOpenMediaQuality: () -> Unit,
     onOpenPlayback: () -> Unit,
+    onOpenRecommendations: () -> Unit,
     onOpenContentDisplay: () -> Unit,
     onOpenStorage: () -> Unit,
     onOpenMigration: () -> Unit,
@@ -402,6 +416,7 @@ private fun SettingsMainContent(
             SearchableSetting("Sincronizar Downloads", "Recuperar músicas órfãs e sincronizar arquivos locais com a biblioteca", "Armazenamento", SettingsSubScreen.STORAGE),
             SearchableSetting("Crossfade", "Transição suave e sobreposição entre faixas (0s-12s)", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Reprodução sem pausas (Gapless)", "Elimina o silêncio entre músicas consecutivas", "Reprodução", SettingsSubScreen.PLAYBACK),
+            SearchableSetting("Recomendações", "Gerenciar artistas ocultados nas rádios", "Recomendações", SettingsSubScreen.RECOMMENDATIONS),
             SearchableSetting("Automix", "Transições fluidas inteligentes em playlists", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Normalização de volume (Loudness)", "Padronização de áudio em tempo real (-14 LUFS Spotify, -16 LUFS Apple Music, -11 LUFS CD, -9 LUFS CD Moderno)", "Reprodução", SettingsSubScreen.PLAYBACK),
             SearchableSetting("Equalizador", "Abre o painel de equalização de áudio", "Reprodução", SettingsSubScreen.PLAYBACK),
@@ -709,6 +724,13 @@ private fun SettingsMainContent(
                 )
 
                 SpotifyCategoryRow(
+                    icon = Icons.Default.Recommend,
+                    title = "Recomendações",
+                    subtitle = "Gerenciar artistas que não devem aparecer nas rádios",
+                    onClick = onOpenRecommendations
+                )
+
+                SpotifyCategoryRow(
                     icon = Icons.Default.SmartDisplay,
                     title = "Conteúdo e exibição",
                     subtitle = "Canvas • Canvas no Wi-Fi • Letras sincronizadas",
@@ -747,6 +769,153 @@ private fun SettingsMainContent(
 
                 Spacer(modifier = Modifier.height(32.dp))
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecommendationsSettingsScreen(
+    excludedArtists: List<String>,
+    onExcludeArtist: (String) -> Unit,
+    onIncludeArtist: (String) -> Unit,
+    onClearExclusions: () -> Unit,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var artistName by remember { mutableStateOf("") }
+    var confirmClear by remember { mutableStateOf(false) }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Limpar artistas ocultos?") },
+            text = { Text("As rádios e recomendações poderão voltar a incluir esses artistas.") },
+            confirmButton = {
+                TextButton(onClick = { onClearExclusions(); confirmClear = false }) { Text("Limpar") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancelar") } }
+        )
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize().background(SpotifyBlack),
+        containerColor = SpotifyBlack,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "Recomendações",
+                            fontFamily = YouTubeSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White,
+                            modifier = Modifier.padding(end = 48.dp)
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = Color.White)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = SpotifyBlack)
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            SpotifySectionHeader(title = "Personalizar recomendações")
+            Text(
+                text = "Artistas adicionados aqui não aparecerão nas rádios e recomendações personalizadas.",
+                fontFamily = YouTubeSansFontFamily,
+                fontSize = 13.sp,
+                color = SpotifyTextSecondary,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Surface(
+                color = SpotifyCardBg,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 14.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.weight(1f).padding(vertical = 14.dp)) {
+                        if (artistName.isEmpty()) {
+                            Text(
+                                text = "Nome do artista",
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 14.sp,
+                                color = SpotifyTextSecondary
+                            )
+                        }
+                        BasicTextField(
+                            value = artistName,
+                            onValueChange = { artistName = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                fontFamily = YouTubeSansFontFamily,
+                                fontSize = 14.sp,
+                                color = Color.White
+                            ),
+                            cursorBrush = SolidColor(SpotifyGreen),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    IconButton(
+                        onClick = { onExcludeArtist(artistName.trim()); artistName = "" },
+                        enabled = artistName.isNotBlank()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Ocultar artista",
+                            tint = if (artistName.isNotBlank()) SpotifyGreen else SpotifyTextSecondary
+                        )
+                    }
+                }
+            }
+            if (excludedArtists.isEmpty()) {
+                Surface(
+                    color = SpotifyNoteBg,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
+                ) {
+                    Text(
+                        text = "Nenhum artista ocultado. As recomendações continuam usando suas preferências e seu histórico.",
+                        fontFamily = YouTubeSansFontFamily,
+                        fontSize = 12.sp,
+                        color = SpotifyTextSecondary,
+                        lineHeight = 17.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            } else {
+                SpotifySectionHeader(title = "Artistas ocultados (${excludedArtists.size})")
+                excludedArtists.forEach { artist ->
+                    SpotifyActionItemWithIcon(
+                        title = artist,
+                        subtitle = "Não aparece nas recomendações",
+                        trailingIcon = Icons.Default.Close,
+                        onClick = { onIncludeArtist(artist) }
+                    )
+                }
+                TextButton(
+                    onClick = { confirmClear = true },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Limpar todos", color = SpotifyGreen, fontFamily = YouTubeSansFontFamily)
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

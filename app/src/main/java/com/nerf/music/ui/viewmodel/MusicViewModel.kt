@@ -623,6 +623,8 @@ class MusicViewModel(
     private var userHistoryRepository: UserHistoryRepository? = null
     private var libraryRepository: LibraryRepository? = null
     private var userAffinityRepository: UserAffinityRepository? = null
+    private val _excludedRecommendationArtists = MutableStateFlow<List<String>>(emptyList())
+    val excludedRecommendationArtists: StateFlow<List<String>> = _excludedRecommendationArtists.asStateFlow()
     private var currentTrackListenedMs = 0L
     private var lastListenSampleTrackId: String? = null
     private var lastListenSamplePositionMs: Long? = null
@@ -809,6 +811,7 @@ class MusicViewModel(
         if (userAffinityRepository == null) {
             userAffinityRepository = UserAffinityRepositoryImpl(context.applicationContext)
         }
+        refreshExcludedRecommendationArtists()
 
         if (libraryRepository == null) {
             val libRepo = LibraryRepositoryImpl(context.applicationContext)
@@ -923,6 +926,26 @@ class MusicViewModel(
                 Log.e("MusicViewModel", "Erro ao obter MediaController conectado", e)
             }
         }, MoreExecutors.directExecutor())
+    }
+
+    fun refreshExcludedRecommendationArtists() {
+        _excludedRecommendationArtists.value = userAffinityRepository?.getExcludedArtists().orEmpty()
+            .sortedBy { it.lowercase(Locale.ROOT) }
+    }
+
+    fun excludeRecommendationArtist(name: String) {
+        userAffinityRepository?.setArtistExcluded(name, true)
+        refreshExcludedRecommendationArtists()
+    }
+
+    fun includeRecommendationArtist(name: String) {
+        userAffinityRepository?.setArtistExcluded(name, false)
+        refreshExcludedRecommendationArtists()
+    }
+
+    fun clearExcludedRecommendationArtists() {
+        userAffinityRepository?.clearArtistExclusions()
+        refreshExcludedRecommendationArtists()
     }
 
     fun completeOnboarding(selectedArtists: List<Artist>) {

@@ -244,6 +244,11 @@ class BackupRepository(private val context: Context) {
                     else -> current.value
                 }
                 merged[incoming.key] = current.copy(value = value)
+            } else if (current.type == "stringSet" && incoming.type == "stringSet") {
+                val values = (current.value.split("\u001f") + incoming.value.split("\u001f"))
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.trim().lowercase(java.util.Locale.ROOT) }
+                merged[incoming.key] = current.copy(value = values.joinToString("\u001f"))
             }
         }
         return merged.values.sortedBy { it.key }
