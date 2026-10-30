@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nerf.music.BuildConfig
 import com.nerf.music.data.repository.AudioQuality
+import com.nerf.music.data.repository.BackupRestoreMode
 import com.nerf.music.data.repository.DataSaverMode
 import com.nerf.music.data.repository.DownloadAudioQuality
 import com.nerf.music.data.repository.LoudnessStandard
@@ -100,6 +101,7 @@ fun SettingsScreen(
     var backupUriPendingRestore by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val context = LocalContext.current
+    val backupPreviewState by viewModel.backupPreviewState.collectAsState()
     val exportBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri -> uri?.let(viewModel::exportBackup) }
@@ -107,21 +109,57 @@ fun SettingsScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri -> backupUriPendingRestore = uri }
 
+    LaunchedEffect(backupUriPendingRestore) {
+        backupUriPendingRestore?.let(viewModel::inspectBackup)
+    }
+
     if (backupUriPendingRestore != null) {
         AlertDialog(
-            onDismissRequest = { backupUriPendingRestore = null },
-            title = { Text("Substituir dados locais?") },
+            onDismissRequest = {
+                backupUriPendingRestore = null
+                viewModel.clearBackupPreview()
+            },
+            title = {
+                Text(when {
+                    backupPreviewState.isLoading -> "Lendo backup..."
+                    backupPreviewState.preview != null -> "Pr\u00e9via do backup"
+                    else -> "N\u00e3o foi poss\u00edvel abrir o backup"
+                })
+            },
             text = {
-                Text("A restauração substituirá playlists, favoritos, histórico e preferências atuais pelos dados do backup. Os arquivos de áudio baixados não estão incluídos e serão mantidos.")
+                when {
+                    backupPreviewState.isLoading -> CircularProgressIndicator()
+                    backupPreviewState.preview != null -> {
+                        val preview = backupPreviewState.preview!!
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Vers\u00e3o ${preview.appVersion} | ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(preview.exportedAtEpochMs))}")
+                            Text("${preview.favoriteCount} favoritas | ${preview.playlistCount} playlists")
+                            Text("${preview.recentTrackCount} faixas no hist\u00f3rico recente")
+                            Text("${preview.listeningTrackCount} faixas e ${preview.annualStatCount} estat\u00edsticas de escuta")
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Mesclar mant\u00e9m suas configura\u00e7\u00f5es atuais e combina favoritos, playlists, hist\u00f3rico e estat\u00edsticas. Substituir troca os dados atuais pelos do backup. Downloads de \u00e1udio s\u00e3o mantidos nos dois casos.")
+                        }
+                    }
+                    else -> Text(backupPreviewState.errorMessage ?: "Arquivo de backup inv\u00e1lido.")
+                }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    backupUriPendingRestore?.let(viewModel::restoreBackup)
-                    backupUriPendingRestore = null
-                }) { Text("Restaurar") }
-            },
-            dismissButton = {
-                TextButton(onClick = { backupUriPendingRestore = null }) { Text("Cancelar") }
+                Column(horizontalAlignment = Alignment.End) {
+                    if (backupPreviewState.preview != null) {
+                        TextButton(onClick = {
+                            backupUriPendingRestore?.let { viewModel.restoreBackup(it, BackupRestoreMode.MERGE) }
+                            backupUriPendingRestore = null
+                        }) { Text("Mesclar dados") }
+                        Button(onClick = {
+                            backupUriPendingRestore?.let { viewModel.restoreBackup(it, BackupRestoreMode.REPLACE) }
+                            backupUriPendingRestore = null
+                        }) { Text("Substituir dados") }
+                    }
+                    TextButton(onClick = {
+                        backupUriPendingRestore = null
+                        viewModel.clearBackupPreview()
+                    }) { Text("Cancelar") }
+                }
             }
         )
     }
@@ -972,7 +1010,7 @@ private fun StorageSettingsScreen(
 
             SpotifyActionItemWithIcon(
                 title = "Restaurar backup local",
-                subtitle = "Valida e restaura um arquivo de backup do NERF Music",
+                subtitle = "Veja o conteudo e escolha mesclar ou substituir os dados",
                 trailingIcon = Icons.Default.Restore,
                 onClick = onRestoreBackup
             )

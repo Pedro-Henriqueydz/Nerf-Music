@@ -41,6 +41,8 @@ import com.nerf.music.data.repository.MusicRepositoryImpl
 import com.nerf.music.data.repository.UserHistoryRepository
 import com.nerf.music.data.repository.UserHistoryRepositoryImpl
 import com.nerf.music.data.repository.BackupRepository
+import com.nerf.music.data.repository.BackupPreviewState
+import com.nerf.music.data.repository.BackupRestoreMode
 import com.nerf.music.player.AudioPlayerService
 import com.nerf.music.data.repository.UpdateRepository
 import com.nerf.music.data.repository.UpdateRepositoryImpl
@@ -340,6 +342,9 @@ class MusicViewModel(
 
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
+
+    private val _backupPreviewState = MutableStateFlow(BackupPreviewState())
+    val backupPreviewState: StateFlow<BackupPreviewState> = _backupPreviewState.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -3307,19 +3312,48 @@ class MusicViewModel(
         }
     }
 
-    fun restoreBackup(uri: Uri) {
-        val context = applicationContext ?: return
+    fun inspectBackup(uri: Uri) {
+        val context = applicationContext ?: run {
+            _backupPreviewState.value = BackupPreviewState(errorMessage = "O aplicativo ainda nao esta pronto para abrir backups.")
+            return
+        }
+        _backupPreviewState.value = BackupPreviewState(isLoading = true)
         viewModelScope.launch {
-            runCatching { BackupRepository(context).restoreFrom(uri) }
+            runCatching { BackupRepository(context).inspect(uri) }
+                .onSuccess { preview -> _backupPreviewState.value = BackupPreviewState(preview = preview) }
+                .onFailure { error ->
+                    _backupPreviewState.value = BackupPreviewState(errorMessage = error.message ?: "Arquivo de backup invalido.")
+                }
+        }
+    }
+
+    fun clearBackupPreview() {
+        _backupPreviewState.value = BackupPreviewState()
+    }
+
+    fun restoreBackup(uri: Uri, mode: BackupRestoreMode = BackupRestoreMode.REPLACE) {
+        val context = applicationContext ?: run {
+            _userMessage.value = "O aplicativo ainda nao esta pronto para restaurar backups."
+            return
+        }
+        _backupPreviewState.value = BackupPreviewState(isLoading = true)
+        viewModelScope.launch {
+            runCatching { BackupRepository(context).restoreFrom(uri, mode) }
                 .onSuccess { summary ->
-                    _userMessage.value = "Backup restaurado: ${summary.preferenceCount} preferências e ${summary.trackCount} faixas."
+                    val action = if (mode == BackupRestoreMode.MERGE) "mesclado" else "restaurado"
+                    _userMessage.value = "Backup $action: ${summary.preferenceCount} preferencias e ${summary.trackCount} faixas."
+                    _backupPreviewState.value = BackupPreviewState()
                     libraryRepository = null
                     userHistoryRepository = null
                     userAffinityRepository = null
                     initializePlayerController(context)
                     loadHomeFeed(force = true)
                 }
-                .onFailure { error -> _userMessage.value = "Falha ao restaurar backup: ${error.message}" }
+                .onFailure { error ->
+                    val message = error.message ?: "Nao foi possivel restaurar o backup."
+                    _backupPreviewState.value = BackupPreviewState(errorMessage = message)
+                    _userMessage.value = "Falha ao restaurar backup: $message"
+                }
         }
     }
 
