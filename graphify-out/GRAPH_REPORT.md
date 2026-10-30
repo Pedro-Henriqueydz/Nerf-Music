@@ -1,22 +1,22 @@
 # Graph Report - Nerf Music  (2026-10-30)
 
 ## Corpus Check
-- 138 files · ~158,396 words
+- 140 files · ~159,662 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 59 file(s) not represented in the graph (top: .xml 44, .otf 5, (none) 2)
 
 ## Summary
-- 2569 nodes · 6510 edges · 121 communities (53 shown, 68 thin omitted)
+- 2591 nodes · 6548 edges · 115 communities (56 shown, 59 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 71 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `259e7668`
+- Built from commit: `0363d0ab`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- MimeAndContainerDetectionStressTest.kt
+- DownloadChunkRangeStressTest.kt
 - PlayerScreen.kt
 - RecapScreen.kt
 - MigrationManager
@@ -31,100 +31,98 @@
 - InnerTubeCatalogClient
 - HomeScreen
 - .syncTimelineState
-- JamSessionSheet.kt
+- Block3EmpiricalChallengeTest
 - KaraokeLyricsEngine
 - DownloadedTrackDao
 - LibraryScreen
-- ConnectivityObserver
+- LibraryRepository
 - SpotifyCanvasRepositoryImpl
 - DownloadedTrackEntity
 - UserSettingsRepository
 - .rank
 - AudioMetadataTagger
 - LibraryRepositoryImpl
-- Artist
-- Block3EmpiricalChallengeTest
+- .setUp
+- MainScreen
 - LoudnessNormalizationAudioProcessor
 - OnboardingScreen.kt
-- Track
+- .isConnectedToWifi
 - RecapVideoExporter.kt
 - MigrationScreen.kt
-- ContextWrapper
+- JamWireMessage
 - SmartDownloadWorker.kt
-- .`JamWebSocketServer performs RFC6455 handshake and bidirectional message exchange`
+- UserHistoryRepositoryImpl
 - MusicRepository
 - LyricsRepositoryImpl
-- OnboardingFlowTest.kt
+- HomeSectionStyle
 - FullPlayerSheet
-- MainScreen.kt
 - UserHistoryRepositoryImpl
 - LyricsNullSanitizationStressTest
-- WidgetRenderer.kt
+- .update
 - UserSettingsRepositoryImpl
-- StreamQualitySelectorStressTest
-- MainActivity.kt
+- LyricsData
+- JamCommandType
 - AudioPlayerService
-- RadioTuningMode
+- SearchFilter
 - .loadHomeFeed
-- LibraryScreen.kt
+- .updateCurrentLyricsLine
 - InnerTubeParserAdversarialStressTest
 - SearchResult
-- NewPipeStreamResolver.kt
-- .initializePlayerController
-- NERF Music
-- UserHistoryRepository
-- LoudnessStandard
-- SearchScreen.kt
-- SettingsSubScreen
-- ShareCardInstrumentedTest.kt
+- LibraryRepository.kt
 - MusicViewModel.kt
+- NERF Music
+- HomeSection
+- NewPipeStreamResolver.kt
+- ShareCardInstrumentedTest.kt
+- SettingsSubScreen
+- MimeAndContainerDetectionStressTest
 - CrossfadeEmpiricalTest
-- file
-- AudioQuality
-- AudioCoreDownloadsCrossfadeQualityTest
-- MigrationManager.kt
+- optCleanString
+- AudioCoreDownloadsCrossfadeQualityTest.kt
+- DataSaverInterceptor.kt
+- .syncNow
 - DownloadAudioQuality
-- LoudnessNormalizationAudioProcessorTest.kt
-- LyricsData
+- DownloadChunkRangeStressTest.kt
+- InnerTubeCatalogClient
 - JamWebSocketServer.kt
 - .applyKaraokeState
 - log
 - JamGlobalRelayClient
 - ShareRules
 - SocialShareHelper
-- ArtworkColorsInstrumentedTest.kt
+- .extract
 - InnerTubeStreamResolver
-- DownloadChunkRangeStressTest.kt
-- CompositeStreamResolver
-- UserAffinityRepositoryImpl
-- .testRelatedMultiTierSynthesisAlwaysPopulatesContent
-- AudioMetadataTagger
+- LoudnessStandard
+- AudioQuality
+- SearchScreen
+- KaraokeAndJamTest.kt
+- RadioTuningMode
 - SharePreviewSheet
 - Context
 - .onCreate
-- .syncNow
-- InnerTubeCatalogClient.kt
-- .onCreate
-- SmartDownloadWorker
-- UserAffinityRepository
-- UpdateNotificationHelper
+- .updateMediaNotificationLayout
+- Listener
+- Artist
+- TrackRelatedData
+- NestedScrollConnection
+- Track
+- ContextWrapper
 - LibraryFilter
-- DataSaverInterceptor.kt
-- ArtistScreen.kt
-- SmoothFlingBehavior.kt
+- ContextWrapper
+- NewPipeStreamResolverTest.kt
+- ExploreScreen
+- Screen
 - NERF Music — widget e prévia de compartilhamento
+- TrackOptionsBottomSheet
+- NERF Music 1.5.0
+- SmoothFlingBehavior.kt
+- AlbumScreen
+- KaraokeAndJamTest
 - LibrarySortOption
-- Theme.kt
-- DownloadOutcome
-- .prefetchTrack
-- LoudnessNormalizationAudioProcessorTest
-- BiquadFilter
-- Test
-- StreamResolver
 
 ## God Nodes (most connected - your core abstractions)
-1. `MusicViewModel` - 222 edges
-2. `Track` - 193 edges
+1. `MusicViewModel` - 225 edges
+2. `Track` - 191 edges
 3. `AudioPlayerService` - 80 edges
 4. `InnerTubeCatalogClient` - 62 edges
 5. `LibraryRepositoryImpl` - 51 edges
@@ -149,15 +147,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (121 total, 68 thin omitted)
+## Communities (115 total, 59 thin omitted)
 
-### Community 0 - "MimeAndContainerDetectionStressTest.kt"
-Cohesion: 0.12
-Nodes (4): MimeAndContainerDetectionStressTest, ContextWrapper, InvocationHandler, StreamResolver
-
-### Community 1 - "PlayerScreen.kt"
-Cohesion: 0.03
-Nodes (3): largestFittingCharacterBoundary(), BroadcastReceiver, splitInlineLyricIntoSegments()
+### Community 0 - "DownloadChunkRangeStressTest.kt"
+Cohesion: 0.13
+Nodes (3): DownloadChunkRangeStressTest, InvocationHandler, StreamResolver
 
 ### Community 2 - "RecapScreen.kt"
 Cohesion: 0.14
@@ -169,177 +163,185 @@ Nodes (4): MigrationManager, PlaylistSummary, RawImportedItem, SecureStorageHelp
 
 ### Community 4 - "SettingsScreen.kt"
 Cohesion: 0.20
-Nodes (24): SmartDownloadSyncState, AboutSettingsScreen(), ContentDisplaySettingsScreen(), DataSaverSettingsScreen(), LoudnessNormalizationBottomSheet(), MediaQualitySettingsScreen(), PlaybackSettingsScreen(), QuickAccessCard() (+16 more)
+Nodes (23): AboutSettingsScreen(), ContentDisplaySettingsScreen(), DataSaverSettingsScreen(), LoudnessNormalizationBottomSheet(), MediaQualitySettingsScreen(), PlaybackSettingsScreen(), QuickAccessCard(), SearchableSetting (+15 more)
 
 ### Community 5 - "AppUpdateManager.kt"
-Cohesion: 0.10
+Cohesion: 0.07
 Nodes (7): SemanticVersion, UpdateRepository, UpdateRepositoryImpl, AppUpdateInfo, AppUpdateManager, BroadcastReceiver, AppUpdateManagerTest
-
-### Community 8 - "JamSessionManager"
-Cohesion: 0.06
-Nodes (35): JamCommandType, ADD_TO_QUEUE, KICK_PARTICIPANT, MOVE_QUEUE_ITEM, PAUSE, PLAY, PLAY_NEXT_IN_QUEUE, PLAY_TRACK (+27 more)
 
 ### Community 10 - "steps"
 Cohesion: 0.05
-Nodes (38): if, runs-on, steps, GH_REPO, GH_TOKEN, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD, RELEASE_KEYSTORE_BASE64 (+30 more)
+Nodes (39): if, runs-on, steps, GH_REPO, GH_TOKEN, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD, RELEASE_KEYSTORE_BASE64 (+31 more)
 
 ### Community 13 - "HomeScreen"
-Cohesion: 0.13
-Nodes (17): ExploreMotionItem(), ExploreScreen(), YtmExploreQuickButton(), HomeScreen(), HomeSongCard(), HomeSpeedDialPlaybackSection(), YtmDailyDiscoverHeroSection(), YtmDownloadCard() (+9 more)
+Cohesion: 0.32
+Nodes (14): HomeScreen(), HomeSongCard(), HomeSpeedDialPlaybackSection(), YtmDailyDiscoverHeroSection(), YtmDownloadCard(), YtmMoodChipsRow(), YtmQuickPickRowItem(), YtmQuickPicksGridCarousel() (+6 more)
 
-### Community 15 - "JamSessionSheet.kt"
+### Community 15 - "Block3EmpiricalChallengeTest"
 Cohesion: 0.07
-Nodes (3): JamSessionSheet(), JamSettingToggleRow(), JamVisualMatrixBadge()
+Nodes (19): QueueExpansionState, COLLAPSED, EXPANDED, HALF_EXPANDED, ConnectivityObserver, Status, Available, Losing (+11 more)
 
 ### Community 16 - "KaraokeLyricsEngine"
-Cohesion: 0.14
-Nodes (4): BatchTranslationResult, KaraokeLyricsEngine, TranslationLanguageOption, KaraokeAndJamTest
+Cohesion: 0.21
+Nodes (3): BatchTranslationResult, KaraokeLyricsEngine, TranslationLanguageOption
 
 ### Community 18 - "LibraryScreen"
-Cohesion: 0.26
-Nodes (9): LibraryGridCard(), LibraryListItem(), LibraryScreen(), NewBottomSheetOption(), PlaylistCollageCover(), TrackListDetailView(), UserPlaylistDetailView(), SaveToPlaylistSheet() (+1 more)
-
-### Community 19 - "ConnectivityObserver"
-Cohesion: 0.08
-Nodes (14): QueueExpansionState, COLLAPSED, EXPANDED, HALF_EXPANDED, ConnectivityObserver, Status, Available, Losing (+6 more)
+Cohesion: 0.23
+Nodes (9): LibraryGridCard(), LibraryListItem(), LibraryScreen(), NewBottomSheetOption(), PlaylistCollageCover(), TrackListDetailView(), UserPlaylistDetailView(), PlaylistOptionItem() (+1 more)
 
 ### Community 20 - "SpotifyCanvasRepositoryImpl"
 Cohesion: 0.17
 Nodes (6): CanvasStatus, NotFound, ServerError, SpotifyCanvasRepository, SpotifyCanvasRepositoryImpl, Success
 
 ### Community 21 - "DownloadedTrackEntity"
-Cohesion: 0.16
+Cohesion: 0.18
 Nodes (4): DownloadedTrackEntity, DownloadedTrack, PersistenceAndOrphanScannerStressTest, RoomDownloadedTrackEntityTest
 
+### Community 22 - "UserSettingsRepository"
+Cohesion: 0.10
+Nodes (5): DataSaverMode, ALWAYS_OFF, ALWAYS_ON, AUTOMATIC, UserSettingsRepository
+
 ### Community 23 - ".rank"
-Cohesion: 0.11
-Nodes (4): ExploreRecommendations, ReleaseRecommendations, ExploreRecommendationsTest, ReleaseRecommendationsTest
+Cohesion: 0.10
+Nodes (6): ExploreRecommendations, RecapCalendar, RecapCalendarState, ReleaseRecommendations, ExploreRecommendationsTest, ReleaseRecommendationsTest
+
+### Community 24 - "AudioMetadataTagger"
+Cohesion: 0.13
+Nodes (3): AudioMetadataTagger, ExtractedMetadata, AudioMetadataTaggerTest
+
+### Community 26 - ".setUp"
+Cohesion: 0.13
+Nodes (3): ContextWrapper, InvocationHandler, StreamResolver
+
+### Community 27 - "MainScreen"
+Cohesion: 0.23
+Nodes (10): ArtistAboutCard(), ArtistCircularCard(), ArtistHeroHeader(), ArtistScreen(), ArtistTopSongRow(), ArtistVideoCard(), MainScreen(), YtmPivotBar() (+2 more)
+
+### Community 28 - "LoudnessNormalizationAudioProcessor"
+Cohesion: 0.08
+Nodes (3): Biquad, LoudnessNormalizationAudioProcessor, LoudnessNormalizationAudioProcessorTest
 
 ### Community 29 - "OnboardingScreen.kt"
-Cohesion: 0.05
-Nodes (12): applePressFeedback(), AppleArtistSelectionStep(), AppleArtistSphereCard(), AppleGlassFeatureCard(), AppleWelcomeStep(), OnboardingScreen(), artistListeningShares(), ArtistMosaicTile() (+4 more)
-
-### Community 30 - "Track"
-Cohesion: 0.09
-Nodes (4): UserPlaylist, LibraryRepository, PlaylistOptionItem(), PlaylistOptionsBottomSheet()
+Cohesion: 0.04
+Nodes (13): AnimatedEqualizerBars(), applePressFeedback(), AppleArtistSelectionStep(), AppleArtistSphereCard(), AppleGlassFeatureCard(), AppleWelcomeStep(), OnboardingScreen(), artistListeningShares() (+5 more)
 
 ### Community 32 - "MigrationScreen.kt"
-Cohesion: 0.11
+Cohesion: 0.12
 Nodes (7): AnonymousFileCard(), AnonymousLinkCard(), ConnectedServiceCard(), MigrationScreen(), WebViewClient, PrivacyBadgeCard(), SectionHeader()
 
-### Community 37 - "LyricsRepositoryImpl"
-Cohesion: 0.20
-Nodes (3): LyricsRepository, LyricsRepositoryImpl, optCleanString()
-
-### Community 38 - "OnboardingFlowTest.kt"
+### Community 33 - "JamWireMessage"
 Cohesion: 0.15
-Nodes (3): OnboardingFlowTest, ContextWrapper, InvocationHandler
+Nodes (18): JamConnectionStatus, CONNECTED, CONNECTING, DISCONNECTED, ERROR, RECONNECTING, JamMessageType, COMMAND (+10 more)
+
+### Community 34 - "SmartDownloadWorker.kt"
+Cohesion: 0.07
+Nodes (5): MainActivity, NERFMusicTheme(), UpdateCheckWorker, UpdateNotificationHelper, SmartDownloadWorker
+
+### Community 38 - "HomeSectionStyle"
+Cohesion: 0.13
+Nodes (11): HomeChip, HomeFeedData, HomeSection, HomeSectionStyle, COMMUNITY_PLAYLIST, DAILY_DISCOVER, QUICK_PICKS_GRID, SPEED_DIAL (+3 more)
 
 ### Community 39 - "FullPlayerSheet"
-Cohesion: 0.08
-Nodes (23): PlaybackState, KaraokeSyncSnapshot, AppleLyricsOptionsPopover(), AppleMusicLyricsView(), AppleMusicVolumeBar(), ApplePopoverOptionRow(), formatDurationMs(), FullPlayerSheet() (+15 more)
-
-### Community 40 - "MainScreen.kt"
 Cohesion: 0.06
-Nodes (7): Explore, Home, Library, MainScreen(), Screen, Search, YtmPivotBar()
+Nodes (28): PlaybackState, JamPersonWavesIcon(), JamSessionSheet(), JamSettingToggleRow(), JamVisualMatrixBadge(), AppleLyricsOptionsPopover(), AppleMusicLyricsView(), AppleMusicVolumeBar() (+20 more)
 
-### Community 43 - "WidgetRenderer.kt"
+### Community 41 - "UserHistoryRepositoryImpl"
+Cohesion: 0.09
+Nodes (4): UserAffinityRepositoryImpl, OnboardingFlowTest, ContextWrapper, InvocationHandler
+
+### Community 43 - ".update"
 Cohesion: 0.07
 Nodes (8): CompactPlayerWidgetProvider, ExpandedPlayerWidgetProvider, ThreeByOneWidgetProvider, Size, FOUR, THREE, TWO, WidgetRenderer
 
 ### Community 44 - "UserSettingsRepositoryImpl"
-Cohesion: 0.09
-Nodes (5): DataSaverMode, ALWAYS_OFF, ALWAYS_ON, AUTOMATIC, UserSettingsRepositoryImpl
+Cohesion: 0.08
+Nodes (7): AudioQuality, AUTOMATIC, HIGH, LOW, NORMAL, VERY_HIGH, UserSettingsRepositoryImpl
 
-### Community 48 - "RadioTuningMode"
+### Community 45 - "LyricsData"
+Cohesion: 0.21
+Nodes (3): LyricsData, SyncedLyricsLine, SyncedLyricsWord
+
+### Community 46 - "JamCommandType"
+Cohesion: 0.12
+Nodes (15): JamCommandType, ADD_TO_QUEUE, KICK_PARTICIPANT, MOVE_QUEUE_ITEM, PAUSE, PLAY, PLAY_NEXT_IN_QUEUE, PLAY_TRACK (+7 more)
+
+### Community 48 - "SearchFilter"
 Cohesion: 0.33
-Nodes (5): RadioTuningMode, BALANCED, DEEP_CUTS, DISCOVERY, FAMILIAR
-
-### Community 54 - "NewPipeStreamResolver.kt"
-Cohesion: 0.10
-Nodes (4): NerfMusicApp, NewPipeStreamResolver, OkHttpDownloader, NewPipeStreamResolverTest
-
-### Community 55 - ".initializePlayerController"
-Cohesion: 0.16
-Nodes (5): normalizeRecapArtistName(), RecapArtistContribution, RecapArtistCredit, splitNames(), splitRecapArtistCredit()
+Nodes (5): SearchFilter, ALBUMS, ALL, ARTISTS, SONGS
 
 ### Community 56 - "NERF Music"
 Cohesion: 0.22
 Nodes (8): Compilar e instalar, NERF Music, Organização do código, Recursos, Requisitos, Tecnologias, Testes, Versão
 
-### Community 57 - "UserHistoryRepository"
-Cohesion: 0.08
-Nodes (12): HomeChip, HomeFeedData, HomeSection, HomeSectionStyle, COMMUNITY_PLAYLIST, DAILY_DISCOVER, QUICK_PICKS_GRID, SPEED_DIAL (+4 more)
-
-### Community 58 - "LoudnessStandard"
-Cohesion: 0.17
-Nodes (7): LoudnessStandard, APPLE_MUSIC, BROADCAST_EBU, CD_LOUD, CD_STANDARD, OFF, SPOTIFY
-
-### Community 59 - "SearchScreen.kt"
-Cohesion: 0.16
-Nodes (5): ArtistResultCard(), RecentSearchCard(), SearchHistoryRowItem(), SearchScreen(), SearchSongRowItem()
+### Community 58 - "NewPipeStreamResolver.kt"
+Cohesion: 0.11
+Nodes (3): NerfMusicApp, NewPipeStreamResolver, OkHttpDownloader
 
 ### Community 60 - "SettingsSubScreen"
 Cohesion: 0.22
 Nodes (9): SettingsSubScreen, ABOUT, CONTENT_DISPLAY, DATA_SAVER, MAIN, MEDIA_QUALITY, MIGRATION, PLAYBACK (+1 more)
 
-### Community 65 - "AudioQuality"
-Cohesion: 0.10
-Nodes (7): AudioQuality, AUTOMATIC, HIGH, LOW, NORMAL, VERY_HIGH, StreamResolver
-
-### Community 68 - "AudioCoreDownloadsCrossfadeQualityTest"
-Cohesion: 0.17
+### Community 68 - "AudioCoreDownloadsCrossfadeQualityTest.kt"
+Cohesion: 0.18
 Nodes (3): AudioCoreDownloadsCrossfadeQualityTest, StreamResolver, StreamResolver
 
 ### Community 74 - "DownloadAudioQuality"
-Cohesion: 0.16
-Nodes (6): SmartDownloadManager, DownloadAudioQuality, HIGH, LOSSLESS, NORMAL, VERY_HIGH
-
-### Community 76 - "LyricsData"
-Cohesion: 0.38
-Nodes (5): LyricsData, SyncedLyricsLine, SyncedLyricsWord, inlineLyricSegmentIndex(), InlineSyncedLyrics()
+Cohesion: 0.12
+Nodes (7): SmartDownloadManager, SmartDownloadSyncState, DownloadAudioQuality, HIGH, LOSSLESS, NORMAL, VERY_HIGH
 
 ### Community 77 - "JamWebSocketServer.kt"
 Cohesion: 0.08
 Nodes (5): ImportedPlaylistIdentity, ClientConnection, JamWebSocketServer, WsFrame, ImportedPlaylistIdentityTest
 
 ### Community 80 - "log"
-Cohesion: 0.07
-Nodes (8): AppDatabase, LibraryTrackDao, LibraryTrackEntity, BackupPreferenceEntry, BackupRepository, BackupRestoreSummary, NerfMusicBackup, QolFeaturesTest
+Cohesion: 0.06
+Nodes (14): AnnualTrackStatsEntity, AppDatabase, AnnualTrackStatsWithTrack, LibraryTrackDao, LibraryTrackEntity, BackupPreferenceEntry, BackupRepository, BackupRestoreSummary (+6 more)
 
 ### Community 81 - "JamGlobalRelayClient"
 Cohesion: 0.08
-Nodes (4): JamGlobalRelayClient, WebSocketListener, JamPersonWavesIcon(), NetworkCallback
+Nodes (4): JamGlobalRelayClient, WebSocketListener, NetworkConnectivityObserver, NetworkCallback
 
 ### Community 83 - "SocialShareHelper"
 Cohesion: 0.26
 Nodes (6): PaletteColors, SocialShareHelper, Style, FULL_COVER, GLASS, MINIMAL
 
-### Community 84 - "ArtworkColorsInstrumentedTest.kt"
+### Community 84 - ".extract"
 Cohesion: 0.23
 Nodes (3): ArtworkColorsInstrumentedTest, ArtworkColors, Colors
 
 ### Community 85 - "InnerTubeStreamResolver"
-Cohesion: 0.13
-Nodes (4): CandidateFormat, ClientConfig, InnerTubeStreamResolver, InnerTubeStreamResolverTest
+Cohesion: 0.11
+Nodes (5): CandidateFormat, ClientConfig, InnerTubeStreamResolver, InnerTubeStreamResolverTest, StreamQualitySelectorStressTest
 
-### Community 86 - "DownloadChunkRangeStressTest.kt"
-Cohesion: 0.10
-Nodes (3): DownloadChunkRangeStressTest, ContextWrapper, InvocationHandler
+### Community 86 - "LoudnessStandard"
+Cohesion: 0.17
+Nodes (7): LoudnessStandard, APPLE_MUSIC, BROADCAST_EBU, CD_LOUD, CD_STANDARD, OFF, SPOTIFY
 
-### Community 87 - "CompositeStreamResolver"
-Cohesion: 0.16
+### Community 87 - "AudioQuality"
+Cohesion: 0.15
 Nodes (5): CompositeStreamResolver, createDefaultStreamResolver(), DefaultStreamResolverTest, StreamResolver, StreamResolver
+
+### Community 88 - "SearchScreen"
+Cohesion: 0.67
+Nodes (5): ArtistResultCard(), RecentSearchCard(), SearchHistoryRowItem(), SearchScreen(), SearchSongRowItem()
+
+### Community 90 - "RadioTuningMode"
+Cohesion: 0.33
+Nodes (5): RadioTuningMode, BALANCED, DEEP_CUTS, DISCOVERY, FAMILIAR
 
 ### Community 91 - "SharePreviewSheet"
 Cohesion: 0.33
 Nodes (7): CircleAction(), DividerLine(), SectionLabel(), ShareAction(), ShareActionModern(), SharePreviewSheet(), StyleOption()
 
-### Community 96 - "InnerTubeCatalogClient.kt"
-Cohesion: 0.13
-Nodes (11): AlbumDetail, ArtistDetail, SearchFilter, ALBUMS, ALL, ARTISTS, SONGS, RelatedSection (+3 more)
+### Community 96 - "Artist"
+Cohesion: 0.16
+Nodes (5): AlbumDetail, ArtistDetail, SearchResult, QueueFilterChip, UpNextResult
 
-### Community 99 - "UserAffinityRepository"
+### Community 97 - "TrackRelatedData"
+Cohesion: 0.35
+Nodes (3): RelatedSection, TrackRelatedData, RelatedMultiTierFallbackTest
+
+### Community 99 - "Track"
 Cohesion: 0.13
 Nodes (3): Track, UserAffinityRepository, SmartRadioEngine
 
@@ -347,41 +349,49 @@ Nodes (3): Track, UserAffinityRepository, SmartRadioEngine
 Cohesion: 0.29
 Nodes (7): LibraryFilter, ALBUMS, ALL, ARTISTS, DOWNLOADS, PLAYLISTS, SONGS
 
-### Community 105 - "ArtistScreen.kt"
-Cohesion: 0.11
-Nodes (10): AnimatedEqualizerBars(), AlbumHeroHeader(), AlbumScreen(), AlbumTrackRow(), ArtistAboutCard(), ArtistCircularCard(), ArtistHeroHeader(), ArtistScreen() (+2 more)
+### Community 106 - "ExploreScreen"
+Cohesion: 0.53
+Nodes (3): ExploreMotionItem(), ExploreScreen(), YtmExploreQuickButton()
+
+### Community 107 - "Screen"
+Cohesion: 0.33
+Nodes (5): Explore, Home, Library, Screen, Search
 
 ### Community 108 - "NERF Music — widget e prévia de compartilhamento"
 Cohesion: 0.40
 Nodes (4): NERF Music — widget e prévia de compartilhamento, Prévia de compartilhamento, Revisão visual, Widget expandido
 
-### Community 109 - "LibrarySortOption"
+### Community 110 - "NERF Music 1.5.0"
+Cohesion: 0.33
+Nodes (5): Adicionado, Alterado e corrigido, NERF Music 1.5.0, Notas técnicas da versão, Seu ano com música está aqui 🎧
+
+### Community 112 - "AlbumScreen"
+Cohesion: 0.80
+Nodes (3): AlbumHeroHeader(), AlbumScreen(), AlbumTrackRow()
+
+### Community 114 - "LibrarySortOption"
 Cohesion: 0.50
 Nodes (4): LibrarySortOption, A_TO_Z, RECENT, RECENTLY_ADDED
 
-### Community 112 - "DownloadOutcome"
-Cohesion: 0.40
-Nodes (5): DownloadOutcome, ALLOWED, BLOCKED_ALWAYS_ON, BLOCKED_AUTOMATIC_DATA_SAVER, BLOCKED_CELLULAR_DISABLED
-
 ## Knowledge Gaps
 - **94 isolated node(s):** `SPEED_DIAL`, `QUICK_PICKS_GRID`, `TWO_ROW_CAROUSEL`, `DAILY_DISCOVER`, `YOUR_DOWNLOADS` (+89 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 568 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **68 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 574 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **59 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Track` connect `UserAffinityRepository` to `PlayerScreen.kt`, `RecapScreen.kt`, `MigrationManager`, `MusicViewModel`, `InnerTubeCatalogClientTest`, `JamSessionManager`, `SocialShareHelper.kt`, `InnerTubeCatalogClient`, `HomeScreen`, `.syncTimelineState`, `KaraokeLyricsEngine`, `LibraryScreen`, `DownloadedTrackEntity`, `.rank`, `AudioMetadataTagger`, `LibraryRepositoryImpl`, `Artist`, `Track`, `OnboardingFlowTest.kt`, `FullPlayerSheet`, `MainScreen.kt`, `UserHistoryRepositoryImpl`, `WidgetRenderer.kt`, `RadioTuningMode`, `LibraryScreen.kt`, `SearchResult`, `.initializePlayerController`, `UserHistoryRepository`, `SearchScreen.kt`, `ShareCardInstrumentedTest.kt`, `MusicViewModel.kt`, `.loadLyrics`, `LibraryRepository.kt`, `MigrationManager.kt`, `DownloadAudioQuality`, `LoudnessNormalizationAudioProcessorTest.kt`, `AudioPlayerService.kt`, `log`, `SocialShareHelper`, `DownloadChunkRangeStressTest.kt`, `UserAffinityRepositoryImpl`, `.testRelatedMultiTierSynthesisAlwaysPopulatesContent`, `AudioMetadataTagger`, `SharePreviewSheet`, `InnerTubeCatalogClient.kt`, `.onCreate`, `.playTrackList`, `ArtistScreen.kt`, `.playWidgetMix`?**
-  _High betweenness centrality (0.237) - this node is a cross-community bridge._
+- **Why does `Track` connect `Track` to `DownloadChunkRangeStressTest.kt`, `PlayerScreen.kt`, `RecapScreen.kt`, `MigrationManager`, `MusicViewModel`, `InnerTubeCatalogClientTest`, `JamSessionManager`, `SocialShareHelper.kt`, `InnerTubeCatalogClient`, `HomeScreen`, `.syncTimelineState`, `KaraokeLyricsEngine`, `LibraryScreen`, `LibraryRepository`, `DownloadedTrackEntity`, `.rank`, `AudioMetadataTagger`, `LibraryRepositoryImpl`, `MainScreen`, `.isConnectedToWifi`, `JamWireMessage`, `UserHistoryRepositoryImpl`, `HomeSectionStyle`, `FullPlayerSheet`, `SharePreviewActivity.kt`, `UserHistoryRepositoryImpl`, `.update`, `LyricsData`, `AudioPlayerService`, `.loadHomeFeed`, `HomeScreen.kt`, `SearchResult`, `LibraryRepository.kt`, `MusicViewModel.kt`, `HomeSection`, `ShareCardInstrumentedTest.kt`, `.loadLyrics`, `DownloadAudioQuality`, `DownloadChunkRangeStressTest.kt`, `InnerTubeCatalogClient`, `AudioPlayerService.kt`, `log`, `SocialShareHelper`, `SearchScreen`, `KaraokeAndJamTest.kt`, `RadioTuningMode`, `SharePreviewSheet`, `.updateMediaNotificationLayout`, `Artist`, `TrackRelatedData`, `.playTrackList`, `TrackOptionsBottomSheet`, `AlbumScreen`, `KaraokeAndJamTest`?**
+  _High betweenness centrality (0.225) - this node is a cross-community bridge._
 - **What connects `SPEED_DIAL`, `QUICK_PICKS_GRID`, `TWO_ROW_CAROUSEL` to the rest of the system?**
   _94 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `MimeAndContainerDetectionStressTest.kt` be split into smaller, more focused modules?**
-  _Cohesion score 0.11954022988505747 - nodes in this community are weakly interconnected._
-- **Why does `MusicViewModel` connect `MusicViewModel` to `RecapScreen.kt`, `MigrationManager`, `SettingsScreen.kt`, `AppUpdateManager.kt`, `InnerTubeCatalogClientTest`, `JamSessionManager`, `HomeScreen`, `.syncTimelineState`, `KaraokeLyricsEngine`, `LibraryScreen`, `ConnectivityObserver`, `SpotifyCanvasRepositoryImpl`, `DownloadedTrackEntity`, `UserSettingsRepository`, `.rank`, `OnboardingScreen.kt`, `Track`, `MigrationScreen.kt`, `MusicRepository`, `LyricsRepositoryImpl`, `FullPlayerSheet`, `MainScreen.kt`, `UserSettingsRepositoryImpl`, `MainActivity.kt`, `RadioTuningMode`, `.loadHomeFeed`, `.updateCurrentLyricsLine`, `LibraryScreen.kt`, `NewPipeStreamResolver.kt`, `.initializePlayerController`, `UserHistoryRepository`, `LoudnessStandard`, `SearchScreen.kt`, `MusicViewModel.kt`, `file`, `AudioQuality`, `.loadLyrics`, `DownloadAudioQuality`, `LyricsData`, `InnerTubeCatalogClient.kt`, `SmartDownloadWorker`, `UserAffinityRepository`, `.setKaraokeMode`, `UpdateNotificationHelper`, `.playTrackList`, `ArtistScreen.kt`, `.prefetchTrack`?**
-  _High betweenness centrality (0.199) - this node is a cross-community bridge._
+- **Should `DownloadChunkRangeStressTest.kt` be split into smaller, more focused modules?**
+  _Cohesion score 0.13450292397660818 - nodes in this community are weakly interconnected._
+- **Why does `MusicViewModel` connect `MusicViewModel` to `RecapScreen.kt`, `MigrationManager`, `SettingsScreen.kt`, `AppUpdateManager.kt`, `JamSessionManager`, `InnerTubeCatalogClient`, `HomeScreen`, `.syncTimelineState`, `Block3EmpiricalChallengeTest`, `LibraryScreen`, `LibraryRepository`, `SpotifyCanvasRepositoryImpl`, `DownloadedTrackEntity`, `UserSettingsRepository`, `.rank`, `MainScreen`, `OnboardingScreen.kt`, `.isConnectedToWifi`, `MigrationScreen.kt`, `JamWireMessage`, `SmartDownloadWorker.kt`, `MusicRepository`, `LyricsRepositoryImpl`, `HomeSectionStyle`, `FullPlayerSheet`, `SharePreviewActivity.kt`, `UserSettingsRepositoryImpl`, `LyricsData`, `AudioPlayerService`, `SearchFilter`, `.loadHomeFeed`, `.updateCurrentLyricsLine`, `HomeScreen.kt`, `LibraryRepository.kt`, `MusicViewModel.kt`, `HomeSection`, `NewPipeStreamResolver.kt`, `.clearStreamCache`, `.loadLyrics`, `DownloadAudioQuality`, `AudioPlayerService.kt`, `.applyKaraokeState`, `log`, `LoudnessStandard`, `SearchScreen`, `RadioTuningMode`, `Artist`, `TrackRelatedData`, `Track`, `.playTrackList`, `ExploreScreen`, `AlbumScreen`, `KaraokeAndJamTest`?**
+  _High betweenness centrality (0.204) - this node is a cross-community bridge._
 - **Should `PlayerScreen.kt` be split into smaller, more focused modules?**
-  _Cohesion score 0.02836637047163363 - nodes in this community are weakly interconnected._
-- **Why does `AudioPlayerService` connect `AudioPlayerService` to `JamSessionManager`, `VocalIsolationAudioProcessor`, `UserSettingsRepository`, `LibraryRepositoryImpl`, `WidgetRenderer.kt`, `LoudnessStandard`, `MusicViewModel.kt`, `AudioQuality`, `.loadLyrics`, `LoudnessNormalizationAudioProcessorTest.kt`, `AudioPlayerService.kt`, `.applyKaraokeState`, `Context`, `Listener`, `.onCreate`, `.setKaraokeMode`, `.playWidgetMix`, `.prefetchTrack`, `.applyKaraokeState`?**
-  _High betweenness centrality (0.052) - this node is a cross-community bridge._
+  _Cohesion score 0.024269759450171822 - nodes in this community are weakly interconnected._
+- **Why does `AudioQuality` connect `UserSettingsRepositoryImpl` to `DownloadChunkRangeStressTest.kt`, `.clearStreamCache`, `.setUp`, `SettingsScreen.kt`, `AudioCoreDownloadsCrossfadeQualityTest.kt`, `MusicViewModel`, `DownloadAudioQuality`, `DownloadChunkRangeStressTest.kt`, `LyricsData`, `AudioPlayerService.kt`, `AudioPlayerService`, `InnerTubeStreamResolver`, `UserSettingsRepository`, `AudioQuality`, `LibraryRepository.kt`, `MusicViewModel.kt`, `NewPipeStreamResolver.kt`?**
+  _High betweenness centrality (0.077) - this node is a cross-community bridge._
 - **Should `RecapScreen.kt` be split into smaller, more focused modules?**
   _Cohesion score 0.1443850267379679 - nodes in this community are weakly interconnected._

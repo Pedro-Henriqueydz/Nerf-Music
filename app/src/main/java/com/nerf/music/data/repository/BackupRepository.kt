@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.room.withTransaction
 import com.nerf.music.BuildConfig
 import com.nerf.music.data.db.AppDatabase
+import com.nerf.music.data.db.AnnualTrackStatsEntity
 import com.nerf.music.data.db.LibraryTrackEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,7 +28,8 @@ data class NerfMusicBackup(
     val appVersion: String,
     val exportedAtEpochMs: Long,
     val preferenceGroups: Map<String, List<BackupPreferenceEntry>>,
-    val listeningLibrary: List<LibraryTrackEntity>
+    val listeningLibrary: List<LibraryTrackEntity>,
+    val annualListeningStats: List<AnnualTrackStatsEntity> = emptyList()
 )
 
 data class BackupRestoreSummary(
@@ -55,11 +57,13 @@ class BackupRepository(private val context: Context) {
             snapshotPreferences(appContext.getSharedPreferences(name, Context.MODE_PRIVATE), excluded)
         }
         val tracks = database.libraryTrackDao().getAll()
+        val annualStats = database.libraryTrackDao().getAllAnnualStats()
         val backup = NerfMusicBackup(
             appVersion = BuildConfig.VERSION_NAME,
             exportedAtEpochMs = System.currentTimeMillis(),
             preferenceGroups = groups,
-            listeningLibrary = tracks
+            listeningLibrary = tracks,
+            annualListeningStats = annualStats
         )
         appContext.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
             it.write(json.encodeToString(backup))
@@ -79,10 +83,26 @@ class BackupRepository(private val context: Context) {
             snapshotPreferences(appContext.getSharedPreferences(name, Context.MODE_PRIVATE))
         }
         val previousTracks = database.libraryTrackDao().getAll()
+        val previousAnnualStats = database.libraryTrackDao().getAllAnnualStats()
+        val annualStats = backup.annualListeningStats.ifEmpty {
+            backup.listeningLibrary
+                .filter { it.playCount > 0 && it.totalListenMs > it.playCount * 30_000L }
+                .map {
+                    AnnualTrackStatsEntity(
+                        trackId = it.id,
+                        year = it.statsYear,
+                        playCount = it.playCount,
+                        totalListenMs = it.totalListenMs,
+                        lastPlayedAtEpochMs = it.lastPlayedAtEpochMs
+                    )
+                }
+        }
         try {
             database.withTransaction {
                 database.libraryTrackDao().clearAll()
+                database.libraryTrackDao().clearAllAnnualStats()
                 database.libraryTrackDao().upsertAll(backup.listeningLibrary)
+                database.libraryTrackDao().upsertAnnualStatsAll(annualStats)
             }
             backup.preferenceGroups.forEach { (name, entries) ->
                 restorePreferences(appContext.getSharedPreferences(name, Context.MODE_PRIVATE), entries)
@@ -90,7 +110,9 @@ class BackupRepository(private val context: Context) {
         } catch (error: Throwable) {
             database.withTransaction {
                 database.libraryTrackDao().clearAll()
+                database.libraryTrackDao().clearAllAnnualStats()
                 database.libraryTrackDao().upsertAll(previousTracks)
+                database.libraryTrackDao().upsertAnnualStatsAll(previousAnnualStats)
             }
             previousGroups.forEach { (name, entries) ->
                 restorePreferences(appContext.getSharedPreferences(name, Context.MODE_PRIVATE), entries)

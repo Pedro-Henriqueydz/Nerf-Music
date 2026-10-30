@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [DownloadedTrackEntity::class, LibraryTrackEntity::class],
-    version = 2,
+    entities = [DownloadedTrackEntity::class, LibraryTrackEntity::class, AnnualTrackStatsEntity::class],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -27,7 +27,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "nerf_music_database"
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { INSTANCE = it }
             }
@@ -46,6 +46,27 @@ abstract class AppDatabase : RoomDatabase() {
                         `playCount` INTEGER NOT NULL, `totalListenMs` INTEGER NOT NULL,
                         `lastPlayedAtEpochMs` INTEGER, `libraryAddedAtEpochMs` INTEGER,
                         `likedAtEpochMs` INTEGER, PRIMARY KEY(`id`))"""
+                )
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `annual_track_stats` (
+                        `trackId` TEXT NOT NULL,
+                        `year` INTEGER NOT NULL,
+                        `playCount` INTEGER NOT NULL,
+                        `totalListenMs` INTEGER NOT NULL,
+                        `lastPlayedAtEpochMs` INTEGER,
+                        PRIMARY KEY(`trackId`, `year`)
+                    )"""
+                )
+                // Version 2 was pre-release and could contain imported/demo listening totals.
+                // Keep library and favorite metadata, but start Recap with clean, measured stats.
+                db.execSQL(
+                    """UPDATE `library_tracks`
+                       SET `playCount` = 0, `totalListenMs` = 0, `lastPlayedAtEpochMs` = NULL"""
                 )
             }
         }

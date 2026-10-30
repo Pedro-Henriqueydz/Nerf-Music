@@ -268,7 +268,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (recapSummary.hasEnoughData) {
+                        if (recapSummary.isInReleaseWindow && recapSummary.hasEnoughData) {
                             item(key = "recap-${recapSummary.year}") {
                                 Surface(
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).applePressFeedback(onClick = onOpenRecap),
@@ -284,7 +284,7 @@ fun HomeScreen(
                                         Column(Modifier.weight(1f)) {
                                             Text("SEU ANO EM MÚSICA", color = Color.White.copy(.72f), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                                             Text("Recap ${recapSummary.year}", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                                            Text(if (recapSummary.annualEligible) "Veja a história completa" else "Prévia disponível para teste", color = Color.White.copy(.82f), fontSize = 14.sp)
+                                            Text(if (recapSummary.annualEligible) "Veja a história completa" else "Sua história está começando", color = Color.White.copy(.82f), fontSize = 14.sp)
                                         }
                                         Icon(Icons.Default.Stars, null, tint = Color.White, modifier = Modifier.size(38.dp))
                                     }

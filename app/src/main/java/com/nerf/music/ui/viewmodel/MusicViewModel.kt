@@ -33,6 +33,8 @@ import com.nerf.music.data.model.ExploreRecommendations
 import com.nerf.music.data.model.RecapSummary
 import com.nerf.music.data.model.RecapTrackStats
 import com.nerf.music.data.model.RecapArtistStats
+import com.nerf.music.data.model.RecapCalendar
+import com.nerf.music.data.model.RecapCalendarState
 import com.nerf.music.data.db.AppDatabase
 import com.nerf.music.data.repository.MusicRepository
 import com.nerf.music.data.repository.MusicRepositoryImpl
@@ -82,6 +84,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import coil.ImageLoader
 import coil.request.CachePolicy
@@ -615,7 +618,9 @@ class MusicViewModel(
     private var userHistoryRepository: UserHistoryRepository? = null
     private var libraryRepository: LibraryRepository? = null
     private var userAffinityRepository: UserAffinityRepository? = null
-    private var currentTrackPlayStartTime = 0L
+    private var currentTrackListenedMs = 0L
+    private var lastListenSampleTrackId: String? = null
+    private var lastListenSamplePositionMs: Long? = null
     private var activeTrackId: String? = null
     private var isLoadingMoreQueue = false
     private val _currentRadioTuningMode = MutableStateFlow(RadioTuningMode.BALANCED)
@@ -638,6 +643,7 @@ class MusicViewModel(
     val forgottenFavoriteTracks: StateFlow<List<Track>> = _forgottenFavoriteTracks.asStateFlow()
     private val _recapSummary = MutableStateFlow(RecapSummary())
     val recapSummary: StateFlow<RecapSummary> = _recapSummary.asStateFlow()
+    private val recapCalendarState = MutableStateFlow(RecapCalendar.forDate())
     private val recapArtistImageCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var libraryAnalyticsInitialized = false
 
@@ -654,66 +660,87 @@ class MusicViewModel(
             libraryAnalyticsInitialized = true
             val analyticsDao = AppDatabase.getInstance(context.applicationContext).libraryTrackDao()
             viewModelScope.launch {
-                analyticsDao.allTracksFlow().collect { rows ->
-                    val recapYear = java.time.Year.now().value
-                    val played = rows.filter { it.statsYear == recapYear && it.playCount > 0 }
-                    val rankedTracks = played
-                        .sortedWith(
-                            compareByDescending<com.nerf.music.data.db.LibraryTrackEntity> { it.playCount }
-                                .thenByDescending { it.totalListenMs }
-                                .thenByDescending { it.lastPlayedAtEpochMs ?: 0L }
-                        )
-                    val parsedCredits = played.associateWith { splitRecapArtistCredit(it.artist) }
-                    // Featured appearances resolve to an artist profile when that artist is a primary credit elsewhere.
-                    val profileByArtistName = parsedCredits.flatMap { (row, credit) ->
-                        val browseId = row.artistBrowseId?.trim()?.takeIf(String::isNotBlank)
-                        if (browseId == null) emptyList() else credit.primary.map { normalizeRecapArtistName(it) to browseId }
-                    }.groupBy({ it.first }, { it.second })
-                        .mapValues { (_, ids) -> ids.groupingBy { it }.eachCount().maxByOrNull { it.value }!!.key }
-                    val artistContributions = mutableMapOf<String, MutableList<RecapArtistContribution>>()
-                    parsedCredits.forEach { (row, credit) ->
-                        val allNames = (credit.primary + credit.featured).distinctBy(::normalizeRecapArtistName)
-                        if (allNames.isEmpty()) return@forEach
-                        val totalWeight = credit.primary.size * 2.0 + credit.featured.size
-                        allNames.forEach { name ->
-                            val normalizedName = normalizeRecapArtistName(name)
-                            val isPrimary = credit.primary.any { normalizeRecapArtistName(it) == normalizedName }
-                            val weight = (if (isPrimary) 2.0 else 1.0) / totalWeight
-                            val browseId = profileByArtistName[normalizedName]
-                                ?: if (isPrimary) row.artistBrowseId?.trim()?.takeIf(String::isNotBlank) else null
-                            val key = browseId?.let { "browse:${it.lowercase(Locale.ROOT)}" } ?: "name:$normalizedName"
-                            artistContributions.getOrPut(key) { mutableListOf() }.add(RecapArtistContribution(name, row, weight))
+                analyticsDao.pruneAnnualStatsBefore(java.time.Year.now().value - 1)
+            }
+            viewModelScope.launch {
+                while (isActive) {
+                    delay(60_000L)
+                    recapCalendarState.value = RecapCalendar.forDate()
+                }
+            }
+            viewModelScope.launch {
+                recapCalendarState.collectLatest { recapCalendar ->
+                    analyticsDao.annualTracksFlow(recapCalendar.recapYear).collect { annualRows ->
+                        val recapYear = recapCalendar.recapYear
+                        val played = annualRows
+                            .filter { it.playCount > 0 }
+                            .map { row ->
+                                row.track.copy(
+                                    statsYear = recapYear,
+                                    playCount = row.playCount,
+                                    totalListenMs = row.totalListenMs,
+                                    lastPlayedAtEpochMs = row.lastPlayedAtEpochMs
+                                )
+                            }
+                        val rankedTracks = played
+                            .sortedWith(
+                                compareByDescending<com.nerf.music.data.db.LibraryTrackEntity> { it.playCount }
+                                    .thenByDescending { it.totalListenMs }
+                                    .thenByDescending { it.lastPlayedAtEpochMs ?: 0L }
+                            )
+                        val parsedCredits = played.associateWith { splitRecapArtistCredit(it.artist) }
+                        // Featured appearances resolve to an artist profile when that artist is a primary credit elsewhere.
+                        val profileByArtistName = parsedCredits.flatMap { (row, credit) ->
+                            val browseId = row.artistBrowseId?.trim()?.takeIf(String::isNotBlank)
+                            if (browseId == null) emptyList() else credit.primary.map { normalizeRecapArtistName(it) to browseId }
+                        }.groupBy({ it.first }, { it.second })
+                            .mapValues { (_, ids) -> ids.groupingBy { it }.eachCount().maxByOrNull { it.value }!!.key }
+                        val artistContributions = mutableMapOf<String, MutableList<RecapArtistContribution>>()
+                        parsedCredits.forEach { (row, credit) ->
+                            val allNames = (credit.primary + credit.featured).distinctBy(::normalizeRecapArtistName)
+                            if (allNames.isEmpty()) return@forEach
+                            val totalWeight = credit.primary.size * 2.0 + credit.featured.size
+                            allNames.forEach { name ->
+                                val normalizedName = normalizeRecapArtistName(name)
+                                val isPrimary = credit.primary.any { normalizeRecapArtistName(it) == normalizedName }
+                                val weight = (if (isPrimary) 2.0 else 1.0) / totalWeight
+                                val browseId = profileByArtistName[normalizedName]
+                                    ?: if (isPrimary) row.artistBrowseId?.trim()?.takeIf(String::isNotBlank) else null
+                                val key = browseId?.let { "browse:${it.lowercase(Locale.ROOT)}" } ?: "name:$normalizedName"
+                                artistContributions.getOrPut(key) { mutableListOf() }.add(RecapArtistContribution(name, row, weight))
+                            }
                         }
-                    }
-                    val rankedArtists = artistContributions.values.map { contributions ->
-                        val listenMs = contributions.sumOf { contribution ->
-                            contribution.track.totalListenMs * contribution.weight
+                        val rankedArtists = artistContributions.values.map { contributions ->
+                            val listenMs = contributions.sumOf { contribution ->
+                                contribution.track.totalListenMs * contribution.weight
+                            }
+                            val weightedPlays = contributions.sumOf { it.track.playCount * it.weight }
+                            val name = contributions.groupBy { it.name }
+                                .maxByOrNull { (_, items) -> items.sumOf { it.weight } }!!.key
+                            val representative = contributions.maxByOrNull {
+                                it.track.totalListenMs * it.weight
+                            }!!.track
+                            RecapArtistStats(
+                                name = name,
+                                plays = weightedPlays.toInt(),
+                                listenedMs = listenMs.toLong(),
+                                representativeTrack = representative.toTrack()
+                            )
+                        }.sortedWith(compareByDescending<RecapArtistStats> { it.listenedMs }.thenByDescending { it.plays })
+                        val trackStats = rankedTracks.map {
+                            RecapTrackStats(it.toTrack(), it.playCount, it.totalListenMs)
                         }
-                        val weightedPlays = contributions.sumOf { it.track.playCount * it.weight }
-                        val name = contributions.groupBy { it.name }
-                            .maxByOrNull { (_, items) -> items.sumOf { it.weight } }!!.key
-                        val representative = contributions.maxByOrNull {
-                            it.track.totalListenMs * it.weight
-                        }!!.track
-                        RecapArtistStats(
-                            name = name,
-                            plays = weightedPlays.toInt(),
-                            listenedMs = listenMs.toLong(),
-                            representativeTrack = representative.toTrack()
+                        _recapSummary.value = RecapSummary(
+                            year = recapYear,
+                            isInReleaseWindow = recapCalendar.isInReleaseWindow,
+                            totalMinutes = played.sumOf { it.totalListenMs } / 60_000L,
+                            totalPlays = played.sumOf { it.playCount },
+                            topTracks = trackStats.take(5),
+                            // Keep the full artist set so Recap can calculate the listening-share remainder.
+                            topArtists = rankedArtists,
+                            mixTracks = trackStats.take(50).map { it.track }
                         )
-                    }.sortedWith(compareByDescending<RecapArtistStats> { it.listenedMs }.thenByDescending { it.plays })
-                    val trackStats = rankedTracks.map {
-                        RecapTrackStats(it.toTrack(), it.playCount, it.totalListenMs)
                     }
-                    _recapSummary.value = RecapSummary(
-                        year = recapYear,
-                        totalMinutes = played.sumOf { it.totalListenMs } / 60_000L,
-                        totalPlays = played.sumOf { it.playCount },
-                        topTracks = trackStats.take(5),
-                        // Keep the full artist set so Recap can calculate the listening-share remainder.
-                        topArtists = rankedArtists,
-                        mixTracks = trackStats.take(50).map { it.track }
-                    )
                 }
             }
             viewModelScope.launch {
@@ -1164,11 +1191,18 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            Novidades do NERF Music 1.4.7
+            Novidades do NERF Music 1.5.0
 
-            A Home e o Explorar carregam com mais agilidade e mant?m suas recomenda??es est?veis. O Explorar traz descobertas musicais, e a rolagem e as anima??es ficaram mais fluidas.
+            Seu ano com música está aqui 🎧
 
-            O indicador de reprodu??o ganhou ondas animadas, e o player recebeu melhorias visuais e de acessibilidade.
+            • Recap anual com mix personalizada, cards animados e navegação no seu ritmo. A prévia começa com 5 reproduções qualificadas em 3 faixas; o Recap completo pede 10 horas, 5 faixas e 3 artistas. O Recap 2026 fica disponível até 31 de janeiro de 2027; o de 2027 chega em dezembro de 2027 e fica até 31 de janeiro de 2028.
+            • Compartilhe seus destaques: veja a participação dos seus artistas favoritos e salve cards ou o vídeo completo direto na galeria.
+            • Backup offline: exporte playlists, favoritos e preferências para um arquivo local e restaure quando precisar.
+            • Encontre Mais Tocadas e Adicionadas Recentemente na Biblioteca, atualizadas automaticamente.
+            • Reencontre favoritos esquecidos e descubra playlists da comunidade alinhadas ao seu gosto. Em alta, Novos Vídeos e Novos Álbuns e Singles saíram da Home.
+            • Temporizador de sono no menu do player maximizado, com indicador de lua enquanto estiver ativo.
+            • A reprodução pausa quando o foco de áudio é perdido ou os fones são desconectados.
+            • Cards, linhas e controles respondem com feedback tátil e animações suaves.
         """.trimIndent()
     }
 
@@ -1333,6 +1367,11 @@ class MusicViewModel(
             prefetchNextCanvas()
         }
         _selectedTrack.value = resolvedTrack
+        if (activeTrackId == null && resolvedTrack != null) {
+            activeTrackId = resolvedTrack.id
+            currentTrackListenedMs = 0L
+            sampleListenProgress(player, isActivelyPlaying = isCurrentlyPlaying, isDiscontinuity = true)
+        }
 
         // Pre-fetch proativo de stream de áudio e artwork para próxima e faixa anterior
         finalQueue.getOrNull(currentIdx + 1)?.let { nextItem ->
@@ -1380,6 +1419,11 @@ class MusicViewModel(
                 ) {
                     val isPlaying = player.isPlaying
                     val pos = player.currentPosition.coerceAtLeast(0L)
+                    sampleListenProgress(
+                        player = player,
+                        isActivelyPlaying = isPlaying,
+                        isDiscontinuity = events.contains(Player.EVENT_POSITION_DISCONTINUITY)
+                    )
                     _playbackState.value = _playbackState.value.copy(
                         isPlaying = isPlaying,
                         isBuffering = player.playbackState == Player.STATE_BUFFERING,
@@ -1403,19 +1447,11 @@ class MusicViewModel(
                     _loadingTrackId.value = mediaItem.mediaId
                 }
                 val prevId = activeTrackId
-                if (!prevId.isNullOrBlank()) {
-                    val prevTrack = trackMetadataMap[prevId]
-                    if (prevTrack != null) {
-                        val elapsed = System.currentTimeMillis() - currentTrackPlayStartTime
-                        val dur = _playbackState.value.durationMs
-                        val wasSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK || 
-                                         (elapsed < 30_000L && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
-                        userAffinityRepository?.recordTrackEnded(prevTrack, elapsed, dur, wasSkipped)
-                        userHistoryRepository?.recordTrackListening(prevTrack, elapsed.coerceAtMost(dur.takeIf { it > 0 } ?: elapsed))
-                    }
-                }
+                finalizeTrackListening(prevId, reason)
                 activeTrackId = mediaItem?.mediaId
-                currentTrackPlayStartTime = System.currentTimeMillis()
+                currentTrackListenedMs = 0L
+                lastListenSampleTrackId = null
+                lastListenSamplePositionMs = null
 
                 syncTimelineState(player)
                 checkAndLoadMoreQueue(player)
@@ -1436,6 +1472,12 @@ class MusicViewModel(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) {
                     _loadingTrackId.value = null
+                    sampleListenProgress(player, isActivelyPlaying = true, isDiscontinuity = true)
+                } else {
+                    // Capture the final player-position delta before clearing the baseline.
+                    sampleListenProgress(player, isActivelyPlaying = true)
+                    lastListenSampleTrackId = null
+                    lastListenSamplePositionMs = null
                 }
                 _playbackState.value = _playbackState.value.copy(
                     isPlaying = isPlaying,
@@ -1452,6 +1494,10 @@ class MusicViewModel(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 val isBuffering = playbackState == Player.STATE_BUFFERING
+                if (playbackState == Player.STATE_ENDED) {
+                    sampleListenProgress(player, isActivelyPlaying = true)
+                    finalizeTrackListening(activeTrackId, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+                }
                 if (playbackState == Player.STATE_READY || playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
                     _loadingTrackId.value = null
                 }
@@ -1483,6 +1529,7 @@ class MusicViewModel(
                 mediaController?.let { controller ->
                     if (controller.isPlaying) {
                         val pos = controller.currentPosition.coerceAtLeast(0L)
+                        sampleListenProgress(controller, isActivelyPlaying = true)
                         val dur = resolveEffectiveDuration(controller)
                         val curTrack = _playbackState.value.currentTrack
                         val updatedTrack = if (curTrack != null && dur > 0L && (curTrack.durationText == "--:--" || curTrack.durationSeconds == 0L)) {
@@ -1507,6 +1554,49 @@ class MusicViewModel(
                 delay(90)
             }
         }
+    }
+
+    private fun sampleListenProgress(
+        player: Player,
+        isActivelyPlaying: Boolean,
+        isDiscontinuity: Boolean = false
+    ) {
+        val trackId = player.currentMediaItem?.mediaId
+        val positionMs = player.currentPosition.coerceAtLeast(0L)
+        if (!isActivelyPlaying || trackId.isNullOrBlank()) {
+            lastListenSampleTrackId = null
+            lastListenSamplePositionMs = null
+            return
+        }
+
+        val previousPositionMs = lastListenSamplePositionMs
+        if (isDiscontinuity || trackId != lastListenSampleTrackId || previousPositionMs == null) {
+            lastListenSampleTrackId = trackId
+            lastListenSamplePositionMs = positionMs
+            return
+        }
+
+        val advancedMs = positionMs - previousPositionMs
+        // Position jumps caused by seeks are excluded; ordinary polling delays are tolerated.
+        if (advancedMs in 1L..5_000L) currentTrackListenedMs += advancedMs
+        lastListenSampleTrackId = trackId
+        lastListenSamplePositionMs = positionMs
+    }
+
+    private fun finalizeTrackListening(trackId: String?, reason: Int) {
+        if (trackId.isNullOrBlank()) return
+        val track = trackMetadataMap[trackId]
+        if (track != null) {
+            val durationMs = _playbackState.value.durationMs
+            val listenedMs = currentTrackListenedMs.coerceAtMost(durationMs.takeIf { it > 0L } ?: currentTrackListenedMs)
+            val wasSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK ||
+                (listenedMs < 30_000L && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+            userAffinityRepository?.recordTrackEnded(track, listenedMs, durationMs, wasSkipped)
+            userHistoryRepository?.recordTrackListening(track, listenedMs)
+        }
+        currentTrackListenedMs = 0L
+        lastListenSampleTrackId = null
+        lastListenSamplePositionMs = null
     }
 
     private fun stopProgressTracker() {

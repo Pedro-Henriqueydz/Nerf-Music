@@ -133,6 +133,7 @@ class AppUpdateManager(
                 ?.takeIf { it.isNotEmpty() } ?: return null
 
             val releaseNotes = (root["body"] as? JsonPrimitive)?.contentOrNull?.trim()
+                ?.let(::extractInAppReleaseNotes)
             AppUpdateInfo(
                 tagName = tagName,
                 downloadUrl = browserDownloadUrl,
@@ -141,6 +142,18 @@ class AppUpdateManager(
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao processar JSON de release do GitHub", e)
             null
+        }
+    }
+
+    private fun extractInAppReleaseNotes(body: String): String {
+        val startMarker = "<!-- IN_APP_START -->"
+        val endMarker = "<!-- IN_APP_END -->"
+        val start = body.indexOf(startMarker)
+        val end = body.indexOf(endMarker)
+        return if (start >= 0 && end > start) {
+            body.substring(start + startMarker.length, end).trim()
+        } else {
+            body
         }
     }
 

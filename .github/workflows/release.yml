@@ -33,6 +33,15 @@ jobs:
         with:
           ref: ${{ inputs.release_tag }}
 
+      - name: Select version-specific release notes
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          notes_file=".github/release-notes/${RELEASE_TAG}.md"
+          test -f "$notes_file"
+          echo "RELEASE_NOTES_FILE=$notes_file" >> "$GITHUB_ENV"
+
       - name: Setup JDK 17
         uses: actions/setup-java@v3
         with:
@@ -81,5 +90,5 @@ jobs:
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: nerf-music-${{ inputs.release_tag || github.ref_name }}.apk
-          body_path: RELEASE_NOTES.md
+          body_path: ${{ env.RELEASE_NOTES_FILE }}
           generate_release_notes: false
