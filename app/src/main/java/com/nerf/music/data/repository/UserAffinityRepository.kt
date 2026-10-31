@@ -5,7 +5,14 @@ import android.util.Log
 import com.nerf.music.data.model.Track
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.text.Normalizer
 import java.util.concurrent.ConcurrentHashMap
+
+private fun artistMatchKey(value: String): String = Normalizer
+    .normalize(value.trim(), Normalizer.Form.NFD)
+    .replace("\\p{M}+".toRegex(), "")
+    .lowercase(java.util.Locale.ROOT)
+    .filter(Char::isLetterOrDigit)
 
 /**
  * Repositório inteligente de afinidade musical local do ouvinte.
@@ -27,11 +34,16 @@ interface UserAffinityRepository {
     fun isTrackPenalized(trackId: String): Boolean
     fun getTopAffinitiveArtists(limit: Int = 10): List<String>
     fun getPenalizedArtists(): Set<String>
+    fun getExcludedArtists(): Set<String>
+    fun setArtistExcluded(artistName: String, excluded: Boolean)
+    fun clearArtistExclusions()
     fun isArtistPenalized(artistName: String): Boolean {
-        val blocked = getPenalizedArtists().map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
-        val name = artistName.trim().lowercase(java.util.Locale.ROOT)
-        return name in blocked || com.nerf.music.data.model.ReleaseRecommendations.extractContributors(artistName)
-            .any { it.lowercase(java.util.Locale.ROOT) in blocked }
+        val blocked = getPenalizedArtists().map(::artistMatchKey).toSet()
+        val explicitlyExcluded = getExcludedArtists().map(::artistMatchKey).toSet()
+        val name = artistMatchKey(artistName)
+        val contributors = com.nerf.music.data.model.ReleaseRecommendations.extractContributors(artistName)
+            .map(::artistMatchKey)
+        return name in blocked || name in explicitlyExcluded || contributors.any { it in blocked || it in explicitlyExcluded }
     }
     fun recordInitialArtistPreferences(artists: List<String>)
 }
@@ -43,6 +55,7 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
         private const val PREFS_NAME = "nerf_user_affinity_prefs"
         private const val KEY_TRACK_AFFINITY = "key_track_affinity_map"
         private const val KEY_ARTIST_AFFINITY = "key_artist_affinity_map"
+        private const val KEY_EXCLUDED_ARTISTS = "key_excluded_artists"
 
         // Limiares de pontuação
         private const val SCORE_COMPLETED = 4
@@ -58,6 +71,7 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
 
     private val trackAffinityMap = ConcurrentHashMap<String, Int>()
     private val artistAffinityMap = ConcurrentHashMap<String, Int>()
+    private val excludedArtists = ConcurrentHashMap.newKeySet<String>()
 
     init {
         loadData()
@@ -76,6 +90,7 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
                 val map = json.decodeFromString<Map<String, Int>>(rawArtists)
                 artistAffinityMap.putAll(map)
             }
+            excludedArtists.addAll(prefs.getStringSet(KEY_EXCLUDED_ARTISTS, emptySet()).orEmpty())
         } catch (e: Exception) {
             Log.w(TAG, "Falha ao carregar afinidade inicial: ${e.message}")
         }
@@ -86,6 +101,7 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
             prefs.edit()
                 .putString(KEY_TRACK_AFFINITY, json.encodeToString(trackAffinityMap.toMap()))
                 .putString(KEY_ARTIST_AFFINITY, json.encodeToString(artistAffinityMap.toMap()))
+                .putStringSet(KEY_EXCLUDED_ARTISTS, excludedArtists.toSet())
                 .apply()
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao salvar afinidade: ${e.message}")
@@ -197,5 +213,36 @@ class UserAffinityRepositoryImpl(context: Context) : UserAffinityRepository {
             .filter { it.value <= -3 }
             .map { it.key }
             .toSet()
+    }
+
+    override fun isArtistPenalized(artistName: String): Boolean {
+        val excludedNow = prefs.getStringSet(KEY_EXCLUDED_ARTISTS, emptySet()).orEmpty()
+        val name = artistMatchKey(artistName)
+        val excludedNames = excludedNow.map(::artistMatchKey).toSet()
+        val penalizedNames = getPenalizedArtists().map(::artistMatchKey).toSet()
+        val contributors = com.nerf.music.data.model.ReleaseRecommendations.extractContributors(artistName)
+            .map(::artistMatchKey)
+        return name in excludedNames || name in penalizedNames ||
+            contributors.any { it in excludedNames || it in penalizedNames }
+    }
+
+    override fun getExcludedArtists(): Set<String> = excludedArtists
+        .distinctBy(::artistMatchKey)
+        .toSet()
+
+    override fun setArtistExcluded(artistName: String, excluded: Boolean) {
+        val clean = artistName.trim()
+        if (clean.isBlank()) return
+        if (excluded) {
+            if (excludedArtists.none { artistMatchKey(it) == artistMatchKey(clean) }) excludedArtists.add(clean)
+        } else {
+            excludedArtists.removeIf { artistMatchKey(it) == artistMatchKey(clean) }
+        }
+        persistData()
+    }
+
+    override fun clearArtistExclusions() {
+        excludedArtists.clear()
+        persistData()
     }
 }

@@ -373,12 +373,26 @@ fun SearchScreen(
                             .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = errorMessage ?: "",
-                            fontFamily = YouTubeSansFontFamily,
-                            color = YtmTextSecondary,
-                            fontSize = 14.sp
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = errorMessage ?: "",
+                                fontFamily = YouTubeSansFontFamily,
+                                color = YtmTextSecondary,
+                                fontSize = 14.sp
+                            )
+                            if (errorMessage?.startsWith("Erro na busca:") == true) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "O catálogo pode estar indisponível ou a conexão pode ter caído.",
+                                    fontFamily = YouTubeSansFontFamily,
+                                    color = YtmTextSecondary,
+                                    fontSize = 12.sp
+                                )
+                                TextButton(onClick = { viewModel.performSearch() }) {
+                                    Text("Tentar novamente", color = YtmWhite)
+                                }
+                            }
+                        }
                     }
                 }
 
