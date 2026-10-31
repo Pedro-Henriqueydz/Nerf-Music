@@ -1219,18 +1219,14 @@ class MusicViewModel(
 
     private fun getDefaultChangeLog(): String {
         return """
-            Novidades do NERF Music 1.5.0
+            Novidades do NERF Music 1.5.1
 
-            Seu ano com música está aqui 🎧
+            Backups mais seguros e recomendações no seu controle.
 
-            • Recap anual com mix personalizada, cards animados e navegação no seu ritmo. A prévia começa com 5 reproduções qualificadas em 3 faixas; o Recap completo pede 10 horas, 5 faixas e 3 artistas. O Recap 2026 fica disponível até 31 de janeiro de 2027; o de 2027 chega em dezembro de 2027 e fica até 31 de janeiro de 2028.
-            • Compartilhe seus destaques: veja a participação dos seus artistas favoritos e salve cards ou o vídeo completo direto na galeria.
-            • Backup offline: exporte playlists, favoritos e preferências para um arquivo local e restaure quando precisar.
-            • Encontre Mais Tocadas e Adicionadas Recentemente na Biblioteca, atualizadas automaticamente.
-            • Reencontre favoritos esquecidos e descubra playlists da comunidade alinhadas ao seu gosto. Em alta, Novos Vídeos e Novos Álbuns e Singles saíram da Home.
-            • Temporizador de sono no menu do player maximizado, com indicador de lua enquanto estiver ativo.
-            • A reprodução pausa quando o foco de áudio é perdido ou os fones são desconectados.
-            • Cards, linhas e controles respondem com feedback tátil e animações suaves.
+            • Confira o conteúdo de um backup antes de restaurá-lo e escolha entre mesclar os dados ou substituir os atuais.
+            • O modo de mesclagem mantém suas configurações e downloads de áudio, combinando seus dados sem duplicações.
+            • Oculte artistas das recomendações da Home, rádios e Mixes e Downloads Inteligentes; você pode voltar atrás quando quiser.
+            • A busca e os Downloads Inteligentes dão informações mais claras quando algo falha.
         """.trimIndent()
     }
 
